@@ -1,6 +1,8 @@
 obj=vehicle
-name=Metropolitan-Bogie-Third
+name=Metropolitan-Motor-Third-Middle
 speed=95
+engine_type=electric
+power=0
 copyright=Kieron
 intro_year=1898
 intro_month=1
@@ -15,9 +17,11 @@ cost=750000
 runningcost=22
 sound=-1
 
-Constraint[Next][0]=Metropolitan-Dreadnought-Third
-Constraint[Next][1]=Metropolitan-Bogie-Third
-Constraint[Next][2]=none
+Constraint[Prev][0]=Metropolitan-Motor-Third-Middle
+Constraint[Prev][1]=Metropolitan-Motor-Third-Middle
+
+Constraint[Next][0]=Metropolitan-Motor-Third-Middle
+Constraint[Next][1]=Metropolitan-Motor-Third-Back
 
 EmptyImage[E]=./images/met-bogie-third.0
 EmptyImage[SE]=./images/met-bogie-third.1
