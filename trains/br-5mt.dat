@@ -1,29 +1,31 @@
 obj=vehicle
-name=LMS-Stanier-5MT(Black)
+name=BR-5MT(Black)
 engine_type=steam
 smoke=Steam
 speed=130
 #gear=320
-power=1500
-tractive_effort=113
-copyright=Kieron
-intro_year=1934
-intro_month=5
-retire_year=1951
-retire_month=4
+power=1510
+tractive_effort=116
+copyright=Kieron&JamesPetts
+intro_year=1951
+intro_month=4
+retire_year=1957
+retire_month=6
 waytype=track
 freight=None
 payload=0
 length=7
 
-weight=72
-cost=4598000
-runningcost=1122
+weight=77
+cost=5210000
+runningcost=1045
 sound=-1
-increase_maintenance_after_years=10
+increase_maintenance_after_years=4
 years_before_maintenance_max_reached=13
 
-Constraint[Next][0]=LMS-Stanier-5MT-Tender(Black)
+Constraint[Next][0]=BR-4MT-Tender(Black)
+
+# TODO: Need new graphics for this locomotive different to the Stanier design
 
 EmptyImage[E]=./images/lms-stanier-5mt.0.0
 EmptyImage[SE]=./images/lms-stanier-5mt.0.1
@@ -33,4 +35,3 @@ EmptyImage[W]=./images/lms-stanier-5mt.0.4
 EmptyImage[NW]=./images/lms-stanier-5mt.0.5
 EmptyImage[N]=./images/lms-stanier-5mt.0.6
 EmptyImage[NE]=./images/lms-stanier-5mt.0.7
-
