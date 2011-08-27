@@ -1,19 +1,20 @@
 obj=vehicle
-name=BR-Mk2-RFB
+name=BR-Mk2-TSOT
 speed=177
-copyright=Kieron
+copyright=Kieron&jamespetts
 intro_year=1973
 intro_month=3
 retire_year=1977
 retire_month=7
 waytype=track
 freight=Passagiere
-payload=20
-overcrowded_capacity=10
+payload=56
+overcrowded_capacity=18
 length=11
 
 weight=32
-cost=552000
+cost=506000
+upgrade_price=42250
 runningcost=23
 sound=-1
 
@@ -22,7 +23,7 @@ bidirectional=1
 catering_level=3
 
 loading_time=9250
-comfort=136
+comfort=130
 
 Constraint[Next][0]=BR-Mk2-TSO
 Constraint[Next][1]=BR-489[GLV](Intercity)
@@ -47,21 +48,21 @@ Constraint[Next][18]=BR-Mk2-BSO
 liverytype[0]=BR-Blue
 liverytype[1]=IC-Executive
 
-EmptyImage[E][0]=./images/br-mk2-rfb-bg_E.0
-EmptyImage[SE][0]=./images/br-mk2-rfb-bg_SE.0
-EmptyImage[S][0]=./images/br-mk2-rfb-bg_S.0
-EmptyImage[SW][0]=./images/br-mk2-rfb-bg_SW.0
-EmptyImage[W][0]=./images/br-mk2-rfb-bg_W.0
-EmptyImage[NW][0]=./images/br-mk2-rfb-bg_NW.0
-EmptyImage[N][0]=./images/br-mk2-rfb-bg_N.0
-EmptyImage[NE][0]=./images/br-mk2-rfb-bg_NE.0
+EmptyImage[E][0]=./images/br-mk2-tsot-bg_E.0
+EmptyImage[SE][0]=./images/br-mk2-tsot-bg_SE.0
+EmptyImage[S][0]=./images/br-mk2-tsot-bg_S.0
+EmptyImage[SW][0]=./images/br-mk2-tsot-bg_SW.0
+EmptyImage[W][0]=./images/br-mk2-tsot-bg_W.0
+EmptyImage[NW][0]=./images/br-mk2-tsot-bg_NW.0
+EmptyImage[N][0]=./images/br-mk2-tsot-bg_N.0
+EmptyImage[NE][0]=./images/br-mk2-tsot-bg_NE.0
 
-EmptyImage[E][1]=./images/br-mk2-rfb-ic_E.0
-EmptyImage[SE][1]=./images/br-mk2-rfb-ic_SE.0
-EmptyImage[S][1]=./images/br-mk2-rfb-ic_S.0
-EmptyImage[SW][1]=./images/br-mk2-rfb-ic_SW.0
-EmptyImage[W][1]=./images/br-mk2-rfb-ic_W.0
-EmptyImage[NW][1]=./images/br-mk2-rfb-ic_NW.0
-EmptyImage[N][1]=./images/br-mk2-rfb-ic_N.0
-EmptyImage[NE][1]=./images/br-mk2-rfb-ic_NE.0
+EmptyImage[E][1]=./images/br-mk2-tsot_E.0
+EmptyImage[SE][1]=./images/br-mk2-tsot_SE.0
+EmptyImage[S][1]=./images/br-mk2-tsot_S.0
+EmptyImage[SW][1]=./images/br-mk2-tsot_SW.0
+EmptyImage[W][1]=./images/br-mk2-tsot_W.0
+EmptyImage[NW][1]=./images/br-mk2-tsot_NW.0
+EmptyImage[N][1]=./images/br-mk2-tsot_N.0
+EmptyImage[NE][1]=./images/br-mk2-tsot_NE.0
 
