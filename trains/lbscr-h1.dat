@@ -10,9 +10,9 @@ tractive_effort=85
 copyright=Kieron/JamesPetts
 intro_year=1905
 intro_month=12
-# Should be 1906, but no obvious replacements.
-retire_year=1916
-retire_month=10
+# Should be 1906, but no obvious replacements until the H2
+retire_year=1911
+retire_month=6
 waytype=track
 freight=None
 payload=0
@@ -24,8 +24,6 @@ axle_load=18
 cost=6677000
 runningcost=775
 sound=-1
-increase_maintenance_after_years=28
-years_before_maintenance_max_reached=25
 
 Constraint[Next][0]=LBSCR-H1-Tender
 
@@ -105,6 +103,7 @@ increase_maintenance_after_years=28
 years_before_maintenance_max_reached=25
 
 Constraint[Prev][0]=LBSCR-H1
+Constraint[Prev][1]=LBSCR-H2
 
 liverytype[0]=LBSCR-Marsh
 liverytype[1]=SR-Olive-Green
