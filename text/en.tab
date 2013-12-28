@@ -196,6 +196,8 @@ Zeppelin_LZ127_GrafZeppelin
 Graf Zeppelin LZ 127
 Zeppelin_LZ127_GrafZeppelin_Mail
 Graf Zeppelin LZ 127 (mail)
+Zeppelin_LZ10
+Zeppelin LZ 10 "Schwaben"
 #____________________________________bridge_____________________________________
 #____________________________________bridge_____________________________________
 BrickAqueduct
@@ -3085,25 +3087,29 @@ HR Jones Goods 4-6-0
 HR-Jones-Goods-Tender
 HR Jones Goods (tender)
 LBSCR-B1-Gladstone
-LBSCR Class B1 "Gladstone" 0-4-2
+LBSCR B1 Class "Gladstone" 0-4-2
 LBSCR-B1-Gladstone-Tender
 LBSCR Stroudley tender
 LBSCR-L-Tank(Umber)
-LBSCR Class L "Brighton Baltic" 4-6-4T
+LBSCR L Class "Brighton Baltic" 4-6-4T
 LBSCR-J
-LBSCR Class J 4-6-2T
+LBSCR J Class 4-6-2T
 LBSCR-I3
-LBSCR Class I3 4-4-2T
+LBSCR I3 Class 4-4-2T
 LBSCR-E3
-LBSCR Class E3 0-6-2T
+LBSCR E3 Class 0-6-2T
 LBSCR-E4
-LBSCR Class E4 0-6-2T
+LBSCR E4 Class 0-6-2T
 LBSCR-E5
-LBSCR Class E5 0-6-2T
+LBSCR E5 Class 0-6-2T
 LBSCR-H1
-LBSCR Class H1 "Brighton Atlantic" 4-4-2
+LBSCR H1 Class "Brighton Atlantic" 4-4-2
 LBSCR-H1-Tender
 LBSCR Class H1 tender
+LBSCR-H2
+LBSCR H2 Class "Brighton Atlantic" 4-4-2
+LBSCR-K
+LBSCR K Class "Brighton Mogul" 2-6-0
 LBSCR-non-cor-lav
 LBSCR six compartment lavatory carriage
 LBSCR-non-cor-lav-brake-rear
@@ -3612,6 +3618,28 @@ LNWR-watford-tank
 LNWR "Watford Tank" class 0-6-2T
 LBSCR-D2
 LBSCR D2 "Lyons" Class 0-4-2
+LBSCR-D3
+LBSCR D3 Class 0-4-4
+LBSCR-C2
+LBSCR C2 Class 0-6-0
+LBSCR-C2-tender
+LBSCR C2 Class tender
+LBSCR-C2x
+LBSCR C2x Class 0-6-0
+LBSCR-B2
+LBSCR B2 Class 4-4-0
+LBSCR-B2-tender
+LBSCR B2 Class tender
+LBSCR-B4
+LBSCR B4 Class 4-4-0
+LBSCR-B4-tender
+LBSCR B4 Class tender
+LBSCR-B2x
+LBSCR B2x Class 4-4-0
+LBSCR-B4x
+LBSCR B4x Class 4-4-0
+LBSCR-E6
+LBSCR E6 Class 0-6-2
 MR-133
 Midland 133 Class 2-2-2
 MR-133-tender
