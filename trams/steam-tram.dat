@@ -1,4 +1,5 @@
-obj=vehicle
+# DEPRECATED - specific steam tram locomotives now used.
+#obj=vehicle
 name=Steam-Tram
 engine_type=steam
 smoke=Steam
