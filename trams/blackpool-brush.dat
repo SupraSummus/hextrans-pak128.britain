@@ -3,7 +3,8 @@ name=Blackpool-Brush
 engine_type=electric
 speed=65
 gear=80
-power=100
+# http://en.wikipedia.org/wiki/Blackpool_tramway#Boat_cars
+power=60
 copyright=James
 intro_year=1934
 intro_month=4
@@ -11,11 +12,11 @@ retire_year=1953
 retire_month=6
 waytype=tram_track
 freight=Passagiere
-payload=48
+payload=52
 overcrowded_capacity=6
-weight=17
+weight=14
 axles=4
-cost=216000
+cost=446000
 runningcost=40
 sound=-1
 
