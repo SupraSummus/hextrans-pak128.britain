@@ -1,5 +1,5 @@
 obj=vehicle
-name=707_320C(PelicanCargoAirlines)Post
+name=boeing-707-320c
 copyright=Milko
 waytype=air
 engine_type=turbine
@@ -9,7 +9,8 @@ tractive_effort=320
 #gear=1
 freight=Post
 #payload 17,8t
-payload=17800
+payload[0]=0
+payload[1]=17800
 weight=98
 #length=8
 cost=17000000

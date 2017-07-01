@@ -1,14 +1,13 @@
 obj=vehicle
-name=Boeing_727_200Adv(DHL)Post
+name=boeing-727-200-advanced-mail
 copyright=Milko
 waytype=air
 engine_type=turbine
 speed=851
 power=38520
 tractive_effort=214
-#gear=1
 freight=Post
-#payload=19.2t
+#payload: 19.2t
 payload[0]=0
 payload[1]=19200
 weight=57
