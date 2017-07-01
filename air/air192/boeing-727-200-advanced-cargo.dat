@@ -1,5 +1,5 @@
 obj=vehicle
-name=Boeing_727_200(TNT)CargoCool
+name=boeing-727-200-advanced-cool
 copyright=Milko
 waytype=air
 engine_type=turbine
@@ -43,7 +43,7 @@ EmptyImage[N]=../images/Boeing_727_200_TNT.0.4,-31,-46
 EmptyImage[NE]=../images/Boeing_727_200_TNT.0.3,-31,-46
 --
 obj=vehicle
-name=Boeing_727_200(TNT)CargoPiece
+name=boeing-727-200-advanced-piece
 copyright=Milko
 waytype=air
 engine_type=turbine

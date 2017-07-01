@@ -1,5 +1,5 @@
 obj=vehicle
-name=Boeing727_100(UPS)Cargo
+name=boeing-727-100-piece
 copyright=Milko
 waytype=air
 engine_type=turbine
@@ -27,7 +27,7 @@ max_loading_time=3200
 # @ ISA+10C, Runway dry = +10%
 minimum_runway_length=2900
 
-sound=robin-pinnock-bac-1-11.wav
+sound=jorge-atc-boeing-727.wav
 range=4300
 
 Constraint[Next][0]=none
@@ -43,7 +43,7 @@ EmptyImage[N]=./images/Boeing_727_100_UPS.0.4
 EmptyImage[NE]=./images/Boeing_727_100_UPS.0.3
 ---
 obj=vehicle
-name=Boeing727_100(UPS)CargoCool
+name=boeing-727-100-cool
 copyright=Milko
 waytype=air
 engine_type=turbine
@@ -71,7 +71,7 @@ max_loading_time=3200
 # @ ISA+10C, Runway dry = +10%
 minimum_runway_length=2900
 
-sound=robin-pinnock-bac-1-11.wav
+sound=jorge-atc-boeing-727.wav
 range=4300
 
 Constraint[Next][0]=none
