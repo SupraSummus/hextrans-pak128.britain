@@ -1,41 +1,33 @@
 # http://www.gwr.org.uk/no440s.html
 obj=vehicle
-name=GWR-City
+name=gwr-city-superheated
 engine_type=steam
 smoke=Steam
 speed=150
-# CALIBRATED
-# Calibrated at 102.3mph on the flat with load of 243t gross: 421.2kW
-# Calibrated at 92mph on the flat with load of 243t gross: 349kW (see http://www.swindonweb.com/index.asp?m=8&s=116&ss=336)
-# This was down a 1:90 bank: http://en.wikipedia.org/wiki/Wellington_Bank,_Somerset
-# So, -121kW for 102.3mph or -108kW for 92mph, giving net figures of
-# 300kW for 102.3mph or 241kW for 92mph
-power=300
+# Extrapolated
+power=301
 # http://en.wikipedia.org/wiki/GWR_3700_Class
 tractive_effort=79
 copyright=James/jamespetts
-intro_year=1902
+intro_year=1910
 intro_month=6
-retire_year=1909
-retire_month=11
+retire_year=1929
+retire_month=5
 waytype=track
 freight=None
 payload=0
 length=5
-
-upgrade[0]=gwr-city-superheated
+available_only_as_upgrade=1
 
 # http://en.wikipedia.org/wiki/GWR_3700_Class
 weight=56
 axle_load=17
-cost=9273600
-runningcost=130
-fixed_cost=47728
+cost=2318400
+runningcost=124
+fixed_cost=47735
 sound=nick-parry-gwr-city-class.wav
-increase_maintenance_after_years=36
-years_before_maintenance_max_reached=20
 
-Constraint[Next][0]=GWR-dean-tender
+Constraint[Next][0]=gwr-churchward-tender
 
 # NOTE: The 3d model for this locomotive is part of the gwr-bulldog.blend
 # file, which is intended to make up many different GWR outside frame
