@@ -876,6 +876,12 @@ cst_make_public_months = 60
 # The figure is a percentage of the default revenue. Default: 100.
 power_revenue_factor_percentage = 100
 
+# Sanity check: overrides to deal with problem settings in individual factory buildings in paks which round down too low.
+# Minimum storage size for industries should be set at the size of a small vehicle which is expected to
+# be usable economically during the game.  This is always at least 1, but usually more like 5 or 7.
+minimum_industry_input_storage_raw = 1
+minimum_industry_output_storage_raw = 1
+
 
 ################################### Time settings ################################
 
