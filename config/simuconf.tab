@@ -2927,4 +2927,12 @@ livery[113][1] = Teesside-municipal-transport
 intro_year[113][1] = 1967
 intro_month[113][1] = 4
 
-
+livery_scheme[114] = Eurostar
+retire_year[114] = 2500
+retire_month[114] = 1
+livery[114][0] = Eurostar-original
+intro_year[114][0] = 1994
+intro_month[114][0] = 11
+livery[114][1] = Eurostar-e3xx
+intro_year[114][1] = 2015
+intro_month[114][1] = 7
