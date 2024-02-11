@@ -345,8 +345,8 @@ Constraint[Prev][3]=BR-373Coach
 Constraint[Next][0]=BR-373MiddleFront
 Constraint[Next][1]=BR-373CoachFirstClass
 # For backwards compatibility
-Constraint[Prev][2]=BR-373Coach
-Constraint[Prev][3]=BR-373Catering
+Constraint[Next][2]=BR-373Coach
+Constraint[Next][3]=BR-373Catering
 
 liverytype[0]=Eurostar-original
 liverytype[1]=GNER
