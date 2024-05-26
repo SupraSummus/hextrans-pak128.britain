@@ -6849,9 +6849,19 @@ LNWR six compartment brake carriage (third class) (rear)
 LNWR-57ft-non-cor
 LNWR nine compartment carriage (third class)
 BR-Derby-Lightweight-DTCL
-BR Derby Lightweight DMU (rear)
+BR Derby Lightweight DMU (driving trailer - rear)
+BR-Derby-Lightweight-DMCL
+BR Derby Lightweight DMU (driving motor - rear)
 BR-Derby-Lightweight-DMBS
-BR Derby Lightweight DMU
+BR Derby Lightweight DMU (2 car)
+BR-Derby-Lightweight-DMBS-single
+BR Derby Lightweight DMU (1 car)
+BR-Derby-Lightweight-DMS
+BR Derby Lightweight DMU (3/4 car)
+BR-Derby-Lightweight-TBSL
+BR Derby Lightweight DMU (centre trailer - brake)
+BR-Derby-Lightweight-TSL
+BR Derby Lightweight DMU (centre trailer)
 BR-117-DMS
 BR Class 117 DMU (rear)
 BR-117-TCL
