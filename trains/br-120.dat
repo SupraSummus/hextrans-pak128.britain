@@ -48,23 +48,23 @@ Constraint[Next][0]=BR-120-TSLRB
 liverytype[0]=BR-Revised
 liverytype[1]=BR-Blue
 
-EmptyImage[E][0]=./railcars/br-120-dmbc-g.1.4
-EmptyImage[SE][0]=./railcars/br-120-dmbc-g.1.5
-EmptyImage[S][0]=./railcars/br-120-dmbc-g.1.6
-EmptyImage[SW][0]=./railcars/br-120-dmbc-g.1.7
-EmptyImage[W][0]=./railcars/br-120-dmbc-g.1.0
-EmptyImage[NW][0]=./railcars/br-120-dmbc-g.1.1
-EmptyImage[N][0]=./railcars/br-120-dmbc-g.1.2
-EmptyImage[NE][0]=./railcars/br-120-dmbc-g.1.3
+EmptyImage[E][0]=./railcars/br-120-dmbc-g_E.0.0
+EmptyImage[SE][0]=./railcars/br-120-dmbc-g_SE.0.0
+EmptyImage[S][0]=./railcars/br-120-dmbc-g_S.0.0
+EmptyImage[SW][0]=./railcars/br-120-dmbc-g_SW.0.0
+EmptyImage[W][0]=./railcars/br-120-dmbc-g_W.0.0
+EmptyImage[NW][0]=./railcars/br-120-dmbc-g_NW.0.0
+EmptyImage[N][0]=./railcars/br-120-dmbc-g_N.0.0
+EmptyImage[NE][0]=./railcars/br-120-dmbc-g_NE.0.0
 
-EmptyImage[E][1]=./railcars/br-120-dmbc-bg.1.4
-EmptyImage[SE][1]=./railcars/br-120-dmbc-bg.1.5
-EmptyImage[S][1]=./railcars/br-120-dmbc-bg.1.6
-EmptyImage[SW][1]=./railcars/br-120-dmbc-bg.1.7
-EmptyImage[W][1]=./railcars/br-120-dmbc-bg.1.0
-EmptyImage[NW][1]=./railcars/br-120-dmbc-bg.1.1
-EmptyImage[N][1]=./railcars/br-120-dmbc-bg.1.2
-EmptyImage[NE][1]=./railcars/br-120-dmbc-bg.1.3
+EmptyImage[E][1]=./railcars/br-120-dmbc-bg_E.0.0
+EmptyImage[SE][1]=./railcars/br-120-dmbc-bg_SE.0.0
+EmptyImage[S][1]=./railcars/br-120-dmbc-bg_S.0.0
+EmptyImage[SW][1]=./railcars/br-120-dmbc-bg_SW.0.0
+EmptyImage[W][1]=./railcars/br-120-dmbc-bg_W.0.0
+EmptyImage[NW][1]=./railcars/br-120-dmbc-bg_NW.0.0
+EmptyImage[N][1]=./railcars/br-120-dmbc-bg_N.0.0
+EmptyImage[NE][1]=./railcars/br-120-dmbc-bg_NE.0.0
 
 ----
 
@@ -113,23 +113,23 @@ Constraint[Next][0]=BR-120-DMSL
 liverytype[0]=BR-Revised
 liverytype[1]=BR-Blue
 
-EmptyImage[E][0]=./railcars/br-120-tslrb-g.1.4
-EmptyImage[SE][0]=./railcars/br-120-tslrb-g.1.5
-EmptyImage[S][0]=./railcars/br-120-tslrb-g.1.6
-EmptyImage[SW][0]=./railcars/br-120-tslrb-g.1.7
-EmptyImage[W][0]=./railcars/br-120-tslrb-g.1.0
-EmptyImage[NW][0]=./railcars/br-120-tslrb-g.1.1
-EmptyImage[N][0]=./railcars/br-120-tslrb-g.1.2
-EmptyImage[NE][0]=./railcars/br-120-tslrb-g.1.3
+EmptyImage[E][0]=./railcars/br-120-tslrb-g_E.0.0
+EmptyImage[SE][0]=./railcars/br-120-tslrb-g_SE.0.0
+EmptyImage[S][0]=./railcars/br-120-tslrb-g_S.0.0
+EmptyImage[SW][0]=./railcars/br-120-tslrb-g_SW.0.0
+EmptyImage[W][0]=./railcars/br-120-tslrb-g_W.0.0
+EmptyImage[NW][0]=./railcars/br-120-tslrb-g_NW.0.0
+EmptyImage[N][0]=./railcars/br-120-tslrb-g_N.0.0
+EmptyImage[NE][0]=./railcars/br-120-tslrb-g_NE.0.0
 
-EmptyImage[E][1]=./railcars/br-120-tslrb-bg.1.4
-EmptyImage[SE][1]=./railcars/br-120-tslrb-bg.1.5
-EmptyImage[S][1]=./railcars/br-120-tslrb-bg.1.6
-EmptyImage[SW][1]=./railcars/br-120-tslrb-bg.1.7
-EmptyImage[W][1]=./railcars/br-120-tslrb-bg.1.0
-EmptyImage[NW][1]=./railcars/br-120-tslrb-bg.1.1
-EmptyImage[N][1]=./railcars/br-120-tslrb-bg.1.2
-EmptyImage[NE][1]=./railcars/br-120-tslrb-bg.1.3
+EmptyImage[E][1]=./railcars/br-120-tslrb-bg_E.0.0
+EmptyImage[SE][1]=./railcars/br-120-tslrb-bg_SE.0.0
+EmptyImage[S][1]=./railcars/br-120-tslrb-bg_S.0.0
+EmptyImage[SW][1]=./railcars/br-120-tslrb-bg_SW.0.0
+EmptyImage[W][1]=./railcars/br-120-tslrb-bg_W.0.0
+EmptyImage[NW][1]=./railcars/br-120-tslrb-bg_NW.0.0
+EmptyImage[N][1]=./railcars/br-120-tslrb-bg_N.0.0
+EmptyImage[NE][1]=./railcars/br-120-tslrb-bg_NE.0.0
 
 ----
 # http://www.railcar.co.uk/print/diagrams/586.jpg
@@ -181,21 +181,21 @@ Constraint[Next][1]=none
 liverytype[0]=BR-Revised
 liverytype[1]=BR-Blue
 
-EmptyImage[E][0]=./railcars/br-120-dmsl-g.1.4
-EmptyImage[SE][0]=./railcars/br-120-dmsl-g.1.5
-EmptyImage[S][0]=./railcars/br-120-dmsl-g.1.6
-EmptyImage[SW][0]=./railcars/br-120-dmsl-g.1.7
-EmptyImage[W][0]=./railcars/br-120-dmsl-g.1.0
-EmptyImage[NW][0]=./railcars/br-120-dmsl-g.1.1
-EmptyImage[N][0]=./railcars/br-120-dmsl-g.1.2
-EmptyImage[NE][0]=./railcars/br-120-dmsl-g.1.3
+EmptyImage[E][0]=./railcars/br-120-dmsl-g_E.0.0
+EmptyImage[SE][0]=./railcars/br-120-dmsl-g_SE.0.0
+EmptyImage[S][0]=./railcars/br-120-dmsl-g_S.0.0
+EmptyImage[SW][0]=./railcars/br-120-dmsl-g_SW.0.0
+EmptyImage[W][0]=./railcars/br-120-dmsl-g_W.0.0
+EmptyImage[NW][0]=./railcars/br-120-dmsl-g_NW.0.0
+EmptyImage[N][0]=./railcars/br-120-dmsl-g_N.0.0
+EmptyImage[NE][0]=./railcars/br-120-dmsl-g_NE.0.0
 
-EmptyImage[E][1]=./railcars/br-120-dmsl-bg.1.4
-EmptyImage[SE][1]=./railcars/br-120-dmsl-bg.1.5
-EmptyImage[S][1]=./railcars/br-120-dmsl-bg.1.6
-EmptyImage[SW][1]=./railcars/br-120-dmsl-bg.1.7
-EmptyImage[W][1]=./railcars/br-120-dmsl-bg.1.0
-EmptyImage[NW][1]=./railcars/br-120-dmsl-bg.1.1
-EmptyImage[N][1]=./railcars/br-120-dmsl-bg.1.2
-EmptyImage[NE][1]=./railcars/br-120-dmsl-bg.1.3
+EmptyImage[E][1]=./railcars/br-120-dmsl-bg_E.0.0
+EmptyImage[SE][1]=./railcars/br-120-dmsl-bg_SE.0.0
+EmptyImage[S][1]=./railcars/br-120-dmsl-bg_S.0.0
+EmptyImage[SW][1]=./railcars/br-120-dmsl-bg_SW.0.0
+EmptyImage[W][1]=./railcars/br-120-dmsl-bg_W.0.0
+EmptyImage[NW][1]=./railcars/br-120-dmsl-bg_NW.0.0
+EmptyImage[N][1]=./railcars/br-120-dmsl-bg_N.0.0
+EmptyImage[NE][1]=./railcars/br-120-dmsl-bg_NE.0.0
 --
