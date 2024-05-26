@@ -187,7 +187,6 @@ weight=36
 cost=1840000
 runningcost=64
 fixed_cost=6958
-sound=konakaboom-class-159.wav
 
 increase_maintenance_after_years=24
 
