@@ -43,6 +43,7 @@ comfort[3]=107
 Constraint[Prev][0]=BR-104Middle
 Constraint[Prev][1]=BR-104Front
 
+# Blue suquare
 Constraint[Next][0]=BR-121
 Constraint[Next][1]=BR-117-DMBS
 Constraint[Next][2]=BR-104Front
@@ -144,6 +145,7 @@ comfort[1]=80
 comfort[2]=0
 comfort[3]=107
 
+# Blue suquare
 Constraint[Prev][0]=BR-121
 Constraint[Prev][1]=BR-117-DMS
 Constraint[Prev][2]=BR-104Rear
