@@ -24,6 +24,9 @@ payload[1]=65
 overcrowded_capacity=64
 length=11
 
+# Note: these are reported as having a range of 500 miles on a 95 gallon tank for each engine (two per motor car):
+# https://railcar.co.uk/type/class-127/power-train
+
 weight=40.6
 axles=4
 cost=1380000
