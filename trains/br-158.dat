@@ -1,4 +1,3 @@
-# TODO: Add Class 159 (with first class)
 obj=vehicle
 name=br-158-front
 engine_type=diesel
@@ -21,7 +20,7 @@ length=12
 brake_force=29
 rolling_resistance=13
 
-weight=38
+weight=38.5
 axles=4
 cost=2100000
 runningcost=78
@@ -48,7 +47,8 @@ Constraint[Prev][7]=br-142-1-rear
 Constraint[Prev][8]=br-144-0-rear
 Constraint[Prev][9]=br-144-1-rear
 Constraint[Prev][10]=BR-170Rear
-Constraint[Prev][11]=none
+Constraint[Prev][11]=br-159-rear
+Constraint[Prev][12]=none
 
 Constraint[Next][0]=br-158-rear
 Constraint[Next][1]=br-158-centre
@@ -88,7 +88,7 @@ length=12
 brake_force=29
 rolling_resistance=13
 
-weight=38
+weight=38.5
 axles=4
 cost=2100000
 runningcost=78
@@ -104,7 +104,6 @@ comfort[0]=0
 comfort[1]=118
 
 Constraint[Prev][0]=br-158-front
-Constraint[Prev][1]=br-158-centre
 
 Constraint[Next][0]=br-158-rear
 
@@ -143,7 +142,7 @@ length=12
 brake_force=29
 rolling_resistance=13
 
-weight=38
+weight=38.5
 axles=4
 cost=2100000
 runningcost=78
@@ -173,7 +172,8 @@ Constraint[Next][8]=br-142-1-front
 Constraint[Next][9]=br-144-0-front
 Constraint[Next][10]=br-144-1-front
 Constraint[Next][11]=BR-170Front
-Constraint[Next][12]=none
+Constraint[Next][12]=br-159-front
+Constraint[Next][13]=none
 
 liverytype[0]=Regional-Railways-Standard
 
