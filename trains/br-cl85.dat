@@ -1,16 +1,16 @@
-# https://en.wikipedia.org/wiki/British_Rail_Class_81
+# https://en.wikipedia.org/wiki/British_Rail_Class_85
 obj=vehicle
-name=BR-Class81
+name=BR-Class85
 engine_type=electric
 speed=160
 gear=80
-power=2390
-tractive_effort=222
+power=2400
+tractive_effort=220
 copyright=Kieron/JamesPetts/Rollmaterial
-intro_year=1959
+intro_year=1961
 intro_month=11
-retire_year=1963
-retire_month=1
+retire_year=1965
+retire_month=8
 waytype=track
 freight=None
 payload=0
@@ -19,9 +19,9 @@ rolling_resistance=13
 
 weight=80.9
 axles=4
-cost=8785000
-runningcost=479
-fixed_cost=16101
+cost=8801000
+runningcost=456
+fixed_cost=16100
 sound=treacher-rail-class-86.wav
 increase_maintenance_after_years=20
 
@@ -32,6 +32,7 @@ way_constraint_permissive[2]=2
 # No multiple working fitted
 Constraint[Prev][0]=none
 
+# Visually indistinguishable from the class 81
 liverytype[0]=BR-Revised
 liverytype[1]=BR-Blue
 liverytype[2]=IC-Executive
