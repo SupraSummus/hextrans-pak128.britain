@@ -9,8 +9,9 @@ tractive_effort=222
 copyright=Kieron/JamesPetts/Rollmaterial
 intro_year=1959
 intro_month=11
-retire_year=1963
-retire_month=1
+# https://en.wikipedia.org/wiki/British_Rail_Class_81
+retire_year=1964
+retire_month=2
 waytype=track
 freight=None
 payload=0
