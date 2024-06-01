@@ -850,7 +850,7 @@ Railway depot (steam)
 OldTrainDepotElectric
 Railway depot (electric)
 OldTrainDepotDiesel
-Railway depot (diesel)
+Railway depot (internal combustion)
 ModernTrainDepot
 Railway depot (modern traction)
 ModernTrainDepotElectric
@@ -4572,6 +4572,8 @@ br-150-centre
 BR Class 150 "Sprinter" DMU (centre)
 br-150-rear
 BR Class 150 "Sprinter" DMU (rear)
+ner-tyne-petrol-electric-railcar
+NER petrol-electric railcar
 NER-Tyneside-unit(front)
 NER Tyneside EMU
 NER-Tyneside-unit(rear motor)
@@ -4607,11 +4609,13 @@ LMS Class 502 EMU (centre trailer, third class)
 LMS-502MiddleComposite
 LMS Class 502 EMU (centre trailer, composite)
 Metropolitan-Motor-Third-Front
-Metropolitan four compartment EMU driving carriage
+Metropolitan four compartment EMU driving carriage (third class)
 Metropolitan-Motor-Third-Middle
-Metropolitan seven compartment EMU centre carriage
+Metropolitan seven compartment EMU centre carriage (first class)
+Metropolitan-Motor-Third-Middle
+Metropolitan seven compartment EMU centre carriage (third class)
 Metropolitan-Motor-Third-Back
-Metropolitan four compartment EMU driving carriage (rear)
+Metropolitan four compartment EMU driving carriage (rear) (third class)
 met-mv-stock-front
 Metropolitan MV stock EMU driving motor (third class)
 met-mv-stock-centre
