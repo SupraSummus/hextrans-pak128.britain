@@ -36,7 +36,7 @@ Constraint[Prev][0]=none
 
 liverytype[0]=BR-Early
 liverytype[1]=BR-Revised
-liverytype[2]=b
+liverytype[2]=BR-Blue
 
 EmptyImage[E][0]=./locomotives/lms-10800_E.0.0
 EmptyImage[SE][0]=./locomotives/lms-10800_SE.0.0
