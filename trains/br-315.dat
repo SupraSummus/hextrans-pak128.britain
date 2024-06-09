@@ -50,6 +50,7 @@ Constraint[Next][0]=BR-315Pantograph
 liverytype[0]=BR-Blue
 liverytype[1]=NSE-Standard
 liverytype[2]=One
+liverytype[3]=wagn-purple
 
 EmptyImage[E][0]=./railcars/br-313-a-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-313-a-bg_SE.0.0
@@ -78,6 +79,14 @@ EmptyImage[NW][2]=./railcars/br-315-front-one_NW.0.0
 EmptyImage[N][2]=./railcars/br-315-front-one_N.0.0
 EmptyImage[NE][2]=./railcars/br-315-front-one_NE.0.0
 
+EmptyImage[E][3]=./railcars/br-315-front-wagn_E.0.0
+EmptyImage[SE][3]=./railcars/br-315-front-wagn_SE.0.0
+EmptyImage[S][3]=./railcars/br-315-front-wagn_S.0.0
+EmptyImage[SW][3]=./railcars/br-315-front-wagn_SW.0.0
+EmptyImage[W][3]=./railcars/br-315-front-wagn_W.0.0
+EmptyImage[NW][3]=./railcars/br-315-front-wagn_NW.0.0
+EmptyImage[N][3]=./railcars/br-315-front-wagn_N.0.0
+EmptyImage[NE][3]=./railcars/br-315-front-wagn_NE.0.0
 ---
 
 obj=vehicle
@@ -124,6 +133,7 @@ Constraint[Next][1]=BR-315Trailer
 liverytype[0]=BR-Blue
 liverytype[1]=NSE-Standard
 liverytype[2]=One
+liverytype[3]=wagn-purple
 
 EmptyImage[E][0]=./railcars/br-313-b-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-313-b-bg_SE.0.0
@@ -152,6 +162,14 @@ EmptyImage[NW][2]=./railcars/br-315-panto-one_NW.0.0
 EmptyImage[N][2]=./railcars/br-315-panto-one_N.0.0
 EmptyImage[NE][2]=./railcars/br-315-panto-one_NE.0.0
 
+EmptyImage[E][3]=./railcars/br-315-panto-wagn_E.0.0
+EmptyImage[SE][3]=./railcars/br-315-panto-wagn_SE.0.0
+EmptyImage[S][3]=./railcars/br-315-panto-wagn_S.0.0
+EmptyImage[SW][3]=./railcars/br-315-panto-wagn_SW.0.0
+EmptyImage[W][3]=./railcars/br-315-panto-wagn_W.0.0
+EmptyImage[NW][3]=./railcars/br-315-panto-wagn_NW.0.0
+EmptyImage[N][3]=./railcars/br-315-panto-wagn_N.0.0
+EmptyImage[NE][3]=./railcars/br-315-panto-wagn_NE.0.0
 ---
 
 obj=vehicle
@@ -196,6 +214,7 @@ Constraint[Next][0]=BR-315Rear
 liverytype[0]=BR-Blue
 liverytype[1]=NSE-Standard
 liverytype[2]=One
+liverytype[3]=wagn-purple
 
 EmptyImage[E][0]=./railcars/br-507-trailer-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-507-trailer-bg_SE.0.0
@@ -224,6 +243,14 @@ EmptyImage[NW][2]=./railcars/br-315-trailer-one_NW.0.0
 EmptyImage[N][2]=./railcars/br-315-trailer-one_N.0.0
 EmptyImage[NE][2]=./railcars/br-315-trailer-one_NE.0.0
 
+EmptyImage[E][3]=./railcars/br-315-trailer-wagn_E.0.0
+EmptyImage[SE][3]=./railcars/br-315-trailer-wagn_SE.0.0
+EmptyImage[S][3]=./railcars/br-315-trailer-wagn_S.0.0
+EmptyImage[SW][3]=./railcars/br-315-trailer-wagn_SW.0.0
+EmptyImage[W][3]=./railcars/br-315-trailer-wagn_W.0.0
+EmptyImage[NW][3]=./railcars/br-315-trailer-wagn_NW.0.0
+EmptyImage[N][3]=./railcars/br-315-trailer-wagn_N.0.0
+EmptyImage[NE][3]=./railcars/br-315-trailer-wagn_NE.0.0
 ---
 
 obj=vehicle
@@ -272,6 +299,7 @@ Constraint[Next][2]=none
 liverytype[0]=BR-Blue
 liverytype[1]=NSE-Standard
 liverytype[2]=One
+liverytype[3]=wagn-purple
 
 EmptyImage[E][0]=./railcars/br-313-c-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-313-c-bg_SE.0.0
@@ -299,4 +327,13 @@ EmptyImage[W][2]=./railcars/br-315-rear-one_W.0.0
 EmptyImage[NW][2]=./railcars/br-315-rear-one_NW.0.0
 EmptyImage[N][2]=./railcars/br-315-rear-one_N.0.0
 EmptyImage[NE][2]=./railcars/br-315-rear-one_NE.0.0
+
+EmptyImage[E][3]=./railcars/br-315-rear-wagn_E.0.0
+EmptyImage[SE][3]=./railcars/br-315-rear-wagn_SE.0.0
+EmptyImage[S][3]=./railcars/br-315-rear-wagn_S.0.0
+EmptyImage[SW][3]=./railcars/br-315-rear-wagn_SW.0.0
+EmptyImage[W][3]=./railcars/br-315-rear-wagn_W.0.0
+EmptyImage[NW][3]=./railcars/br-315-rear-wagn_NW.0.0
+EmptyImage[N][3]=./railcars/br-315-rear-wagn_N.0.0
+EmptyImage[NE][3]=./railcars/br-315-rear-wagn_NE.0.0
 --
