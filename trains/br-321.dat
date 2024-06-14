@@ -7,7 +7,7 @@ name=BR-321(front)
 engine_type=electric
 speed=160
 power=0
-copyright=Kieron
+copyright=Kieron/Rollmaterial
 intro_year=1988
 intro_month=1
 retire_year=1994
@@ -47,6 +47,8 @@ Constraint[Prev][1]=none
 Constraint[Next][0]=BR-321(pantograph)
 
 liverytype[0]=NSE-Standard
+# For contemporary First Great Eastern
+liverytype[1]=Anglia-original
 
 EmptyImage[E][0]=./railcars/br-321-dtso-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-321-dtso-nse_SE.0.0
@@ -57,6 +59,15 @@ EmptyImage[NW][0]=./railcars/br-321-dtso-nse_NW.0.0
 EmptyImage[N][0]=./railcars/br-321-dtso-nse_N.0.0
 EmptyImage[NE][0]=./railcars/br-321-dtso-nse_NE.0.0
 
+EmptyImage[E][1]=./railcars/br-321-dtso-fge_E.0.0
+EmptyImage[SE][1]=./railcars/br-321-dtso-fge_SE.0.0
+EmptyImage[S][1]=./railcars/br-321-dtso-fge_S.0.0
+EmptyImage[SW][1]=./railcars/br-321-dtso-fge_SW.0.0
+EmptyImage[W][1]=./railcars/br-321-dtso-fge_W.0.0
+EmptyImage[NW][1]=./railcars/br-321-dtso-fge_NW.0.0
+EmptyImage[N][1]=./railcars/br-321-dtso-fge_N.0.0
+EmptyImage[NE][1]=./railcars/br-321-dtso-fge_NE.0.0
+
 ----
 
 obj=vehicle
@@ -64,7 +75,7 @@ name=BR-321(front-composite)
 engine_type=electric
 speed=160
 power=0
-copyright=Kieron
+copyright=Kieron/Rollmaterial
 intro_year=1988
 intro_month=1
 retire_year=1994
@@ -104,6 +115,8 @@ Constraint[Prev][1]=none
 Constraint[Next][0]=BR-321(pantograph)
 
 liverytype[0]=NSE-Standard
+# For contemporary First Great Eastern
+liverytype[1]=Anglia-original
 
 EmptyImage[E][0]=./railcars/br-321-dtco-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-321-dtco-nse_SE.0.0
@@ -114,6 +127,15 @@ EmptyImage[NW][0]=./railcars/br-321-dtco-nse_NW.0.0
 EmptyImage[N][0]=./railcars/br-321-dtco-nse_N.0.0
 EmptyImage[NE][0]=./railcars/br-321-dtco-nse_NE.0.0
 
+EmptyImage[E][1]=./railcars/br-321-dtco-fge_E.0.0
+EmptyImage[SE][1]=./railcars/br-321-dtco-fge_SE.0.0
+EmptyImage[S][1]=./railcars/br-321-dtco-fge_S.0.0
+EmptyImage[SW][1]=./railcars/br-321-dtco-fge_SW.0.0
+EmptyImage[W][1]=./railcars/br-321-dtco-fge_W.0.0
+EmptyImage[NW][1]=./railcars/br-321-dtco-fge_NW.0.0
+EmptyImage[N][1]=./railcars/br-321-dtco-fge_N.0.0
+EmptyImage[NE][1]=./railcars/br-321-dtco-fge_NE.0.0
+
 ----
 
 obj=vehicle
@@ -123,7 +145,7 @@ speed=160
 power=1072
 tractive_effort=97
 gear=80
-copyright=Kieron
+copyright=Kieron/Rollmaterial
 intro_year=1988
 intro_month=1
 retire_year=1994
@@ -162,6 +184,8 @@ Constraint[Prev][1]=BR-321(front-composite)
 Constraint[Next][0]=BR-321(trailer)
 
 liverytype[0]=NSE-Standard
+# For contemporary First Great Eastern
+liverytype[1]=Anglia-original
 
 EmptyImage[E][0]=./railcars/br-319-mso-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-319-mso-nse_SE.0.0
@@ -172,6 +196,14 @@ EmptyImage[NW][0]=./railcars/br-319-mso-nse_NW.0.0
 EmptyImage[N][0]=./railcars/br-319-mso-nse_N.0.0
 EmptyImage[NE][0]=./railcars/br-319-mso-nse_NE.0.0
 
+EmptyImage[E][1]=./railcars/br-321-mso-fge_E.0.0
+EmptyImage[SE][1]=./railcars/br-321-mso-fge_SE.0.0
+EmptyImage[S][1]=./railcars/br-321-mso-fge_S.0.0
+EmptyImage[SW][1]=./railcars/br-321-mso-fge_SW.0.0
+EmptyImage[W][1]=./railcars/br-321-mso-fge_W.0.0
+EmptyImage[NW][1]=./railcars/br-321-mso-fge_NW.0.0
+EmptyImage[N][1]=./railcars/br-321-mso-fge_N.0.0
+EmptyImage[NE][1]=./railcars/br-321-mso-fge_NE.0.0
 
 ---
 
@@ -180,7 +212,7 @@ name=BR-321(trailer)
 engine_type=electric
 speed=160
 power=0
-copyright=Kieron
+copyright=Kieron/Rollmaterial
 intro_year=1988
 intro_month=1
 retire_year=1994
@@ -218,6 +250,8 @@ Constraint[Prev][0]=BR-321(pantograph)
 Constraint[Next][0]=BR-321(rear)
 
 liverytype[0]=NSE-Standard
+# For contemporary First Great Eastern
+liverytype[1]=Anglia-original
 
 EmptyImage[E][0]=./railcars/br-319-tsol-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-319-tsol-nse_SE.0.0
@@ -228,6 +262,15 @@ EmptyImage[NW][0]=./railcars/br-319-tsol-nse_NW.0.0
 EmptyImage[N][0]=./railcars/br-319-tsol-nse_N.0.0
 EmptyImage[NE][0]=./railcars/br-319-tsol-nse_NE.0.0
 
+EmptyImage[E][1]=./railcars/br-321-tsol-fge_E.0.0
+EmptyImage[SE][1]=./railcars/br-321-tsol-fge_SE.0.0
+EmptyImage[S][1]=./railcars/br-321-tsol-fge_S.0.0
+EmptyImage[SW][1]=./railcars/br-321-tsol-fge_SW.0.0
+EmptyImage[W][1]=./railcars/br-321-tsol-fge_W.0.0
+EmptyImage[NW][1]=./railcars/br-321-tsol-fge_NW.0.0
+EmptyImage[N][1]=./railcars/br-321-tsol-fge_N.0.0
+EmptyImage[NE][1]=./railcars/br-321-tsol-fge_NE.0.0
+
 ---
 
 obj=vehicle
@@ -235,7 +278,7 @@ name=BR-321(rear)
 engine_type=electric
 speed=160
 power=0
-copyright=Kieron
+copyright=Kieron/Rollmaterial
 intro_year=1988
 intro_month=1
 retire_year=1994
@@ -276,6 +319,8 @@ Constraint[Next][1]=BR-321(front-composite)
 Constraint[Next][2]=none
 
 liverytype[0]=NSE-Standard
+# For contemporary First Great Eastern
+liverytype[1]=Anglia-original
 
 EmptyImage[E][0]=./railcars/br-321-dtso-rear-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-321-dtso-rear-nse_SE.0.0
@@ -285,4 +330,13 @@ EmptyImage[W][0]=./railcars/br-321-dtso-rear-nse_W.0.0
 EmptyImage[NW][0]=./railcars/br-321-dtso-rear-nse_NW.0.0
 EmptyImage[N][0]=./railcars/br-321-dtso-rear-nse_N.0.0
 EmptyImage[NE][0]=./railcars/br-321-dtso-rear-nse_NE.0.0
+
+EmptyImage[E][1]=./railcars/br-321-dtso-rear-fge_E.0.0
+EmptyImage[SE][1]=./railcars/br-321-dtso-rear-fge_SE.0.0
+EmptyImage[S][1]=./railcars/br-321-dtso-rear-fge_S.0.0
+EmptyImage[SW][1]=./railcars/br-321-dtso-rear-fge_SW.0.0
+EmptyImage[W][1]=./railcars/br-321-dtso-rear-fge_W.0.0
+EmptyImage[NW][1]=./railcars/br-321-dtso-rear-fge_NW.0.0
+EmptyImage[N][1]=./railcars/br-321-dtso-rear-fge_N.0.0
+EmptyImage[NE][1]=./railcars/br-321-dtso-rear-fge_NE.0.0
 --
