@@ -54,6 +54,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-313-a-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-313-a-bg_SE.0.0
@@ -108,6 +109,15 @@ EmptyImage[W][5]=./railcars/br-315-front-nxea_W.0.0
 EmptyImage[NW][5]=./railcars/br-315-front-nxea_NW.0.0
 EmptyImage[N][5]=./railcars/br-315-front-nxea_N.0.0
 EmptyImage[NE][5]=./railcars/br-315-front-nxea_NE.0.0
+
+EmptyImage[E][6]=./railcars/br-315-front-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-315-front-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-315-front-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-315-front-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-315-front-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-315-front-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-315-front-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-315-front-abellio_NE.0.0
 ---
 
 obj=vehicle
@@ -158,6 +168,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-313-b-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-313-b-bg_SE.0.0
@@ -212,6 +223,15 @@ EmptyImage[W][5]=./railcars/br-315-panto-nxea_W.0.0
 EmptyImage[NW][5]=./railcars/br-315-panto-nxea_NW.0.0
 EmptyImage[N][5]=./railcars/br-315-panto-nxea_N.0.0
 EmptyImage[NE][5]=./railcars/br-315-panto-nxea_NE.0.0
+
+EmptyImage[E][6]=./railcars/br-315-panto-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-315-panto-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-315-panto-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-315-panto-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-315-panto-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-315-panto-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-315-panto-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-315-panto-abellio_NE.0.0
 ---
 
 obj=vehicle
@@ -260,6 +280,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-507-trailer-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-507-trailer-bg_SE.0.0
@@ -314,6 +335,15 @@ EmptyImage[W][5]=./railcars/br-315-trailer-nxea_W.0.0
 EmptyImage[NW][5]=./railcars/br-315-trailer-nxea_NW.0.0
 EmptyImage[N][5]=./railcars/br-315-trailer-nxea_N.0.0
 EmptyImage[NE][5]=./railcars/br-315-trailer-nxea_NE.0.0
+
+EmptyImage[E][6]=./railcars/br-315-trailer-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-315-trailer-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-315-trailer-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-315-trailer-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-315-trailer-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-315-trailer-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-315-trailer-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-315-trailer-abellio_NE.0.0
 ---
 
 obj=vehicle
@@ -366,6 +396,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-313-c-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-313-c-bg_SE.0.0
@@ -420,4 +451,13 @@ EmptyImage[W][5]=./railcars/br-315-rear-nxea_W.0.0
 EmptyImage[NW][5]=./railcars/br-315-rear-nxea_NW.0.0
 EmptyImage[N][5]=./railcars/br-315-rear-nxea_N.0.0
 EmptyImage[NE][5]=./railcars/br-315-rear-nxea_NE.0.0
+
+EmptyImage[E][6]=./railcars/br-315-rear-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-315-rear-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-315-rear-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-315-rear-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-315-rear-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-315-rear-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-315-rear-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-315-rear-abellio_NE.0.0
 --
