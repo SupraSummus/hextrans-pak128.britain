@@ -50,6 +50,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-317-driving-trailer-front-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-317-driving-trailer-front-bg_SE.0.0
@@ -105,6 +106,14 @@ EmptyImage[NW][5]=./railcars/br-317-driving-trailer-front-nx_NW.0.0
 EmptyImage[N][5]=./railcars/br-317-driving-trailer-front-nx_N.0.0
 EmptyImage[NE][5]=./railcars/br-317-driving-trailer-front-nx_NE.0.0
 
+EmptyImage[E][6]=./railcars/br-317-driving-trailer-front-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-317-driving-trailer-front-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-317-driving-trailer-front-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-317-driving-trailer-front-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-317-driving-trailer-front-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-317-driving-trailer-front-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-317-driving-trailer-front-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-317-driving-trailer-front-abellio_NE.0.0
 ---
 
 obj=vehicle
@@ -158,6 +167,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-317-motor-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-317-motor-bg_SE.0.0
@@ -213,6 +223,15 @@ EmptyImage[NW][5]=./railcars/br-317-motor-nx_NW.0.0
 EmptyImage[N][5]=./railcars/br-317-motor-nx_N.0.0
 EmptyImage[NE][5]=./railcars/br-317-motor-nx_NE.0.0
 
+EmptyImage[E][6]=./railcars/br-317-motor-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-317-motor-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-317-motor-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-317-motor-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-317-motor-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-317-motor-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-317-motor-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-317-motor-abellio_NE.0.0
+
 ---
 
 obj=vehicle
@@ -264,6 +283,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 # The 210 and 317 trailers are identical in appearance.
 # The original 317 graphics (kept in reserve) do not 
@@ -323,6 +343,15 @@ EmptyImage[NW][5]=./railcars/br-317-trailer-nx_NW.0.0
 EmptyImage[N][5]=./railcars/br-317-trailer-nx_N.0.0
 EmptyImage[NE][5]=./railcars/br-317-trailer-nx_NE.0.0
 
+EmptyImage[E][6]=./railcars/br-317-trailer-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-317-trailer-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-317-trailer-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-317-trailer-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-317-trailer-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-317-trailer-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-317-trailer-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-317-trailer-abellio_NE.0.0
+
 ---
 
 obj=vehicle
@@ -376,6 +405,7 @@ liverytype[3]=wagn-purple
 # For contemporary First Great Eastern
 liverytype[4]=Anglia-original
 liverytype[5]=NXEA
+liverytype[6]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-317-driving-trailer-rear-bg_E.0.0
 EmptyImage[SE][0]=./railcars/br-317-driving-trailer-rear-bg_SE.0.0
@@ -430,4 +460,13 @@ EmptyImage[W][5]=./railcars/br-317-driving-trailer-rear-nx_W.0.0
 EmptyImage[NW][5]=./railcars/br-317-driving-trailer-rear-nx_NW.0.0
 EmptyImage[N][5]=./railcars/br-317-driving-trailer-rear-nx_N.0.0
 EmptyImage[NE][5]=./railcars/br-317-driving-trailer-rear-nx_NE.0.0
+
+EmptyImage[E][6]=./railcars/br-317-driving-trailer-rear-abellio_E.0.0
+EmptyImage[SE][6]=./railcars/br-317-driving-trailer-rear-abellio_SE.0.0
+EmptyImage[S][6]=./railcars/br-317-driving-trailer-rear-abellio_S.0.0
+EmptyImage[SW][6]=./railcars/br-317-driving-trailer-rear-abellio_SW.0.0
+EmptyImage[W][6]=./railcars/br-317-driving-trailer-rear-abellio_W.0.0
+EmptyImage[NW][6]=./railcars/br-317-driving-trailer-rear-abellio_NW.0.0
+EmptyImage[N][6]=./railcars/br-317-driving-trailer-rear-abellio_N.0.0
+EmptyImage[NE][6]=./railcars/br-317-driving-trailer-rear-abellio_NE.0.0
 --
