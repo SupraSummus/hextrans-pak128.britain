@@ -50,6 +50,7 @@ liverytype[0]=NSE-Standard
 # For contemporary First Great Eastern
 liverytype[1]=Anglia-original
 liverytype[2]=NXEA
+liverytype[3]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-321-dtso-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-321-dtso-nse_SE.0.0
@@ -78,6 +79,14 @@ EmptyImage[NW][2]=./railcars/br-321-dtso-nx_NW.0.0
 EmptyImage[N][2]=./railcars/br-321-dtso-nx_N.0.0
 EmptyImage[NE][2]=./railcars/br-321-dtso-nx_NE.0.0
 
+EmptyImage[E][3]=./railcars/br-321-dtso-abellio_E.0.0
+EmptyImage[SE][3]=./railcars/br-321-dtso-abellio_SE.0.0
+EmptyImage[S][3]=./railcars/br-321-dtso-abellio_S.0.0
+EmptyImage[SW][3]=./railcars/br-321-dtso-abellio_SW.0.0
+EmptyImage[W][3]=./railcars/br-321-dtso-abellio_W.0.0
+EmptyImage[NW][3]=./railcars/br-321-dtso-abellio_NW.0.0
+EmptyImage[N][3]=./railcars/br-321-dtso-abellio_N.0.0
+EmptyImage[NE][3]=./railcars/br-321-dtso-abellio_NE.0.0
 ----
 
 obj=vehicle
@@ -128,6 +137,7 @@ liverytype[0]=NSE-Standard
 # For contemporary First Great Eastern
 liverytype[1]=Anglia-original
 liverytype[2]=NXEA
+liverytype[3]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-321-dtco-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-321-dtco-nse_SE.0.0
@@ -155,6 +165,15 @@ EmptyImage[W][2]=./railcars/br-321-dtco-nx_W.0.0
 EmptyImage[NW][2]=./railcars/br-321-dtco-nx_NW.0.0
 EmptyImage[N][2]=./railcars/br-321-dtco-nx_N.0.0
 EmptyImage[NE][2]=./railcars/br-321-dtco-nx_NE.0.0
+
+EmptyImage[E][3]=./railcars/br-321-dtco-abellio_E.0.0
+EmptyImage[SE][3]=./railcars/br-321-dtco-abellio_SE.0.0
+EmptyImage[S][3]=./railcars/br-321-dtco-abellio_S.0.0
+EmptyImage[SW][3]=./railcars/br-321-dtco-abellio_SW.0.0
+EmptyImage[W][3]=./railcars/br-321-dtco-abellio_W.0.0
+EmptyImage[NW][3]=./railcars/br-321-dtco-abellio_NW.0.0
+EmptyImage[N][3]=./railcars/br-321-dtco-abellio_N.0.0
+EmptyImage[NE][3]=./railcars/br-321-dtco-abellio_NE.0.0
 
 ----
 
@@ -207,6 +226,7 @@ liverytype[0]=NSE-Standard
 # For contemporary First Great Eastern
 liverytype[1]=Anglia-original
 liverytype[2]=NXEA
+liverytype[3]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-319-mso-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-319-mso-nse_SE.0.0
@@ -234,6 +254,15 @@ EmptyImage[W][2]=./railcars/br-321-mso-nx_W.0.0
 EmptyImage[NW][2]=./railcars/br-321-mso-nx_NW.0.0
 EmptyImage[N][2]=./railcars/br-321-mso-nx_N.0.0
 EmptyImage[NE][2]=./railcars/br-321-mso-nx_NE.0.0
+
+EmptyImage[E][3]=./railcars/br-321-mso-abellio_E.0.0
+EmptyImage[SE][3]=./railcars/br-321-mso-abellio_SE.0.0
+EmptyImage[S][3]=./railcars/br-321-mso-abellio_S.0.0
+EmptyImage[SW][3]=./railcars/br-321-mso-abellio_SW.0.0
+EmptyImage[W][3]=./railcars/br-321-mso-abellio_W.0.0
+EmptyImage[NW][3]=./railcars/br-321-mso-abellio_NW.0.0
+EmptyImage[N][3]=./railcars/br-321-mso-abellio_N.0.0
+EmptyImage[NE][3]=./railcars/br-321-mso-abellio_NE.0.0
 
 ---
 
@@ -283,6 +312,7 @@ liverytype[0]=NSE-Standard
 # For contemporary First Great Eastern
 liverytype[1]=Anglia-original
 liverytype[2]=NXEA
+liverytype[3]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-319-tsol-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-319-tsol-nse_SE.0.0
@@ -310,6 +340,15 @@ EmptyImage[W][2]=./railcars/br-321-tsol-nx_W.0.0
 EmptyImage[NW][2]=./railcars/br-321-tsol-nx_NW.0.0
 EmptyImage[N][2]=./railcars/br-321-tsol-nx_N.0.0
 EmptyImage[NE][2]=./railcars/br-321-tsol-nx_NE.0.0
+
+EmptyImage[E][3]=./railcars/br-321-tsol-abellio_E.0.0
+EmptyImage[SE][3]=./railcars/br-321-tsol-abellio_SE.0.0
+EmptyImage[S][3]=./railcars/br-321-tsol-abellio_S.0.0
+EmptyImage[SW][3]=./railcars/br-321-tsol-abellio_SW.0.0
+EmptyImage[W][3]=./railcars/br-321-tsol-abellio_W.0.0
+EmptyImage[NW][3]=./railcars/br-321-tsol-abellio_NW.0.0
+EmptyImage[N][3]=./railcars/br-321-tsol-abellio_N.0.0
+EmptyImage[NE][3]=./railcars/br-321-tsol-abellio_NE.0.0
 
 ---
 
@@ -362,6 +401,7 @@ liverytype[0]=NSE-Standard
 # For contemporary First Great Eastern
 liverytype[1]=Anglia-original
 liverytype[2]=NXEA
+liverytype[3]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-321-dtso-rear-nse_E.0.0
 EmptyImage[SE][0]=./railcars/br-321-dtso-rear-nse_SE.0.0
@@ -389,4 +429,13 @@ EmptyImage[W][2]=./railcars/br-321-dtso-rear-nx_W.0.0
 EmptyImage[NW][2]=./railcars/br-321-dtso-rear-nx_NW.0.0
 EmptyImage[N][2]=./railcars/br-321-dtso-rear-nx_N.0.0
 EmptyImage[NE][2]=./railcars/br-321-dtso-rear-nx_NE.0.0
+
+EmptyImage[E][3]=./railcars/br-321-dtso-rear-abellio_E.0.0
+EmptyImage[SE][3]=./railcars/br-321-dtso-rear-abellio_SE.0.0
+EmptyImage[S][3]=./railcars/br-321-dtso-rear-abellio_S.0.0
+EmptyImage[SW][3]=./railcars/br-321-dtso-rear-abellio_SW.0.0
+EmptyImage[W][3]=./railcars/br-321-dtso-rear-abellio_W.0.0
+EmptyImage[NW][3]=./railcars/br-321-dtso-rear-abellio_NW.0.0
+EmptyImage[N][3]=./railcars/br-321-dtso-rear-abellio_N.0.0
+EmptyImage[NE][3]=./railcars/br-321-dtso-rear-abellio_NE.0.0
 --
