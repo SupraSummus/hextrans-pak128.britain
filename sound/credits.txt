@@ -534,6 +534,11 @@ https://www.youtube.com/watch?v=u0iKkj7C08o&lc=Ugy8jUureFPYZBgg4TN4AaABAg.9WaS9Y
 Bus&TrainChaser93-leyland-titan-td5.wav
 (Artistic Licence 1.0)
 
+James E. Petts
+jep-microswitch.wav
+(CC Attribution share-alike)
+(Artistic Licence 1.0)
+
 ** Links to licence terms and other notes **
 Sampling+: https://creativecommons.org/licenses/sampling+/1.0/
 CC Attribution: https://creativecommons.org/licenses/by/3.0/
