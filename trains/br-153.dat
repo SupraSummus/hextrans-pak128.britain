@@ -73,6 +73,8 @@ Constraint[Next][13]=none
 liverytype[0]=Regional-Railways-Standard
 liverytype[1]=One
 liverytype[2]=Anglia-original
+liverytype[3]=NXEA
+liverytype[4]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-153-rr_E.0.0
 EmptyImage[SE][0]=./railcars/br-153-rr_SE.0.0
@@ -100,6 +102,24 @@ EmptyImage[W][2]=./railcars/br-153-anglia_W.0.0
 EmptyImage[NW][2]=./railcars/br-153-anglia_NW.0.0
 EmptyImage[N][2]=./railcars/br-153-anglia_N.0.0
 EmptyImage[NE][2]=./railcars/br-153-anglia_NE.0.0
+
+EmptyImage[E][3]=./railcars/br-153-nxea_E.0.0
+EmptyImage[SE][3]=./railcars/br-153-nxea_SE.0.0
+EmptyImage[S][3]=./railcars/br-153-nxea_S.0.0
+EmptyImage[SW][3]=./railcars/br-153-nxea_SW.0.0
+EmptyImage[W][3]=./railcars/br-153-nxea_W.0.0
+EmptyImage[NW][3]=./railcars/br-153-nxea_NW.0.0
+EmptyImage[N][3]=./railcars/br-153-nxea_N.0.0
+EmptyImage[NE][3]=./railcars/br-153-nxea_NE.0.0
+
+EmptyImage[E][4]=./railcars/br-153-abellio_E.0.0
+EmptyImage[SE][4]=./railcars/br-153-abellio_SE.0.0
+EmptyImage[S][4]=./railcars/br-153-abellio_S.0.0
+EmptyImage[SW][4]=./railcars/br-153-abellio_SW.0.0
+EmptyImage[W][4]=./railcars/br-153-abellio_W.0.0
+EmptyImage[NW][4]=./railcars/br-153-abellio_NW.0.0
+EmptyImage[N][4]=./railcars/br-153-abellio_N.0.0
+EmptyImage[NE][4]=./railcars/br-153-abellio_NE.0.0
 -----
 
 obj=vehicle
@@ -177,6 +197,8 @@ Constraint[Next][13]=none
 liverytype[0]=Regional-Railways-Standard
 liverytype[1]=One
 liverytype[2]=Anglia-original
+liverytype[3]=NXEA
+liverytype[4]=Abellio-Greater-Anglia
 
 EmptyImage[E][0]=./railcars/br-153-rr_E.0.0
 EmptyImage[SE][0]=./railcars/br-153-rr_SE.0.0
@@ -204,4 +226,22 @@ EmptyImage[W][2]=./railcars/br-153-anglia_W.0.0
 EmptyImage[NW][2]=./railcars/br-153-anglia_NW.0.0
 EmptyImage[N][2]=./railcars/br-153-anglia_N.0.0
 EmptyImage[NE][2]=./railcars/br-153-anglia_NE.0.0
+
+EmptyImage[E][3]=./railcars/br-153-nxea_E.0.0
+EmptyImage[SE][3]=./railcars/br-153-nxea_SE.0.0
+EmptyImage[S][3]=./railcars/br-153-nxea_S.0.0
+EmptyImage[SW][3]=./railcars/br-153-nxea_SW.0.0
+EmptyImage[W][3]=./railcars/br-153-nxea_W.0.0
+EmptyImage[NW][3]=./railcars/br-153-nxea_NW.0.0
+EmptyImage[N][3]=./railcars/br-153-nxea_N.0.0
+EmptyImage[NE][3]=./railcars/br-153-nxea_NE.0.0
+
+EmptyImage[E][4]=./railcars/br-153-abellio_E.0.0
+EmptyImage[SE][4]=./railcars/br-153-abellio_SE.0.0
+EmptyImage[S][4]=./railcars/br-153-abellio_S.0.0
+EmptyImage[SW][4]=./railcars/br-153-abellio_SW.0.0
+EmptyImage[W][4]=./railcars/br-153-abellio_W.0.0
+EmptyImage[NW][4]=./railcars/br-153-abellio_NW.0.0
+EmptyImage[N][4]=./railcars/br-153-abellio_N.0.0
+EmptyImage[NE][4]=./railcars/br-153-abellio_NE.0.0
 --
