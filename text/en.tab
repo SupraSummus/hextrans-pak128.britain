@@ -4298,6 +4298,14 @@ BR-700MiddlePower
 BR Class 700 "Desiro City" EMU (centre motor)
 BR-700MiddleTrailer
 BR Class 700 "Desiro City" EMU (centre trailer)
+BR-700Panto
+BR Class 700 "Desiro City" EMU (front pantograph)
+BR-700PantoRear
+BR Class 700 "Desiro City" EMU (rear pantograph)
+BR-700TSOW
+BR Class 700 "Desiro City" EMU (wheelchair accomodation)
+BR-700TSOLW
+BR Class 700 "Desiro City" EMU (lavatory, wheelchair accomodation)
 BR-707Front
 BR Class 707 "Desiro City" EMU
 BR-707Rear
