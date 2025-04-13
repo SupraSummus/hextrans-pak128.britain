@@ -26,7 +26,7 @@ axles=4
 cost=1008000
 runningcost=170
 fixed_cost=6840
-sound=panos-g-class-375.wav
+sound=video47-class-350.wav
 
 min_loading_time=12
 max_loading_time=50
@@ -289,7 +289,7 @@ axles=4
 cost=1008000
 runningcost=170
 fixed_cost=6840
-sound=panos-g-class-375.wav
+sound=video47-class-350.wav
 
 min_loading_time=12
 max_loading_time=50
