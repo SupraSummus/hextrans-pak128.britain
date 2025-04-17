@@ -4331,13 +4331,23 @@ BR Class 717 "Desiro City" EMU (pantograph)
 BR-717Rear
 BR Class 717 "Desiro City" EMU (rear)
 BR-345Front
-BR Class 345 "Aventera" EMU
-BR-345Rear
-BR Class 345 "Aventera" EMU (rear)
-BR-345Middle
-BR Class 345 "Aventera" EMU (centre motor)
+BR Class 345 "Aventra" EMU
 BR-345Panto
-BR Class 345 "Aventera" EMU (pantograph car)
+BR Class 345 "Aventra" EMU (pantograph)
+BR-345Middle
+BR Class 345 "Aventra" EMU (centre motor 1)
+BR-345MS3Front
+BR Class 345 "Aventra" EMU (centre motor 3)
+BR-345TSW
+BR Class 345 "Aventra" EMU (wheelchair accommodation)
+BR-345MS3Rear
+BR Class 345 "Aventra" EMU (centre motor 3, rear)
+BR-345MiddleRear
+BR Class 345 "Aventra" EMU (centre motor 2)
+BR-345PantoRear
+BR Class 345 "Aventra" EMU (pantograph, rear)
+BR-345Rear
+BR Class 345 "Aventra" EMU (rear)
 BR-710Front
 BR Class 710 "Aventra" EMU
 BR-710Rear
