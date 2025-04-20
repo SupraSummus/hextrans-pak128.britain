@@ -4348,6 +4348,18 @@ BR-345PantoRear
 BR Class 345 "Aventra" EMU (pantograph, rear)
 BR-345Rear
 BR Class 345 "Aventra" EMU (rear)
+BR-701Front
+BR Class 701 "Arterio" EMU
+BR-701Panto
+BR Class 701 "Arterio" EMU (pantograph recess)
+BR-701TLW
+BR Class 701 "Arterio" EMU (wheelchair accommodation)
+BR-701Middle
+BR Class 701 "Arterio" EMU (centre motor)
+BR-701PantoRear
+BR Class 701 "Arterio" EMU (pantograph recess, rear)
+BR-701Rear
+BR Class 701 "Arterio" EMU (rear)
 BR-710Front
 BR Class 710 "Aventra" EMU
 BR-710Rear
