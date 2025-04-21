@@ -2787,13 +2787,17 @@ LMS Class 8F (tender)
 GNR-C1
 GNR Class C1 4-4-2
 GNR-C1-Tender
-GNR Express tender
+GNR express tender
+gnr-k1-tender
+GNR freight tender
 gnr-early-tender
 GNR tender
 GNR-C1-superheated
-GNR C1 Class  4-4-2 (superheated)
+GNR C1 Class 4-4-2 (superheated)
 GNR-Klondyke
 GNR C2 Class "Klondyke" 4-4-2
+gnr-k1
+GNR K1 Class 2-6-0
 gnr-d1
 GNR D1 Class 4-4-0
 gnr-d2
