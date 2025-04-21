@@ -2790,6 +2790,8 @@ GNR-C1-Tender
 GNR express tender
 gnr-k1-tender
 GNR freight tender
+gnr-k3-tender
+GNR mixed traffic tender
 gnr-early-tender
 GNR tender
 GNR-C1-superheated
@@ -2798,6 +2800,8 @@ GNR-Klondyke
 GNR C2 Class "Klondyke" 4-4-2
 gnr-k1
 GNR K1 Class 2-6-0
+gnr-k3
+GNR K3 Class 2-6-0
 gnr-d1
 GNR D1 Class 4-4-0
 gnr-d2
