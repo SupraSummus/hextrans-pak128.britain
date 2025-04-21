@@ -4,7 +4,7 @@ obj=vehicle
 name=gnr-k3
 engine_type=steam
 smoke=Steam
-speed=130
+speed=123
 # Extrapolated
 power=364
 tractive_effort=104
@@ -21,7 +21,7 @@ length=6
 weight=72.8
 axle_load=20
 cost=7715158
-runningcost=220
+runningcost=166
 fixed_cost=27004
 sound=lwalker-br-4mt-tank.wav
 
@@ -62,7 +62,7 @@ EmptyImage[NE][2]=./locomotives/gnr-k3-br_NE.0.0
 # We cannot use the C1 tender because this needs the LNER black livery, nor the K1 tender because it is unlined in LNER and BR liveries
 obj=vehicle
 name=gnr-k3-tender
-speed=130
+speed=123
 power=0
 copyright=Kieron/jamespetts
 intro_year=1920
