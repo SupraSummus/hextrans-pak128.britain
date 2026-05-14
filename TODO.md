@@ -22,16 +22,29 @@ map to objects (one blend per object? one blend with multiple
 collections? unknown until we look at one) and whether
 `bake_main` should sprout a multi-spec variant.
 
-**makeobj smoke-compile.**  No makeobj binary in this tree, so
-we've never actually compiled a port to `.pak`.  `Vehicle`'s
-field set was derived from `vehicle_writer.cc` by reading source,
-not by feeding the emitted dat through makeobj and watching for
-errors.  Concrete next move: clone hextrans, build makeobj, run
-it against `trains/_4wheel_1850s_first.dat` + the atlas, confirm
-it round-trips into a single-vehicle pak.  Will surface any
-schema gaps the porter missed — e.g. required-vs-optional
-classification mistakes, the unmodelled freight-image subsystem
-(see below) tripping a freight wagon, version-mismatch fatals.
+**Expand build scope as categories bake.**  `make all` compiles
+`grounds/`, `air/`, `trains/`, `trams/` today — the categories
+with at least one ported asset (`.dat`/`.png`/`.py` triple).
+Other Makefile `DIRS*` lines stay commented out as scope
+statement; per-dir, the `ported_dats` filter feeds only the
+`.dat` files with a sibling `.png` to makeobj, so re-enabling a
+dir doesn't drag in its unported upstream `.dat` files (e.g.
+`trains/` has 866 unported dats against 4 ported, and the build
+ignores the 866 without touching them).  Concrete next move when
+a new category's first asset is ported: uncomment its
+`DIRS128 += <dir>` (and matching `TR_DIRS += <dir>`) line, push,
+watch CI go green.
+
+**Vehicle rebake in CI.**  Lint workflow re-runs the parametric
+ground bakers and asserts byte-identical, but vehicle bakes don't
+run on CI — they need Blender + `libegl1` + a per-asset blend fetch
+(~minutes of Cycles per asset).  Concrete next move when the bake
+catalog grows past the ~5-asset spike: a `rebake-vehicles` job
+gated on diff-detected `bake.py` or `blends.lock` changes (path
+filter on the workflow trigger), installing Blender once and only
+rebaking the touched assets.  `CLAUDE.md` → "CI" notes this gap.
+Trigger: when drift in committed vehicle atlases is first observed
+(or when ~10 vehicles are baked, whichever comes first).
 
 **Freight-image subsystem unmodelled.**  Hex `vehicle_writer.cc`
 reads `freightimage[<dir>]` (single-freight visual variant),

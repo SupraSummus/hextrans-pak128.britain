@@ -9,91 +9,112 @@
 #
 MAKEOBJ ?= ./makeobj-extended
 
-DESTDIR  ?= .
+DESTDIR  ?= build
 PAKDIR   ?= $(DESTDIR)/pak128.Britain-Ex
 DESTFILE ?= simupak128.Britain-Ex
 
 # Dirs for simutranslator
+# Build scope is two-layered:
+#
+# * Category gate (the `DIRS* += <dir>` lines below): which dirs the
+#   build visits at all.  A category with no ports yet stays
+#   commented out — visiting it would generate an empty .pak with
+#   no contents.
+#
+# * File filter (the `ported_dats` function): within a visited dir,
+#   only `.dat` files with a sibling `.png` reach makeobj.  Lets a
+#   partly-ported category (e.g. `trains/` with 4 ports against 866
+#   unported upstream dats) build cleanly without bulk-stripping
+#   the unported reference dats.
+#
+# See TODO.md -> "Expand build scope as categories bake".
 TR_DIRS :=
 
 OUTSIDE :=
-OUTSIDE += pak1file/128
-TR_DIRS += pak1file/128
+#OUTSIDE += pak1file/128
+#TR_DIRS += pak1file/128
 
 DIRS32 :=
-DIRS32 += boats/holds
-TR_DIRS += boats/holds
+#DIRS32 += boats/holds
+#TR_DIRS += boats/holds
 
 DIRS64 :=
-DIRS64 += gui/gui64
-TR_DIRS += gui
+#DIRS64 += gui/gui64
+#TR_DIRS += gui
 
 DIRS128 :=
 DIRS128 += air
 TR_DIRS += air
-DIRS128 += attractions
-TR_DIRS += attractions
-DIRS128 += boats
-TR_DIRS += boats
-DIRS128 += bus
-TR_DIRS += bus
-DIRS128 += citybuildings
-TR_DIRS += citybuildings
-DIRS128 += citycars
-TR_DIRS += citycars
-DIRS128 += depots
-TR_DIRS += depots
-DIRS128 += goods
-TR_DIRS += goods
+#DIRS128 += attractions
+#TR_DIRS += attractions
+#DIRS128 += boats
+#TR_DIRS += boats
+#DIRS128 += bus
+#TR_DIRS += bus
+#DIRS128 += citybuildings
+#TR_DIRS += citybuildings
+#DIRS128 += citycars
+#TR_DIRS += citycars
+#DIRS128 += depots
+#TR_DIRS += depots
+#DIRS128 += goods
+#TR_DIRS += goods
 DIRS128 += grounds
 TR_DIRS += grounds
-DIRS128 += gui/gui128
-DIRS128 += hq
-TR_DIRS += hq
-DIRS128 += industry
-TR_DIRS += industry
-DIRS128 += london-underground
-TR_DIRS += london-underground
-DIRS128 += maglev
-TR_DIRS += maglev
-DIRS128 += narrowgauge
-TR_DIRS += narrowgauge
-DIRS128 += pedestrians
-TR_DIRS += pedestrians
-DIRS128 += smokes
-TR_DIRS += smokes
-DIRS128 += stations
-TR_DIRS += stations
-DIRS128 += signalboxes
-TR_DIRS += signalboxes
-DIRS128 += townhall
-TR_DIRS += townhall
+#DIRS128 += gui/gui128
+#DIRS128 += hq
+#TR_DIRS += hq
+#DIRS128 += industry
+#TR_DIRS += industry
+#DIRS128 += london-underground
+#TR_DIRS += london-underground
+#DIRS128 += maglev
+#TR_DIRS += maglev
+#DIRS128 += narrowgauge
+#TR_DIRS += narrowgauge
+#DIRS128 += pedestrians
+#TR_DIRS += pedestrians
+#DIRS128 += smokes
+#TR_DIRS += smokes
+#DIRS128 += stations
+#TR_DIRS += stations
+#DIRS128 += signalboxes
+#TR_DIRS += signalboxes
+#DIRS128 += townhall
+#TR_DIRS += townhall
 DIRS128 += trains
 TR_DIRS += trains
 DIRS128 += trams
 TR_DIRS += trams
-DIRS128 += trees
-TR_DIRS += trees
-DIRS128 += ways
-TR_DIRS += ways
-DIRS128 += piers
-TR_DIRS += piers
+#DIRS128 += trees
+#TR_DIRS += trees
+#DIRS128 += ways
+#TR_DIRS += ways
+#DIRS128 += piers
+#TR_DIRS += piers
 
-DIRS192 := 
-DIRS192 += boats/boats192
-DIRS192 += air/air192
+DIRS192 :=
+#DIRS192 += boats/boats192
+#DIRS192 += air/air192
 
-DIRS224 := 
-DIRS224 += boats/boats224
+DIRS224 :=
+#DIRS224 += boats/boats224
 
-DIRS256 := 
-DIRS256 += air/air256
+DIRS256 :=
+#DIRS256 += air/air256
 
 DIRS := $(OUTSIDE) $(DIRS32) $(DIRS64) $(DIRS128) $(DIRS192) $(DIRS224) $(DIRS256)
 
 #generating filenames
 #with this function the filenames are assembled, by removing the dir
 make_name = $(subst /,.,$1).pak
+
+# Filter to the .dat files in a directory that have a sibling .png —
+# i.e. ported assets (bake-unit triple) or carry-over authored
+# pairs.  Unported upstream .dats (no .png) stay in the tree as
+# seeder input for `port_vehicle` but don't enter the build.  See
+# CLAUDE.md -> "Bake units and per-asset layout".
+ported_dats = $(foreach d,$(wildcard $1/*.dat),$(if $(wildcard $(d:.dat=.png)),$(d),))
 
 .PHONY: $(DIRS) copy tar zip simutranslator
 
@@ -106,11 +127,12 @@ zip: $(DESTFILE).zip
 
 $(DESTFILE).tbz2: $(PAKDIR)
 	@echo "===> TAR $@"
-	@tar cjf $@ $(DESTDIR)
+	@tar cjf $@ -C $(DESTDIR) $(notdir $(PAKDIR))
 
 $(DESTFILE).zip: $(PAKDIR)
 	@echo "===> ZIP $@"
-	@zip -rq $@ $(DESTDIR)
+	@rm -f $@
+	@cd $(DESTDIR) && zip -rq $(CURDIR)/$@ $(notdir $(PAKDIR))
 
 copy:
 	@echo "===> COPY"
@@ -123,45 +145,45 @@ copy:
 	@cp -p sound/* $(PAKDIR)/sound
 #	@mkdir -p $(PAKDIR)/scenario
 #	@cp -p scenario/* $(PAKDIR)/scenario
-	@cp -p demo.sve $(PAKDIR)
+	@cp -p "$$(python3 -m tools.threed.fetch_pak demo.sve)" $(PAKDIR)/demo.sve
 	@cp -p licence.txt $(PAKDIR)
 	@cp -p compat.tab $(PAKDIR)
-	@cp -p symbol.BigLogo.pak $(PAKDIR)
+	@cp -p "$$(python3 -m tools.threed.fetch_pak symbol.BigLogo.pak)" $(PAKDIR)/symbol.BigLogo.pak
 
 $(DIRS32):
 	@echo "===> PAK32 $@"
 	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK32 $(PAKDIR)/$(call make_name,$@) $@/ > /dev/null
+	@$(MAKEOBJ) quiet PAK32 $(PAKDIR)/$(call make_name,$@) $(call ported_dats,$@) > /dev/null
 
 $(DIRS64):
 	@echo "===> PAK64 $@"
 	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK $(PAKDIR)/$(call make_name,$@) $@/ > /dev/null
+	@$(MAKEOBJ) quiet PAK $(PAKDIR)/$(call make_name,$@) $(call ported_dats,$@) > /dev/null
 
 $(DIRS128):
 	@echo "===> PAK128 $@"
 	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/$(call make_name,$@) $@/ > /dev/null 
+	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/$(call make_name,$@) $(call ported_dats,$@) > /dev/null
 
 $(DIRS192):
 	@echo "===> PAK192 $@"
 	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK192 $(PAKDIR)/$(call make_name,$@) $@/ > /dev/null
+	@$(MAKEOBJ) quiet PAK192 $(PAKDIR)/$(call make_name,$@) $(call ported_dats,$@) > /dev/null
 
 $(DIRS224):
 	@echo "===> PAK224 $@"
 	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK224 $(PAKDIR)/$(call make_name,$@) $@/ > /dev/null
+	@$(MAKEOBJ) quiet PAK224 $(PAKDIR)/$(call make_name,$@) $(call ported_dats,$@) > /dev/null
 
 $(DIRS256):
 	@echo "===> PAK256 $@"
 	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK256 $(PAKDIR)/$(call make_name,$@) $@/ > /dev/null
+	@$(MAKEOBJ) quiet PAK256 $(PAKDIR)/$(call make_name,$@) $(call ported_dats,$@) > /dev/null
 
 $(OUTSIDE):
 	@echo "===> OUTSIDE with REVISION and grounds"
 	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/ $@/ > /dev/null
+	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/ $(call ported_dats,$@) > /dev/null
 
 # Parametric ground bakers under grounds/ — each <asset>.py emits
 # <asset>.{png,dat} (back_wall emits both slopes and basement) and is

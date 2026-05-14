@@ -1,0 +1,49 @@
+name: Build pak128.Britain-Ex
+
+# Build scope is intentionally limited to the categories whose PNGs
+# have been baked (grounds only today — see commented-out DIRS in
+# Makefile).  Re-enabling a category is a Makefile edit, no
+# workflow change.  See TODO.md -> "Expand build scope as
+# categories bake".
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+        - uses: actions/checkout@v6
+
+        - name: build makeobj
+          run: |
+            sudo apt-get update
+            sudo apt-get -y install libpng-dev autoconf
+            git clone --depth 1 https://github.com/suprasummus/hextrans simutrans
+            (cd simutrans && autoconf && ./configure)
+            make -C simutrans/src/makeobj
+            mv simutrans/src/makeobj/makeobj .
+            rm -rf simutrans
+
+        - name: compile pakset
+          run: |
+            make MAKEOBJ=./makeobj clean all archives
+            mv simupak128.Britain-Ex.zip simupak128.Britain-Ex-nightly.zip
+
+        - name: publish nightly release
+          if: github.ref == 'refs/heads/main'
+          env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          run: |
+            gh release delete Nightly --cleanup-tag --yes || true
+            gh release create Nightly \
+              --title "Nightly $(date -u +%Y-%m-%d)" \
+              --notes "Automated nightly build from ${{ github.sha }}" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              simupak128.Britain-Ex-nightly.zip
