@@ -50,6 +50,22 @@ either.  `TODO.md` tracks which assets have crossed the line.
 Neither upstream pak nor blends repo is cloned in agent
 sessions.  See "Asset sourcing without cloning" below.
 
+The vanilla (Simutrans-Standard) pak128.Britain lives on
+SourceForge SVN at
+`https://sourceforge.net/p/simutrans/code/HEAD/tree/pak128.Britain/`.
+This is the pre-fork ancestor of the extended pak we carry, and
+was explored as a potential second source.  It is **not used**:
+its `.dat` files are vanilla-schema (no `axle_load=`, `comfort=`,
+`livery_*=`, etc.) and could serve as a diff reference for the
+extended→vanilla key-drop pass, but the engine's
+`descriptor/writer/*_writer.cc` is the authoritative key list and
+the diff isn't worth wiring up an SVN fetcher for.  Its `sound/`
+ships only ~13 generic UI/climate wavs; the ~191 per-vehicle
+wavs our `.dat`s reference are extended-fork curation and only
+exist in the github upstream above.  No `.blend` files — those
+have always lived in `Pak128.Britain-blends`.  Recorded here so
+the next agent doesn't redo the exploration.
+
 ## Engine facts (look up, don't fit)
 
 Hex projection, camera, sun direction, sheet layout, slope
