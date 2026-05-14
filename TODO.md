@@ -9,15 +9,42 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**`.dat` validation gap.**  `vehicles/trains/4wheel_1850s_first/`
-ships a `.dat` whose vanilla-vs-extended key triage was guessed,
-not looked up.  CLAUDE.md → "Engine facts — look up, don't fit"
-is the rule we broke.  Authoritative key list is
-`hextrans/src/simutrans/descriptor/writer/vehicle_writer.cc`; no
-makeobj binary is in this tree to fail-fast on bad keys.
-Concrete next move: clone the engine, read `vehicle_writer.cc`,
-revise the dat, and ideally build makeobj to actually compile
-the asset.  Trigger: any push toward second-asset bake.
+**Port a second vehicle.**  Only `_4wheel_1850s_first` exists
+under the new shape.  Everything else (multi-object support, the
+seeder workflow via `seed_python`, the unit boundary decisions) is
+on-paper-only until a second port exercises it.  Concrete next
+move: pick a multi-object upstream (e.g. `gwr-king` = loco +
+tender) so the bake-emits-N-outputs path runs end-to-end, plus a
+single-object loco for variety.  Will surface what the seeder
+output actually looks like in a bake script, how blends map to
+objects (one blend per object? one blend with multiple
+collections? unknown until we look at one), and whether the
+`HERE / REPO / ASSET` boilerplate wants extracting into a shared
+helper once it's duplicated three times.
+
+**makeobj smoke-compile.**  No makeobj binary in this tree, so
+we've never actually compiled a port to `.pak`.  `Vehicle`'s
+field set was derived from `vehicle_writer.cc` by reading source,
+not by feeding the emitted dat through makeobj and watching for
+errors.  Concrete next move: clone hextrans, build makeobj, run
+it against `trains/_4wheel_1850s_first.dat` + the atlas, confirm
+it round-trips into a single-vehicle pak.  Will surface any
+schema gaps the porter missed — e.g. required-vs-optional
+classification mistakes, the unmodelled freight-image subsystem
+(see below) tripping a freight wagon, version-mismatch fatals.
+
+**Freight-image subsystem unmodelled.**  Hex `vehicle_writer.cc`
+reads `freightimage[<dir>]` (single-freight visual variant),
+`freightimage[N][<dir>]` (multi-freight, per good), and
+`freightimagetype[N]` (good-name → image-index map).  `Vehicle`
+doesn't have fields for these, and `emit_vehicle` doesn't bake
+freight atlas variants.  Doesn't matter for passenger carriages
+(no visual variation by load) but absolutely matters for coal
+trucks / tankers / container flats.  Concrete next move when the
+first freight wagon ports: add fields + extend the bake script's
+atlas pass to render per-freight variants, with a naming
+convention like `<basename>.png` (empty) plus
+`<basename>_<good>.png` per loaded variant.  Soft trigger.
 
 **Hex viewpoint output validation.**  `render.py` with
 `HEX_VIEWPOINT` is believed-correct on paper and shares its
@@ -37,15 +64,17 @@ agree to within renderer noise.  Trigger: any second-asset bake.
 carriage has somewhere to sit.  At that point the spine is
 visible in-engine.
 
-**Directory layout migration.**  This repo holds the upstream
-flat layout (`trains/*.dat` referencing PNGs in sibling
-subfolders) AND the per-asset layout introduced this session
-(`vehicles/trains/4wheel_1850s_first/{bake.py, *.png, *.dat}`).
-Rule under construction: ported assets live under the per-asset
-layout; the flat `trains/` etc. are read-only reference until
-their assets get ported.  Concrete next move: write the rule
-into CLAUDE.md once the second per-asset bake confirms the
-layout holds up.  Soft trigger.
+**Bulk-strip remaining unported upstream dats?**  Each upstream
+dat is deleted once its bake script's SPEC verifies (CLAUDE.md →
+"Bake units" → "Upstream dats get deleted once ported"), but
+that's per-asset.  Until the catalog is ported, ~870 unported
+flat dats sit in `trains/` alongside the per-asset triples; they
+can't compile (their PNG refs target stripped image dirs) and
+would `Name=`-collide with the eventual ports.  Concrete next
+move when makeobj-on-tree first matters: either let the
+incremental per-port deletes drive it, or strip them all up
+front and fetch via `pak.lock` when seeding new ports.  Soft
+trigger.
 
 After the spine: expand by asset family (rail vehicles, road
 vehicles, buildings, industries).  Per-family progress is

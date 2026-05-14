@@ -393,31 +393,159 @@ If the upstream HTTP endpoint requires auth or routing, the
 fetcher is the single place to handle it.  Keep auth concerns
 out of per-asset `bake.py`s and out of the runtime loader.
 
-## Per-asset directory layout
+## Bake units and per-asset layout
 
-Mirroring `hextrans-pak128` (model-and-deliverable co-located,
-one dir per atomic asset):
+A "bake unit" is one bake script.  It owns a `SPEC` (or `SPECS`)
+of pure gameplay data and a list of blends to render; running it
+emits the corresponding `.dat` + `.png` outputs as siblings.  The
+script is the **single source of truth** — no upstream `.dat` is
+read at bake time.
+
+The bake-unit shape (single-vehicle demonstrated;
+multi-vehicle pattern designed but not yet exercised):
 
 ```
-vehicles/trains/br_class_350/
-  bake.py                  # fetch_blend + render + atlas
-  br_class_350.png         # committed baked atlas
-  br_class_350.dat         # committed hex-flavour dat
-  refs/                    # (optional) square ref for cross-check
-  notes.md                 # (optional) anything not fit for commit msg
+trains/
+  __init__.py                    # makes the dir an importable package
+  _4wheel_1850s_first.py         # bake unit; 1 SPEC -> 1 dat + 1 png
+  _4wheel_1850s_first.dat        # generated
+  _4wheel_1850s_first.png        # generated
+  _gwr_king.py                   # (illustrative) 2 SPECs (loco + tender)
+  _gwr_king.dat                  # generated
+  _gwr_king.png
+  _gwr_king_tender.dat
+  _gwr_king_tender.png
+  4wheel-stanhope.dat            # unported upstream (seeder input)
+  …
 ```
 
-The `.blend` is not in this repo.  `bake.py` references it by
-its path inside the upstream blends repo (e.g.
-`Trains/Railcars/br-350-lnr.blend`) plus the global `blends.lock`
-SHA.
+Today only `_4wheel_1850s_first` is ported.  The multi-vehicle
+pattern (one script emitting multiple dat+png pairs) is
+intentionally supported by the parser and emitter but not yet
+demonstrated end-to-end; the first multi-object port will validate
+how blends map to objects in real upstream blend files.
 
-Atlas PNGs are committed for the reviewer-friendly "see the
-change in the PR" property; their cumulative weight gets measured
-after the first batch lands (`TODO.md` → "Atlas commit vs.
-CI-artefact-only").  Only the final atlas + dat are committed.  Debug renders, per-facing PNGs,
-diff visualisations go to a `.gitignore`d `out/` and regenerate
-on demand.
+All three files in a bake-unit triple share the same `_`-prefixed
+basename — `ls trains/_4wheel*` enumerates them, and a `git mv` of
+the script suggests the corresponding artefact moves.  The
+prefix isn't asset identity (`Name=` inside the dat carries that,
+without the `_`), it's just the filesystem convention for "files
+this repo owns" — kept consistent across the triple so they
+move and grep together.
+
+The file/dir structure is **decoupled from vehicle identity** —
+one script may emit 1, 2, or 11 outputs (~40 % of `trains/`
+upstream is multi-object, packing locos+tenders, EMU sets, or
+whole carriage families into one source dat).  The unit boundary
+matches whatever's atomic to bake; output basenames are the bake
+script's choice per-object, not derived from the script's name.
+
+**Bake script shape.**  A bake script holds its gameplay data
+inline as a typed `Vehicle` instance and a blend reference, then
+calls `bake_vehicle` from `tools/threed/bake.py`.  The full
+single-vehicle bake script:
+
+```python
+from tools.threed.bake import bake_vehicle
+from tools.threed.dat import Vehicle
+
+SPEC = Vehicle(
+    name="4-wheel-1850s-first",
+    waytype="track",
+    speed=135,
+    length=3, weight=8.1,
+    payload=18,
+    cost=167000, runningcost=0, fixed_cost=139,
+    constraint_prev=["any"],
+    constraint_next=["any"],
+    # … 20-or-so more fields for a complete port
+)
+BLEND = "trains/Carriages/4wheel-1850.blend"
+
+if __name__ == "__main__":
+    here = Path(__file__).resolve().parent
+    bake_vehicle(SPEC, blend=BLEND, basename=Path(__file__).stem, out_dir=here)
+```
+
+`bake_vehicle` does the fetch-blend / run-render / emit-dat
+dance.  Multi-object bake units call it once per output, with
+distinct `basename` (and typically distinct `blend`) per call.
+
+`Vehicle` fields cover both hex-engine (keys
+`descriptor/writer/vehicle_writer.cc` reads) and
+Simutrans-Extended schema (`bidirectional`, `comfort`, `axles`,
+`tractive_effort`, `liverytype`, …).  `emit_vehicle` writes every
+set field; the hex engine silently ignores keys it doesn't
+recognise, so extended-only keys are harmless from its
+perspective and shipping the full schema makes the dat
+round-trip-capable with an Extended-aware tool.
+
+Field-name = dat-key by default.  A few list fields override via
+`metadata["dat_key"]`: `payload_by_class` emits as `payload[N]`
+(matching upstream's class-indexed convention while leaving the
+scalar `payload` hex-engine field free for the engine to read),
+and `constraint_prev`/`constraint_next` emit as
+`Constraint[Prev][N]`/`Constraint[Next][N]` to mirror upstream's
+nested-bracket capitalisation.
+
+Construction catches typos (`TypeError: unexpected keyword`).
+Unset fields (`None` for scalars, `[]` for lists) are skipped on
+emit, matching upstream's convention of omitting keys that take
+the engine's default.  Multi-object bake scripts hold a list of
+`Vehicle`s and call `emit_vehicle` once per output.
+
+**Importable bake scripts.**  Asset names often start with a
+digit (`4wheel_…`), not a valid Python identifier — the leading
+`_` keeps the script importable
+(`from trains import _4wheel_1850s_first`).  Generated artefacts
+share the same `_`-prefixed basename so a triple moves and greps
+together.  `tools/__init__.py`, `tools/threed/__init__.py`, and
+`trains/__init__.py` (each empty) make the repo a proper package
+tree so bake scripts can `from tools.threed.dat import …` without
+a `sys.path` hack.  Run as a module from the repo root:
+
+    python3 -m trains._4wheel_1850s_first
+
+Catalog-wide tooling (e.g. a future enumerator / linter / CI
+rebake driver — none built yet) can import the bake scripts as
+modules and read SPECs as Python values without baking.  `Name=`
+inside the dat is its own namespace — the pak's internal
+identity, hyphens kept upstream-compatible, what makeobj keys on
+(verified in `root_writer.cc`).
+
+**Seeding a new asset.**  When porting fresh from upstream:
+
+```python
+from tools.threed.dat import parse, port_vehicle, seed_python
+for obj in parse(Path("trains/<asset>.dat")):
+    print(seed_python(port_vehicle(obj)))   # paste into new bake script
+```
+
+`port_vehicle` is a one-time seeder, not called at bake time.
+It returns a `Vehicle` populated from every field the dataclass
+knows — including extended-only — so seeded SPECs preserve full
+upstream fidelity.  `seed_python` renders only the non-default
+fields (default dataclass `__repr__` would include every `=None`,
+which gets unreadable fast at ~45 fields).  Indexed `payload[N]`
+populates both scalar `payload` (max, what the hex engine reads)
+and `payload_by_class` (the upstream class breakdown).
+
+**Generated artefacts are committed** for "see the change in the
+PR" review.  Cumulative atlas weight gets measured after the
+first batch lands (`TODO.md` → "Atlas commit vs.
+CI-artefact-only").  Debug renders, per-facing PNGs, diff
+visualisations go to a `.gitignore`d `out/` and regenerate on
+demand.
+
+**Upstream dats get deleted once ported.**  An upstream `.dat`
+is the seeder input for `port_vehicle`; once a bake script's
+SPEC is shown to match the upstream (run `port_vehicle` on the
+upstream, diff against SPEC field-by-field — the verification
+loop the 4wheel-1850s-first port followed), the upstream file
+is `git rm`d.  This avoids the `Name=` collision that makeobj
+would hit recursing over both flat and `_`-prefixed dats, and
+keeps `trains/` showing exactly two states per asset:
+unported-flat or ported-triple, never both.
 
 ### Atlas layout
 
@@ -471,6 +599,30 @@ Present:
   abs(RGB-delta) against the upstream sprite.  Returns non-zero if
   any facing is below 0.90 IoU — see "Calibration validation loop"
   above.
+- `tools/threed/dat.py` — Simutrans `.dat` parse / port / emit.
+  Exposes `Vehicle` (typed dataclass covering both hex-engine
+  and Extended schema; list fields may carry
+  `metadata["dat_key"]` to remap field-name → dat-key, e.g.
+  `payload_by_class` → `payload[N]`), `parse(path)` (splits
+  multi-object dats into `list[list[(k, v)]]`), `port_vehicle`
+  (one-time seeder: upstream object entries → fully-populated
+  `Vehicle`), `seed_python(vehicle)` (paste-ready non-default-only
+  source repr for a new bake script), and
+  `emit_vehicle(vehicle, out_dir, basename)` (writes the dat
+  with every set field plus hex-atlas image refs).  The freight-
+  image subsystem (`freightimage[<dir>]`,
+  `freightimage[N][<dir>]`, `freightimagetype[N]`) is the one
+  area `Vehicle` doesn't model yet — see `TODO.md`.
+- `tools/threed/bake.py` — per-asset bake driver.
+  `bake_vehicle(spec, blend=..., basename=..., out_dir=...)`
+  fetches the blend, runs the hex renderer, writes the atlas
+  PNG, and emits the dat.  Bake scripts shrink to imports +
+  SPEC + a single `bake_vehicle(...)` call.
+- `tests/test_dat.py` — `unittest`-based smoke tests for parse,
+  emit, port, seed_python, and the schema-enforcement-at-
+  construction property.  Run via
+  `python3 -m unittest tests.test_dat` (or
+  `python3 -m pytest tests/`).
 
 The Britain blends already carry the `sp_*` material-name
 convention for player-colour masks; port that pass over from the
