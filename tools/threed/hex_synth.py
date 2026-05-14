@@ -1,7 +1,7 @@
 """Minimal hex projection constants for Blender-based bakers.
 
 Vendored subset of `hextrans-pak128/tools/threed/hex_synth.py` and
-`render.py` -- only what `hex_render.py` needs. The pak128 file also
+`render.py` -- only what `render.py` needs. The pak128 file also
 carries the procedural rasterizer, slope encoding, cliff cells, etc.;
 those don't belong in a Blender harness. Keep this file aligned with
 upstream (`SupraSummus/hextrans-pak128`) when constants drift.
@@ -28,6 +28,13 @@ HEX_TILE_RADIUS = 1.0
 # Pixel lift per world-z unit, shared with pak128 square dimetric so a
 # given 3D part has comparable on-screen height in both projections.
 PIXELS_PER_UNIT = DEFAULT_W / math.sqrt(2.0)
+
+# Upstream Britain blends are authored against a fixed ortho camera
+# with this scale rendering to 128x128 px (per the pak128.Britain
+# contributing-graphics thread).  The hex bake derives its world->hex
+# scale ratio as `2 * HEX_TILE_RADIUS / UPSTREAM_ORTHO_SCALE`, and the
+# square viewpoint uses this value verbatim for its camera.
+UPSTREAM_ORTHO_SCALE = 24.0
 
 
 # Sun: from south (-y), 60 deg above horizon. Light travels north and

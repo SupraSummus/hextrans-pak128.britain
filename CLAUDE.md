@@ -134,11 +134,33 @@ The **silent-failure landmines** to pin for the blend pipeline:
 3. **Image pixel orientation.**  `bpy.types.Image.pixels` is
    bottom-up (origin at bottom-left).  PIL and
    `hextrans-pak128/tools/threed/bespoke.py::bake_atlas` work
-   top-down.  `hex_render.py` flips on load and again on save so
+   top-down.  `render.py` flips on load and again on save so
    the in-memory atlas representation matches upstream's
    convention (and bbox printouts read row-from-top).  Forget the
    flip and the atlas comes out vertically mirrored — silently
    rendered, silently saved, only caught by eye.
+4. **`matrix_basis` drops shear.**  Assigning a 4×4 to
+   `obj.matrix_basis` (or routing it via a parent Empty's basis)
+   decomposes the matrix into translation/rotation/scale and
+   silently discards anything outside that — including the hex
+   projection's y/z shear.  The stored basis ends up a TRS
+   approximation of the intended matrix, off by ~10 % in the
+   off-diagonal terms, and the rendered silhouette tilts in a way
+   that looks like a rotation bug.  `render.py` bakes the
+   per-facing `shear @ rot @ fit` matrix into mesh vertex data
+   directly via `bpy.types.Mesh.transform()`, which accepts
+   arbitrary 4×4 exactly.
+5. **Edit-mode meshes render their BMesh buffer, not
+   `obj.data`.**  Upstream blends occasionally ship with one mesh
+   stuck in edit mode (e.g. 4wheel-1850's body `Cube.009`).
+   Blender keeps the render geometry for that mesh in a separate
+   BMesh edit buffer; `obj.data.vertices` writes are invisible to
+   the renderer until the obj leaves edit mode, and
+   `obj.evaluated_get(deps).data` reports zero verts even though
+   the mesh visibly renders.  `render.py` forces every mesh
+   into OBJECT mode at the start of the bake.  When the rendered
+   silhouette of one specific object refuses to track your
+   projection, check `obj.data.is_editmode` first.
 
 ## Don't bake the answer
 
@@ -185,8 +207,8 @@ bounding box.
 **Camera scale.**  Upstream's
 `render_SimutransRender_pak128Britain-65.py` uses a fixed ortho
 camera with `ortho_scale = 24` rendering to 128 × 128 px.  That
-ratio (`BLEND_ORTHO_SCALE` in
-`tools/threed/hex_render.py`) is the single pakset-wide scale
+ratio (the hex `fit_kind` in `tools/threed/render.py` builds
+`2R / 24`) is the single pakset-wide scale
 constant — it corresponds to the artist-side 15 m ruler (46 m for
 aircraft, log-scaled for large ships) used to calibrate geometry in
 Blender.  Width and height for land vehicles are authored at 1.25×
@@ -197,7 +219,7 @@ longitudinal axis (carriages, locos, road vehicles, ships, planes)
 are authored so `span_y > span_x`.  Auto-detecting "which is the
 long axis" by bounding-box comparison and rotating to a different
 canonical inverts every such asset's facings (the standard
-configuration was the failing case in the original `hex_render.py`
+configuration was the failing case in the original `render.py`
 auto-fit) — trust the contract instead.
 
 **Z = 0 is the renderer's hex-frame floor, not an upstream
@@ -217,20 +239,21 @@ reads the model, and it reads only position, never scale.
 
 **Alignment mode is asset-class-dependent.**  Trains, trams, water
 craft and aircraft use upstream's **`vehicles` alignment** camera
-positions (`blend_render.py --align vehicles`, `op_list "2"`); road
-vehicles, buildings, signals and stops use **`normal alignment`**
-(`--align bases`, `op_list "1"`, or `"0"` for 4-view buildings).
-The choice only affects `blend_render.py` (the square-dimetric
-regression reproducer); the hex camera is single and fixed.
+positions (`op_list "2"`); road vehicles, buildings, signals and
+stops use **`normal alignment`** (`op_list "1"`, or `"0"` for 4-view
+buildings).  Only `SQUARE_VIEWPOINT` in `tools/threed/viewpoints.py`
+hard-codes one alignment (currently "vehicles", chosen to match the
+asset class of the first ported asset); other alignments aren't
+modelled yet.  The hex viewpoint is single and fixed.
 
 **Old blends ship with broken scene settings.**  Many .blend files
 predate the RGBA + `film_transparent = True` convention and still
-have `Output = RGB` and a solid world background.  Renderers must
-force the modern convention regardless of what the .blend was
-saved with — `blend_render.py` and `hex_render.py` both set
-`film_transparent = True` and `image_settings.color_mode = "RGBA"`
-on entry.  Trusting the .blend's state gives black/cyan
-backgrounds with no other diagnostic.
+have `Output = RGB` and a solid world background.  `render.py`
+strips the blend's Camera / Sphere / Lamp objects on entry and
+installs its own, then forces `film_transparent = True` and
+`image_settings.color_mode = "RGBA"` regardless of what the .blend
+saved.  Trusting the .blend's state gives black/cyan backgrounds
+with no other diagnostic.
 
 **Hex vs. square facing-to-screen shift.**  The square pak renders
 a world rotated 45° in screen space, so its `_S.png` shows the
@@ -241,7 +264,7 @@ in square, at S / N in hex).  This is a coordinate-system
 difference, not a calibration bug.
 
 **Calibration validation loop.**  `tools/threed/diff_upstream.py`
-runs `blend_render.py` against an upstream blend, fetches the
+runs `render.py --viewpoint square` against an upstream blend, fetches the
 corresponding pakset PNG via `fetch_pak.py` (pinned by `pak.lock`),
 and reports per-facing silhouette IoU and mean abs(RGB-delta).
 Calibrated assets land at IoU ≥ 0.93 across all 8 facings (the
@@ -402,16 +425,15 @@ Each per-asset PNG is a single row of N facing renders, sliced by
 makeobj into 128×128 sprites (cell width = pak tile width).  Cell
 `(col, row)` is addressed from the .dat as `<file>.<col>.<row>`.
 
-Column order is the `_VIEWS` list in `tools/threed/hex_render.py`:
-`S, SW, W, NW, N, NE, E, SE` for the default 8-view bake.
-`--views 6` drops `W` and `E` (column indices shift accordingly);
-`--views 4` keeps only `S, W, N, E`.  Per-asset .dat keys
-(`EmptyImage[S]=…0.0`, `EmptyImage[SW]=…1.0`, …) must match this
-order or the engine renders the wrong sprite per facing — there
-is no run-time consistency check.
+Column order is the `facings` list in `HEX_VIEWPOINT`
+(`tools/threed/viewpoints.py`): `S, SW, W, NW, N, NE, E, SE` for the
+default 8-view bake.  Per-asset .dat keys (`EmptyImage[S]=…0.0`,
+`EmptyImage[SW]=…1.0`, …) must match this order or the engine
+renders the wrong sprite per facing — there is no run-time
+consistency check.
 
-Single-row is the default.  `hex_render.py --cols-per-row N` exists
-for atlases that grow tall enough to be awkward (way ribi tables,
+Single-row is the default.  `render.py --cols-per-row N` exists for
+atlases that grow tall enough to be awkward (way ribi tables,
 multi-state machinery); not relevant for 8-facing vehicles.
 
 ## Bake tooling
@@ -429,30 +451,32 @@ Present:
   `jamespetts/simutrans-pak128.britain`, SHA pinned via `pak.lock`.
   Used by `diff_upstream.py` today and by future runtime `.wav`
   fetching (see `TODO.md`).
-- `tools/threed/blend_render.py` — `blender -b -P` harness
-  reproducing the 4/8-view camera + sun positions verbatim from
-  the upstream `render_SimutransRender_pak128Britain-65.py`.
-  No addon registration, no GUI.  Output is the square-dimetric
-  sprite the upstream `.blend`s were authored for; the
-  calibration regression check.
-- `tools/threed/hex_render.py` — `blender -b -P` harness for the
-  hex camera, mirroring `hextrans-pak128/tools/threed/render.py::
-  HexCamera`.  Anchored to `HexGeom`, no yaw, orthographic, z-lift
-  via `PIXELS_PER_UNIT`.  Facing count read from the engine's
-  current `get_dirs()` convention, not hard-coded.  Applies the
-  upstream blend calibration contract (see above) and emits a
-  single-row atlas PNG.
-- `tools/threed/diff_upstream.py` — drives `blend_render.py`,
-  fetches the matching upstream PNG via `fetch_pak.py`, and
-  reports per-facing silhouette IoU + mean abs(RGB-delta) against
-  the upstream sprite.  Returns non-zero if any facing is below
-  0.90 IoU — see "Calibration validation loop" above.
+- `tools/threed/render.py` — `blender -b -P` harness that takes a
+  `Viewpoint` and renders one atlas (plus optional per-facing PNGs).
+  Strips the blend's Camera / Sphere / Lamp objects on entry and
+  installs its own from the Viewpoint — the .blend is treated as
+  pure model data.  Same code path serves the upstream square
+  reference and this project's hex projection; the only difference
+  is which `Viewpoint` gets passed in.  Applies the upstream blend
+  calibration contract (see above) and emits a single-row atlas PNG.
+- `tools/threed/viewpoints.py` — `SQUARE_VIEWPOINT` (reproduces
+  the upstream `render_SimutransRender_pak128Britain-65.py`
+  "vehicles" alignment verbatim) and `HEX_VIEWPOINT` (camera looking
+  +Y at origin, ortho_scale=2R, hex shear baked into mesh via
+  `extrinsic`, model rotated per facing).  Same facing labels in
+  both so .dat keys port without relabelling.
+- `tools/threed/diff_upstream.py` — drives `render.py --viewpoint
+  square --keep-per-facing`, fetches the matching upstream PNG via
+  `fetch_pak.py`, and reports per-facing silhouette IoU + mean
+  abs(RGB-delta) against the upstream sprite.  Returns non-zero if
+  any facing is below 0.90 IoU — see "Calibration validation loop"
+  above.
 
 The Britain blends already carry the `sp_*` material-name
 convention for player-colour masks; port that pass over from the
 upstream render script when the first asset bake needs masks.
 
-Atlas composition is implemented inline in `hex_render.py` rather
+Atlas composition is implemented inline in `render.py` rather
 than imported from `hextrans-pak128/tools/threed/bespoke.py::bake_atlas`
 because `bespoke` uses PIL and Blender's bundled Python on Ubuntu
 ships only `numpy` (see "Running the bake in a fresh sandbox"
@@ -477,7 +501,7 @@ apt-get install -y blender python3-numpy python3-pil libegl1
 
 `blender` (4.0.2 on noble) provides the `blender -b -P` harness;
 its bundled Python is the system `python3.12`, so `python3-numpy`
-lands `numpy` where `hex_render.py`'s `import numpy as np` will
+lands `numpy` where `render.py`'s `import numpy as np` will
 find it.  `python3-pil` (Pillow) is only needed by
 `diff_upstream.py` for the side-by-side grid composition, not by
 the Blender harnesses themselves.  `libegl1` is the runtime

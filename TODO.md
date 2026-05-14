@@ -19,17 +19,18 @@ Concrete next move: clone the engine, read `vehicle_writer.cc`,
 revise the dat, and ideally build makeobj to actually compile
 the asset.  Trigger: any push toward second-asset bake.
 
-**hex_render.py output validation.**  hex_render.py is
-believed-correct on paper but never compared against an engine
-reference render.  4wheel-1850s-first's atlas now visually
-confirms shading and facing layout look right (W/E read as
-narrow end-on carriage faces, geometrically correct), but
-that's eyeball-verification, not a quantitative check against
-the engine's own projection.  Concrete next move: pixel-compare
-a hex_render output of a procedural reference cube against the
-same cube through `hextrans-pak128/tools/threed/render.py::HexCamera`;
-they should agree to within renderer noise.  Trigger: any
-second-asset bake.
+**Hex viewpoint output validation.**  `render.py` with
+`HEX_VIEWPOINT` is believed-correct on paper and shares its
+pipeline with the square viewpoint (which passes the upstream IoU
+diff at 0.93+), but the hex projection itself has no quantitative
+reference -- the upstream pak only ships square-dimetric PNGs.
+4wheel-1850s-first's atlas visually confirms shading and facing
+layout look right (W/E read as carriage side views; wheels sit at
+tile centre), but that's eyeball-verification.  Concrete next
+move: pixel-compare a `HEX_VIEWPOINT` output of a procedural
+reference cube against the same cube through
+`hextrans-pak128/tools/threed/render.py::HexCamera`; they should
+agree to within renderer noise.  Trigger: any second-asset bake.
 
 **Ground tiles + one rail way.**  Port
 `hextrans-pak128/landscape/grounds/` and `…/rail_060_*` so the
@@ -83,22 +84,22 @@ trigger.
 **`sp_*` player-colour mask pass.**  Upstream blends use a
 `sp_*` material naming convention for player-colour masks (see
 `render_SimutransRender_pak128Britain-65.py` "Make Masks" path).
-hex_render.py renders the native materials only; the mask render
+render.py renders the native materials only; the mask render
 is a second pass that swaps those materials for the engine's
 mask palette and emits a parallel `_mask.png` set the dat
 references via `EmptyImage[FRONT-...]` etc.  Concrete next move:
 port the material-swap code from the upstream `-65` script into
-a `--mask` mode on hex_render.py.  Trigger: first asset that
+a `--mask` mode on render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
-**Multi-tile asset overflow.**  hex_render.py now applies a single
-pakset-wide scale (`_BLEND_TO_HEX_SCALE = 2R/24`) under the
-calibration contract documented in CLAUDE.md, so a long loco at
-its real upstream size will render larger than one cell.  The atlas
+**Multi-tile asset overflow.**  `HEX_VIEWPOINT`'s `fit_kind="hex"`
+applies a single pakset-wide scale (`2R / upstream_ortho_scale = 2R/24`)
+under the calibration contract documented in CLAUDE.md, so a long loco
+at its real upstream size will render larger than one cell.  The atlas
 is currently one row of W×W cells; a mainline loco needs to be
 sliced across multiple cells with a known per-cell offset, matching
 the engine's multi-tile vehicle convention.  Concrete next move
 when the first mainline-loco-length asset is ported: extend
-`hex_render.py` to emit multi-cell atlases driven by the model's
+`render.py` to emit multi-cell atlases driven by the model's
 post-scale extent, and wire the resulting cell layout into the
 `.dat`.  Soft trigger.

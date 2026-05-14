@@ -1,17 +1,20 @@
-"""Calibration check: render an upstream blend through `blend_render.py`
-and pixel-diff each facing against the upstream pakset PNG.
+"""Calibration check: render an upstream blend through `render.py`
+with the square viewpoint and pixel-diff each facing against the
+upstream pakset PNG.
 
-Validates the upstream blend's frame against the calibration contract
-documented in CLAUDE.md ("Upstream blend calibration contract"); if
-this passes, the same blend feeds `hex_render.py` without per-asset
-tweaks.
+Validates the unified renderer's square-dimetric path against the
+upstream calibration contract (CLAUDE.md -> "Upstream blend
+calibration contract").  Because hex shares the same render path and
+the same blend, a passing score here is a necessary precondition for
+the hex bake to be right -- it's not sufficient (a procedural hex
+reference is still needed; see TODO.md).
 
 Run as:
 
     python3 tools/threed/diff_upstream.py \\
         <blend_path_in_blends_repo> \\
         <upstream_png_stem_in_pak_repo> \\
-        [--align vehicles|bases] [--views 8|4] [--out out/diff/<name>]
+        [--views 8|4] [--out out/diff/<name>]
 
 Outputs `<out>/grid.png` (ours / upstream / amplified abs-diff, 8 cols)
 and prints per-facing silhouette IoU and mean abs(RGB-delta).
@@ -45,18 +48,17 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("blend", help="path within the blends repo, e.g. trains/Carriages/4wheel-1850.blend")
     ap.add_argument("stem", help="upstream png stem in the pak repo, e.g. trains/carriages/4wheel-1850-first-lnwr")
-    ap.add_argument("--align", choices=["vehicles", "bases"], default="vehicles")
     ap.add_argument("--views", type=int, choices=[4, 8], default=8)
     ap.add_argument("--out", default=None, help="output dir (default: out/diff/<stem-basename>)")
     return ap.parse_args(argv)
 
 
-def _render(blend_path: Path, out_dir: Path, name: str, align: str, views: int) -> None:
-    script = HERE / "blend_render.py"
+def _render(blend_path: Path, out_dir: Path, name: str) -> None:
+    script = HERE / "render.py"
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
         "--out", str(out_dir), "--name", name,
-        "--align", align, "--views", str(views),
+        "--viewpoint", "square", "--keep-per-facing",
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
@@ -118,7 +120,7 @@ def main(argv: list[str]) -> int:
 
     blend_path = fetch_blend(args.blend)
     render_name = Path(args.blend).stem
-    _render(blend_path, out_dir, render_name, args.align, args.views)
+    _render(blend_path, out_dir, render_name)
 
     up_paths = {v: fetch_pak(f"{args.stem}_{v}.png") for v in views}
 

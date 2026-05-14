@@ -1,8 +1,8 @@
 """Bake the 4wheel-1850s-first passenger carriage.
 
 First asset under the per-asset template (`CLAUDE.md` -> "Per-asset
-directory layout").  Drives `tools/threed/hex_render.py` against the
-upstream blend.
+directory layout").  Drives the unified renderer (`tools/threed/render.py`)
+with the hex viewpoint against the upstream blend.
 
 Run from anywhere:
 
@@ -26,13 +26,13 @@ def main() -> int:
     from fetch_blend import fetch  # noqa: E402
 
     blend = fetch(BLEND_PATH)
-    script = HERE.parents[2] / "tools" / "threed" / "hex_render.py"
+    script = HERE.parents[2] / "tools" / "threed" / "render.py"
     cmd = [
         "blender", "-b", str(blend), "-P", str(script),
         "--",
         "--out", str(HERE),
         "--name", NAME,
-        "--views", "8",
+        "--viewpoint", "hex",
     ]
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
