@@ -38,16 +38,17 @@ either.  `TODO.md` tracks which assets have crossed the line.
 
 ## Cross-repo provenance
 
-- **Upstream pak (`.dat` source):**
+- **Upstream pak (`.dat` catalog, `.wav` sounds, sprite
+  references):**
   `https://github.com/jamespetts/simutrans-pak128.britain`
-- **Upstream blends (`.blend` source):**
+- **Upstream blends (`.blend` source for sprite re-bake):**
   `https://github.com/jamespetts/Pak128.Britain-blends`
 - **Hex engine:**  `SupraSummus/hextrans`.
 - **Worked-example hex pakset (procedural):**
   `SupraSummus/hextrans-pak128`.
 
-The blends repo is **not cloned in agent sessions**.  See "Asset
-sourcing" below.
+Neither upstream pak nor blends repo is cloned in agent
+sessions.  See "Asset sourcing without cloning" below.
 
 ## Engine facts (look up, don't fit)
 
@@ -173,28 +174,45 @@ runs on the hex engine, not a literal port of every quirk.
 
 ## Repo size strategy
 
-Upstream Britain pak history is ~700 MB packed.  CCW clones pay
-that on every fresh session.  Plan: **one `git filter-repo` pass
-strips heavy blob types from history.**
+Upstream Britain pak history was ~1.3 GB unshallowed (~700 MB
+packed shallow).  A one-shot `git filter-repo` pass cut it to
+~19 MB packed by dropping blob types the hex pak doesn't carry
+in git.
 
-The filter discriminates **regeneratable migration burden** from
-**shipped content** — only the first is safe to strip.  Being
-heavy in history is not in itself a reason to remove a blob; the
-question is whether the pak still ships it.
+The principle behind the strip set: discriminate
+**regeneratable migration burden** from **shipped content** —
+only the first is safe to strip.  Being heavy in history is not
+in itself a reason to remove a blob; the question is whether
+the pak still ships it (and if it does, whether the runtime can
+fetch it on demand from upstream instead of carrying it in
+git).
 
-- Migration burden: sprite `.png`/`.jpg`/`.xcf` (we re-bake from
-  blends, the upstream art is reference only); `.blend` if any
-  ended up in this repo (canonical home is the blends repo);
-  JP's research material in `.pdf`/`.ods`/`.xls`/`.xlsx`/`.doc`
-  if any (not shipped, originals stay reachable upstream); IDE
-  detritus (`.suo`, `.vcxproj` if unused).
-- Shipped content: `.wav` (sound effects, no re-projection
-  needed, no upstream alternative — the pak ships these as-is);
-  `.dat` (gameplay catalog); `.tab` (config); `.nut` (scripts);
-  text we author.
+The applied strip set:
 
-Don't fix the filter list in advance.  Before the cutover, run a
-blob-size-by-extension analysis against an *unshallowed* clone:
+- `.png`/`.jpg`/`.jpeg`/`.xcf` (plus uppercase variants) —
+  sprite art, re-baked from the blends repo through the hex
+  camera.
+- `.blend`/`.blend1`/`.blend2` — stray blends; canonical home
+  is the blends repo.
+- `.pdf`/`.ods`/`.xls`/`.xlsx`/`.doc` — JP's research material,
+  originals stay reachable upstream.
+- `.suo`/`.vcxproj`/`.vcproj` — IDE detritus.
+- `.pak` — compiled `makeobj` output; regenerates from `.dat`.
+- `.wav` — sound effects.  Fetched on demand from the upstream
+  pak repo at runtime, parallel to blend fetching (see "Asset
+  sourcing without cloning" below); the hex pak doesn't ship
+  them in git.
+- `.tab~`/`.dat~`/`.bak` — editor backups.
+
+Kept in git: `.dat` (gameplay catalog), `.tab` (config),
+`.nut` (scripts), authored text.
+
+Before committing any new bulk-content type, ask: can the
+runtime fetch it from a pinned upstream SHA over HTTP instead?
+If yes, don't commit it.
+
+To re-run the size analysis (e.g. before a future strip pass),
+against an *unshallowed* clone:
 
 ```
 git rev-list --objects --all \
@@ -204,41 +222,46 @@ git rev-list --objects --all \
   | sort -k2 -rn
 ```
 
-A shallow probe in this session put WAV first, PNG second, with
-PDF / JPG / BLEND / XCF non-trivial.  WAV is shipped content and
-stays.  The strip set is the migration-burden extensions whose
-weight makes them worth removing; the threshold for "worth
-removing" is whether the keep-after-cut history fits under the
-budget that motivated the rewrite (rough target: under 100 MB
-packed).
+The rewrite was destructive: clone hashes changed, outstanding
+branches needed rebasing.  Done.  Further filter-repo passes are
+possible but expect the same coordination cost.
 
-One-shot destructive op.  Coordinate first — anyone with
-outstanding branches has to rebase.
+If the proxied HTTP push hits a 413 (Payload Too Large), split
+the push into chunks by walking commit history
+(`git push origin <intermediate-sha>:refs/heads/<branch>` for a
+handful of mid-history commits, then push the tip).
 
 ## Asset sourcing without cloning
 
-The blends repo is ~5.4 GB packed history / ~18 GB working tree.
-It does not use git LFS and we are not adding it (CCW doesn't
-support LFS).  Cloning it in agent sessions is hostile.
+Two upstream repos are **URL-addressable, SHA-pinned,
+read-only** sources rather than checked-out trees:
 
-Instead, treat it as **URL-addressable, SHA-pinned, read-only**:
+1. **`jamespetts/Pak128.Britain-blends`** — ~5.4 GB packed /
+   ~18 GB working tree.  Source for sprite re-bake.  No git
+   LFS (and we're not adding it; CCW doesn't support LFS).
+2. **`jamespetts/simutrans-pak128.britain`** — the upstream
+   pakset itself, the repo this one was forked from.  Source
+   for `.wav` sound effects after they were stripped from this
+   repo's history.
 
-- `blends.lock` at the repo root holds one upstream commit SHA.
-- `tools/threed/fetch_blend.py` resolves
-  `<asset path within blends repo>` against that SHA, fetches the
-  individual blob over HTTP, caches under a `.gitignore`d
-  `.cache/` dir.
-- A per-asset `bake.py` calls `fetch_blend.py`, runs
-  `blender -b … --python …`, atlases the facings, writes
-  `<asset>.png` + `<asset>.dat`.
+The intended pattern for each, once implemented (neither
+fetcher nor lock file exists yet — see `TODO.md`):
 
-Net: a session touching one asset downloads one blend, not the
-tree.  The blends repo's size becomes irrelevant to the
-day-to-day.
+- A `*.lock` file at the repo root holds one upstream commit SHA
+  (`blends.lock`, `wavs.lock`).
+- A `tools/<area>/fetch_*.py` script resolves `<path within
+  upstream repo>` against that SHA, fetches the individual blob
+  over HTTP, caches under a `.gitignore`d `.cache/` dir.
+- Consumers (per-asset `bake.py`, the runtime sound loader)
+  call the fetcher rather than reading files directly.
 
-If the upstream HTTP endpoint requires auth or routing,
-`fetch_blend.py` is the single place to handle it.  Keep auth
-concerns out of per-asset `bake.py`s.
+Net once landed: a session touching one asset downloads one
+blend (or one wav), not the tree.  Upstream repo size becomes
+irrelevant to the day-to-day.
+
+If the upstream HTTP endpoint requires auth or routing, the
+fetcher is the single place to handle it.  Keep auth concerns
+out of per-asset `bake.py`s and out of the runtime loader.
 
 ## Per-asset directory layout
 
