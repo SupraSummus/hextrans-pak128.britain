@@ -21,13 +21,13 @@ the asset.  Trigger: any push toward second-asset bake.
 
 **hex_render.py output validation.**  hex_render.py is
 believed-correct on paper but never compared against an engine
-reference render.  E-facing of 4wheel-1850s-first reads as a
-small dark blob rather than a recognizable carriage end —
-either the projection is off, the auto-fit picked wrong on
-that rotation, or the source mesh genuinely degenerates from
-that angle.  Concrete next move: pixel-compare a hex_render
-output of a procedural reference cube against the same cube
-through `hextrans-pak128/tools/threed/render.py::HexCamera`;
+reference render.  4wheel-1850s-first's atlas now visually
+confirms shading and facing layout look right (W/E read as
+narrow end-on carriage faces, geometrically correct), but
+that's eyeball-verification, not a quantitative check against
+the engine's own projection.  Concrete next move: pixel-compare
+a hex_render output of a procedural reference cube against the
+same cube through `hextrans-pak128/tools/threed/render.py::HexCamera`;
 they should agree to within renderer noise.  Trigger: any
 second-asset bake.
 
