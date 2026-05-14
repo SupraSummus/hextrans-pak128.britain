@@ -32,6 +32,19 @@ the hex camera defined in
 ship together; until both arrive the asset is stubbed, not
 half-ported.
 
+**Parametric ground synth.**  A separate pipeline covers the
+engine-driven ground families (per-slope lightmap, marker, borders,
+cliff faces, water, climate / shore alpha masks, sidewalk).  These
+have no upstream art content — geometry, region partition and
+Lambert shading are functions of engine constants in
+`hextrans/src/simutrans/descriptor/synth_geometry.h` + mirrored in
+`tools/threed/hex_synth.py`.  Each baker is a single
+`grounds/<asset>.py` that emits sibling `<asset>.{png,dat}`; the
+filename matches the engine `Name=` field (`light_texture`,
+`shore_trans`, …) so grepping from engine source lands on the
+right baker.  Ported from `hextrans-pak128/landscape/grounds/`; see
+TODO.md for the gaps (texture-climate, way_ground, fence).
+
 The pak is unplayable until a critical mass of ground + ways +
 vehicles is baked, and that's fine — the engine isn't shipping
 either.  `TODO.md` tracks which assets have crossed the line.

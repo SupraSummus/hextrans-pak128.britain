@@ -163,6 +163,21 @@ $(OUTSIDE):
 	@mkdir -p $(PAKDIR)
 	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/ $@/ > /dev/null
 
+# Parametric ground bakers under grounds/ — each <asset>.py emits
+# <asset>.{png,dat} (back_wall emits both slopes and basement) and is
+# self-contained.  Re-run the family with `make bake-grounds`; CI does
+# not regenerate, the committed PNG/dat pairs are what ship.
+GROUND_BAKERS := light_texture back_wall marker borders water \
+                 shore_trans slope_trans sidewalk
+
+.PHONY: bake-grounds $(addprefix bake-,$(GROUND_BAKERS))
+
+bake-grounds: $(addprefix bake-,$(GROUND_BAKERS))
+
+$(addprefix bake-,$(GROUND_BAKERS)): bake-%:
+	@echo "===> BAKE grounds/$*"
+	@python3 -m grounds.$*
+
 clean:
 	@echo "===> CLEAN"
 	@rm -fr $(PAKDIR) $(DESTFILE).tbz2 $(DESTFILE).zip simutranslator/*.zip
