@@ -311,18 +311,34 @@ Lives at `tools/threed/` in this repo, not in the blends repo
 (blends are upstream-owned and stay reusable; our hex-rendering
 opinions don't belong there).
 
-Start by copying `hextrans-pak128/tools/threed/` and adding:
+Present state — square-dimetric spike:
 
-- `fetch_blend.py` — HTTP fetch + `.cache/` resolver.
-- `blend_render.py` — `blender -b` harness whose camera math
-  mirrors `hextrans-pak128/tools/threed/render.py::HexCamera`
-  (anchored to `HexGeom`, no yaw, orthographic, z-lift via
+- `tools/threed/fetch_blend.py` — HTTP fetch + `.cache/` resolver,
+  SHA pinned via `blends.lock` at the repo root.  Anonymous, no
+  proxy; `raw.githubusercontent.com` serves the blobs at the
+  sizes we encounter (verified end-to-end on
+  `Trains/Railcars/br-350-lnr.blend`, ~3 MB).
+- `tools/threed/blend_render.py` — `blender -b -P` harness
+  reproducing the 4/8-view camera + sun positions verbatim from
+  the upstream `render_SimutransRender_pak128Britain-65.py` at
+  the repo root.  No addon registration, no GUI.  Output is the
+  square-dimetric sprite the upstream `.blend`s were authored
+  for, useful as a pipeline regression check (rendered output
+  should match the upstream PNG to within renderer noise).
+
+Not yet present — hex camera:
+
+- A second harness whose camera math mirrors
+  `hextrans-pak128/tools/threed/render.py::HexCamera` (anchored
+  to `HexGeom`, no yaw, orthographic, z-lift via
   `PIXELS_PER_UNIT`).  Facing count read from the engine's
-  current `get_dirs()` convention, not hard-coded.
+  current `get_dirs()` convention, not hard-coded.  The first
+  asset bake will drive this and is the right time to factor
+  shared camera/scene setup out of the square spike.
 
 The Britain blends already carry the `sp_*` material-name
 convention for player-colour masks; port that pass over from the
-upstream render script.
+upstream render script when the first asset bake needs masks.
 
 When the bake tooling stabilises it's a candidate for extraction
 into a shared `simutrans-threed` Python package consumed by both

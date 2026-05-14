@@ -9,20 +9,22 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**Stand up `tools/threed/`.**  Copy
-`hextrans-pak128/tools/threed/` as the baseline.  Add
-`fetch_blend.py` (HTTP fetch + `.cache/` resolver) and a stub
-`blend_render.py` that mirrors `render.py::HexCamera` math through
-`blender -b`.  Pin `blends.lock` to the current
-`Pak128.Britain-blends` HEAD.  Trigger for `blend_render.py`
-fleshing out: first asset bake.
+**Hex-camera `blend_render.py`.**  The square-dimetric spike at
+`tools/threed/blend_render.py` proves the `blender -b -P` +
+`fetch_blend.py` pipeline against the upstream `-65` script.  The
+hex camera is a separate harness whose math mirrors
+`hextrans-pak128/tools/threed/render.py::HexCamera` (anchored to
+`HexGeom`, no yaw, orthographic, z-lift via `PIXELS_PER_UNIT`).
+Concrete next move: write `tools/threed/hex_render.py` driven off
+the same `fetch_blend.py`, factoring shared scene-prep out of the
+square spike at the same time.  Trigger: first asset bake.
 
 **Bake one asset end-to-end.**  Pick a single passenger carriage
 (no depth-clip slicing, no multi-tile geometry).  Lands the
 per-asset template — `bake.py` shape, dat schema delta, what
 `out/` debug looks like — plus shakes out every silent-failure
 landmine from `CLAUDE.md` → "Engine facts" (scale, sun, anchor y).
-Trigger: `tools/threed/` exists.
+Trigger: `hex_render.py` exists.
 
 **Ground tiles + one rail way.**  Once the carriage bakes,
 porting `hextrans-pak128/landscape/grounds/` and `…/rail_060_*`
@@ -35,13 +37,6 @@ recorded by deleting that family's entry from this file when it's
 done, not by adding "completed" notes.
 
 ## Open design questions
-
-**Auth shape for `fetch_blend.py`.**  Upstream blends repo HTTP
-endpoint — is it anonymous-readable, or does it route through the
-local proxy seen in `git remote -v`?  Concrete next move: try a
-`curl` from inside a CCW session to a raw blob URL; if it 401s,
-add a token-from-env path in `fetch_blend.py`.  Trigger: first
-attempt at running `bake.py`.
 
 **Atlas commit vs. CI-artefact-only.**  Default is commit (per
 `CLAUDE.md` → "Per-asset directory layout") but reversible.
