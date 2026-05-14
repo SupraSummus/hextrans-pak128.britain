@@ -116,8 +116,7 @@ Recurring lookup categories:
   `…/rail_bridges/rail_060_bridge/` (multi-layer; back/front
   depth-clip slicing for bridges).
 
-The two **silent-failure landmines** to pin for the blend
-pipeline:
+The **silent-failure landmines** to pin for the blend pipeline:
 
 1. **Blender world scale.**  Upstream blends are authored for the
    square-dimetric 128-px tile.  Under hex the tile is the same
@@ -132,6 +131,14 @@ pipeline:
    world sun direction (south + 60° elevation — match
    `render.py::SUN_DIR`) and rotates the model under it, so
    shading stays consistent across facings.
+3. **Image pixel orientation.**  `bpy.types.Image.pixels` is
+   bottom-up (origin at bottom-left).  PIL and
+   `hextrans-pak128/tools/threed/bespoke.py::bake_atlas` work
+   top-down.  `hex_render.py` flips on load and again on save so
+   the in-memory atlas representation matches upstream's
+   convention (and bbox printouts read row-from-top).  Forget the
+   flip and the atlas comes out vertically mirrored — silently
+   rendered, silently saved, only caught by eye.
 
 ## Don't bake the answer
 
@@ -305,6 +312,24 @@ CI-artefact-only").  Only the final atlas + dat are committed.  Debug renders, p
 diff visualisations go to a `.gitignore`d `out/` and regenerate
 on demand.
 
+### Atlas layout
+
+Each per-asset PNG is a single row of N facing renders, sliced by
+makeobj into 128×128 sprites (cell width = pak tile width).  Cell
+`(col, row)` is addressed from the .dat as `<file>.<col>.<row>`.
+
+Column order is the `_VIEWS` list in `tools/threed/hex_render.py`:
+`S, SW, W, NW, N, NE, E, SE` for the default 8-view bake.
+`--views 6` drops `W` and `E` (column indices shift accordingly);
+`--views 4` keeps only `S, W, N, E`.  Per-asset .dat keys
+(`EmptyImage[S]=…0.0`, `EmptyImage[SW]=…1.0`, …) must match this
+order or the engine renders the wrong sprite per facing — there
+is no run-time consistency check.
+
+Single-row is the default.  `hex_render.py --cols-per-row N` exists
+for atlases that grow tall enough to be awkward (way ribi tables,
+multi-state machinery); not relevant for 8-facing vehicles.
+
 ## Bake tooling
 
 Lives at `tools/threed/` in this repo, not in the blends repo
@@ -340,10 +365,38 @@ The Britain blends already carry the `sp_*` material-name
 convention for player-colour masks; port that pass over from the
 upstream render script when the first asset bake needs masks.
 
+Atlas composition is implemented inline in `hex_render.py` rather
+than imported from `hextrans-pak128/tools/threed/bespoke.py::bake_atlas`
+because `bespoke` uses PIL and Blender's bundled Python on Ubuntu
+ships only `numpy` (see "Running the bake in a fresh sandbox"
+below).  The API surface mirrors `bake_atlas` (label/cell entries,
+`cols_per_row`, per-cell bbox printout) — port across if/when the
+two converge into a shared package.
+
 When the bake tooling stabilises it's a candidate for extraction
 into a shared `simutrans-threed` Python package consumed by both
 this pakset and `hextrans-pak128`.  Don't extract before the
 second consumer has bent the API at least once.
+
+### Running the bake in a fresh sandbox
+
+Ubuntu 24.04 (and the CCW image it derives from) ships nothing
+3D-relevant by default.  Minimum install to run a per-asset
+`bake.py` end-to-end:
+
+```
+apt-get install -y blender python3-numpy libegl1
+```
+
+`blender` (4.0.2 on noble) provides the `blender -b -P` harness;
+its bundled Python is the system `python3.12`, so `python3-numpy`
+lands `numpy` where `hex_render.py`'s `import numpy as np` will
+find it.  `libegl1` is the runtime Blender's GL backend dlopens —
+without it Cycles aborts with SIGABRT before the first render
+even though `--background` would suggest no display needed.
+
+No GPU required; Cycles falls back to CPU.  ~4 s per facing on
+a small carriage.
 
 ## CI rebake check
 

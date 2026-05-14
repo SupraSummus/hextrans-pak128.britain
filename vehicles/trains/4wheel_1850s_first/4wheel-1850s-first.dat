@@ -21,13 +21,14 @@ bidirectional=1
 Constraint[Prev][0]=any
 Constraint[Next][0]=any
 
-EmptyImage[E]=./4wheel-1850s-first_E.0.0
-EmptyImage[SE]=./4wheel-1850s-first_SE.0.0
-EmptyImage[S]=./4wheel-1850s-first_S.0.0
-EmptyImage[SW]=./4wheel-1850s-first_SW.0.0
-EmptyImage[W]=./4wheel-1850s-first_W.0.0
-EmptyImage[NW]=./4wheel-1850s-first_NW.0.0
-EmptyImage[N]=./4wheel-1850s-first_N.0.0
-EmptyImage[NE]=./4wheel-1850s-first_NE.0.0
+# Atlas column order = hex_render.py::_VIEWS: S,SW,W,NW,N,NE,E,SE.
+EmptyImage[S]=./4wheel-1850s-first.0.0
+EmptyImage[SW]=./4wheel-1850s-first.1.0
+EmptyImage[W]=./4wheel-1850s-first.2.0
+EmptyImage[NW]=./4wheel-1850s-first.3.0
+EmptyImage[N]=./4wheel-1850s-first.4.0
+EmptyImage[NE]=./4wheel-1850s-first.5.0
+EmptyImage[E]=./4wheel-1850s-first.6.0
+EmptyImage[SE]=./4wheel-1850s-first.7.0
 
 ----------

@@ -11,6 +11,12 @@ shear and per-facing Z rotation.  Sun is one fixed world-direction; the
 model rotates beneath it (pak128 convention -- see CLAUDE.md ->
 "Structural anchors").
 
+Output is a single atlas PNG `<name>.png`: one row, cells laid out in
+the `_VIEWS` order below.  The .dat references cells as
+`<name>.<col>.<row>` (Simutrans image-sheet convention).  Atlas
+composition follows `hextrans-pak128/tools/threed/bespoke.py::bake_atlas`
+but runs in-Blender via numpy + bpy (Blender ships numpy, not PIL).
+
 Run as:
 
     blender -b <blend_path> -P tools/threed/hex_render.py -- \\
@@ -20,6 +26,7 @@ Run as:
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from math import radians
 from pathlib import Path
@@ -55,6 +62,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--views", type=int, choices=[4, 6, 8], default=8)
     ap.add_argument("--width", type=int, default=DEFAULT_W,
                     help="output image width (and height) in pixels")
+    ap.add_argument("--cols-per-row", type=int, default=None,
+                    help="atlas grid width; default lays all cells in one row")
     return ap.parse_args(argv)
 
 
@@ -175,9 +184,61 @@ def _facing_matrix(mathutils, rot_z_deg: int, fit: "mathutils.Matrix") -> "mathu
     return shear @ rot @ fit
 
 
+def _load_rgba(bpy, path: Path):
+    """Load a PNG via Blender, return its pixels as a top-down (h, w, 4)
+    numpy float32 array in [0, 1].
+
+    Blender stores `image.pixels` bottom-up; flip on load so the
+    in-memory convention matches `bespoke.bake_atlas` (PIL, top-down)
+    and bbox printouts read row-from-top.
+    """
+    import numpy as np
+    img = bpy.data.images.load(str(path))
+    try:
+        w, h = img.size[0], img.size[1]
+        buf = np.empty(w * h * 4, dtype=np.float32)
+        img.pixels.foreach_get(buf)
+    finally:
+        bpy.data.images.remove(img)
+    return buf.reshape(h, w, 4)[::-1].copy()
+
+
+def _save_atlas(bpy, atlas, name: str, path: Path) -> None:
+    """Write a top-down (h, w, 4) numpy array as a PNG via bpy."""
+    h, w = atlas.shape[:2]
+    img = bpy.data.images.new(name=name, width=w, height=h, alpha=True)
+    try:
+        flipped = atlas[::-1].astype("float32", copy=False)
+        img.pixels.foreach_set(flipped.ravel())
+        img.filepath_raw = str(path)
+        img.file_format = "PNG"
+        img.save()
+    finally:
+        bpy.data.images.remove(img)
+
+
+def _print_atlas_summary(out_path: Path, cells, cols: int, rows: int) -> None:
+    """Echo bbox per cell, mirroring `bespoke.bake_atlas`'s printout."""
+    import numpy as np
+    h, w = cells[0][1].shape[:2]
+    label_w = max(len(label) for label, _ in cells)
+    print(f"wrote {out_path} ({cols * w}x{rows * h} px, {len(cells)} cells)")
+    for i, (label, cell) in enumerate(cells):
+        r, c = divmod(i, cols)
+        mask = cell[..., 3] > 0
+        if mask.any():
+            ys, xs = np.where(mask)
+            bbox = (f"bbox=({int(xs.min())},{int(ys.min())})-"
+                    f"({int(xs.max())},{int(ys.max())}) px={int(mask.sum())}")
+        else:
+            bbox = "EMPTY"
+        print(f"  r{r}c{c}: {label:<{label_w}s} {bbox}")
+
+
 def main(argv: list[str]) -> int:
     import bpy  # only resolvable inside Blender
     import mathutils
+    import numpy as np
 
     args = _parse_args(argv)
     out_dir = Path(args.out).resolve()
@@ -187,15 +248,35 @@ def main(argv: list[str]) -> int:
     _setup_sun(bpy)
     root, fit = _reparent_to_shear_root(bpy, mathutils)
 
+    tmp_dir = out_dir / ".hex_render_tmp"
+    tmp_dir.mkdir(exist_ok=True)
     scn = bpy.context.scene
-    for suffix, rot_z in _VIEWS:
-        if args.views == 4 and suffix not in _FOUR:
-            continue
-        if args.views == 6 and suffix not in _SIX:
-            continue
-        root.matrix_basis = _facing_matrix(mathutils, rot_z, fit)
-        scn.render.filepath = str(out_dir / f"{args.name}_{suffix}.png")
-        bpy.ops.render.render(animation=False, write_still=True)
+    cells = []
+    try:
+        for suffix, rot_z in _VIEWS:
+            if args.views == 4 and suffix not in _FOUR:
+                continue
+            if args.views == 6 and suffix not in _SIX:
+                continue
+            root.matrix_basis = _facing_matrix(mathutils, rot_z, fit)
+            tmp_path = tmp_dir / f"{suffix}.png"
+            scn.render.filepath = str(tmp_path)
+            bpy.ops.render.render(animation=False, write_still=True)
+            cells.append((suffix, _load_rgba(bpy, tmp_path)))
+
+        cols = args.cols_per_row or len(cells)
+        rows = (len(cells) + cols - 1) // cols
+        h, w = cells[0][1].shape[:2]
+        atlas = np.zeros((rows * h, cols * w, 4), dtype=np.float32)
+        for i, (_, cell) in enumerate(cells):
+            r, c = divmod(i, cols)
+            atlas[r * h:(r + 1) * h, c * w:(c + 1) * w] = cell
+
+        out_path = out_dir / f"{args.name}.png"
+        _save_atlas(bpy, atlas, args.name, out_path)
+        _print_atlas_summary(out_path, cells, cols, rows)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return 0
 
