@@ -647,6 +647,33 @@ Present:
   imports it, reads `BLEND` and `UPSTREAM_STEM` from the module,
   runs the diff, and prints a per-asset worst-IoU + sum-XOR-pixel
   summary.  See "Calibration validation loop" above.
+- `tools/threed/square_synth.py` — `SquareGeom`, a sibling to
+  `HexGeom` implementing pak128.Britain's square-dimetric tile
+  layout (4 corners, base-3 slope encoding, 128×128 cells with the
+  flat lozenge spanning `y = 64..127`).  Same `Geom` interface as
+  `HexGeom` — `corner_count`, `corner_world_xy`, `corner_projected_xy`,
+  `all_chords`, `corner_labels`, `full_path`, plus
+  `decode_corner_heights` / `iter_valid_slopes` / `slope_is_valid`
+  — so the generic partition / region / fill / outline helpers in
+  `hex_synth.py` work against either projection without isinstance
+  branches.  Exists for `diff_grounds.py`'s test harness (see
+  below); not on the hex production path.
+- `tools/threed/diff_grounds.py` — square-projection diff harness
+  for the parametric ground bakers.  Re-runs `grounds/<asset>.py`
+  through `SquareGeom`, fetches the matching upstream PNG +
+  `Image[N]=...` dat via `fetch_pak`, parses the slope→cell map
+  (multi-object dat support; scope by `Name=`), and reports
+  per-cell silhouette IoU + per-region brightness ratio.  The
+  asset's `min_iou` in the `ASSETS` table is the calibrated
+  regression floor (slightly under the current measured min, so
+  drift below trips CI without flagging today's baseline).  Today
+  only `light_texture` is wired in — mean IoU 0.97, min 0.90 vs
+  upstream's authored cell atlas; mean ratio ≈ 1.1× reflects the
+  hex-engine lightmap multiplier scale vs pak128-standard's, not a
+  generation bug.  The point of the harness is to exercise slope
+  decode + partition + Lambert + fill + atlas layout end-to-end
+  against authored ground truth; extend `ASSETS` per baker (see
+  TODO.md → "Square-bake diff harness coverage").
 - `tools/threed/dat.py` — Simutrans `.dat` parse / port / emit.
   Exposes `Vehicle` (typed dataclass covering both hex-engine
   and Extended schema; list fields may carry
@@ -671,6 +698,15 @@ Present:
   construction property.  Run via
   `python3 -m unittest tests.test_dat` (or
   `python3 -m pytest tests/`).
+- `tests/test_square_synth.py` — geometry assertions for
+  `SquareGeom`: slope encoding (base-3 weights, `Image[N]` corner
+  mapping), validity filter (normalised + adjacency ≤ 2, 65 slopes
+  total), screen layout pinned to upstream's `texture-lightmap.png`
+  cells, partition output for known slope shapes, and the shared
+  `Geom`-interface attribute surface that the generic helpers
+  consume.  The pinned values come from upstream and don't move,
+  so a future projection refactor has to re-justify itself against
+  the same ground truth as the diff harness.
 
 The Britain blends already carry the `sp_*` material-name
 convention for player-colour masks; port that pass over from the

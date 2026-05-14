@@ -165,7 +165,19 @@ class HexGeom:
 
     Mirrors the C++ struct field for field — kept verbose rather than
     folded into a function so the call sites read like the engine's.
+
+    Also implements the `Geom` interface consumed by the generic
+    partition / region / outline helpers below (`corner_count`,
+    `corner_world_xy`, `corner_projected_xy`, `all_chords`,
+    `decode_corner_heights`, `iter_valid_slopes`), so the same
+    helpers work against `SquareGeom` (see `square_synth.py`) without
+    branching on projection.
     """
+
+    # ---- Geom interface (projection-agnostic constants) -------------------
+    corner_count = CORNER_COUNT
+    corner_labels = ("E", "SE", "SW", "W", "NW", "NE")
+    full_path: tuple[int, ...]    # set in __init__ once HEX_FULL_PATH is defined
 
     def __init__(self, raster_w: int = DEFAULT_W, height_step: int = HEIGHT_STEP):
         u = raster_w // 4
@@ -193,8 +205,26 @@ class HexGeom:
 
         Y grows down; corner height lifts UP, so subtract `ch[i]*lift`.
         """
-        ch = decode_corner_heights(slope)
-        return [self.vy_base[i] - ch[i] * self.lift for i in range(CORNER_COUNT)]
+        ch = self.decode_corner_heights(slope)
+        return [self.vy_base[i] - ch[i] * self.lift for i in range(self.corner_count)]
+
+    # ---- Geom interface --------------------------------------------------
+
+    @staticmethod
+    def decode_corner_heights(slope: int) -> list[int]:
+        return decode_corner_heights(slope)
+
+    @staticmethod
+    def iter_valid_slopes():
+        return iter_valid_slopes()
+
+    @staticmethod
+    def slope_is_valid(slope: int) -> bool:
+        return slope_is_valid(slope)
+
+    # `corner_world_xy`, `corner_projected_xy`, `all_chords`, `full_path`
+    # are assigned at module scope below, once the hex tables they alias
+    # are defined.
 
 
 # Canonical corner traversal paths matching `synth_overlay.cc`:
@@ -205,6 +235,11 @@ class HexGeom:
 HEX_FULL_PATH  = (E, SE, SW, W_C, NW, NE)
 HEX_BACK_PATH  = (E, NE, NW, W_C)
 HEX_FRONT_PATH = (E, SE, SW, W_C)
+
+
+# Bind the Geom-interface tables onto HexGeom (deferred from the class body
+# because they reference module-scope tables defined below the class).
+# Set later, once HEX_ALL_CHORDS and HEX_CORNER_PROJECTED_X/Y are in scope.
 
 
 # ---- Cliff cells ----------------------------------------------------------
@@ -398,24 +433,39 @@ HEX_CORNER_PROJECTED_X = [ 1,  0, -1, -1,  0,  1]
 HEX_CORNER_PROJECTED_Y = [ 0,  1,  1,  0, -1, -1]
 
 
+# Finish the HexGeom Geom interface now that the hex tables exist.
+HexGeom.corner_world_xy = HEX_CORNER_XY
+HexGeom.corner_projected_xy = list(zip(HEX_CORNER_PROJECTED_X, HEX_CORNER_PROJECTED_Y))
+HexGeom.all_chords = HEX_ALL_CHORDS
+HexGeom.full_path = HEX_FULL_PATH
+
+
 def _chords_cross(c1, c2) -> bool:
     a, b = sorted(c1)
     c, d = sorted(c2)
     return (a < c < b < d) or (c < a < d < b)
 
 
-def _compute_regions_from_chord_mask(mask: int):
-    regions: list[list[int]] = [[0, 1, 2, 3, 4, 5]]
-    for ci in range(9):
+def _compute_regions_from_chord_mask(geom, mask: int):
+    """Walk `geom.all_chords` masked by `mask`, returning the polygon
+    regions or `None` if the mask is inconsistent.
+
+    Mirrors the engine's `synth_plane_partition.h::compute_regions_from_chord_mask`,
+    parameterised over `geom.corner_count` (4 for square, 6 for hex) and
+    `geom.all_chords`."""
+    n = geom.corner_count
+    chords = geom.all_chords
+    regions: list[list[int]] = [list(range(n))]
+    for ci in range(len(chords)):
         if not (mask & (1 << ci)):
             continue
-        a, b = HEX_ALL_CHORDS[ci]
+        a, b = chords[ci]
         split_idx = -1
         for ri, reg in enumerate(regions):
             if a in reg and b in reg:
                 split_idx = ri
                 break
-        if split_idx < 0 or len(regions) >= 4:
+        if split_idx < 0 or len(regions) >= n:
             return None
         reg = regions[split_idx]
         ai = reg.index(a)
@@ -424,30 +474,32 @@ def _compute_regions_from_chord_mask(mask: int):
         e = max(ai, bi)
         r1 = reg[s:e + 1]
         r2 = reg[e:] + reg[:s + 1]
-        if len(r1) > CORNER_COUNT or len(r2) > CORNER_COUNT:
+        if len(r1) > n or len(r2) > n:
             return None
         regions[split_idx] = r1
         regions.append(r2)
     return regions
 
 
-def _region_coplanar(region: list[int], ch: list[int]) -> bool:
+def _region_coplanar(geom, region: list[int], ch: list[int]) -> bool:
     n = len(region)
     if n <= 3:
         return True
+    px = [geom.corner_projected_xy[i][0] for i in range(geom.corner_count)]
+    py = [geom.corner_projected_xy[i][1] for i in range(geom.corner_count)]
     for a in range(n):
         for b in range(a + 1, n):
             for c in range(b + 1, n):
                 for d in range(c + 1, n):
                     ia, ib, ic, id_ = region[a], region[b], region[c], region[d]
-                    v1x = HEX_CORNER_PROJECTED_X[ib] - HEX_CORNER_PROJECTED_X[ia]
-                    v1y = HEX_CORNER_PROJECTED_Y[ib] - HEX_CORNER_PROJECTED_Y[ia]
+                    v1x = px[ib] - px[ia]
+                    v1y = py[ib] - py[ia]
                     v1z = ch[ib] - ch[ia]
-                    v2x = HEX_CORNER_PROJECTED_X[ic] - HEX_CORNER_PROJECTED_X[ia]
-                    v2y = HEX_CORNER_PROJECTED_Y[ic] - HEX_CORNER_PROJECTED_Y[ia]
+                    v2x = px[ic] - px[ia]
+                    v2y = py[ic] - py[ia]
                     v2z = ch[ic] - ch[ia]
-                    v3x = HEX_CORNER_PROJECTED_X[id_] - HEX_CORNER_PROJECTED_X[ia]
-                    v3y = HEX_CORNER_PROJECTED_Y[id_] - HEX_CORNER_PROJECTED_Y[ia]
+                    v3x = px[id_] - px[ia]
+                    v3y = py[id_] - py[ia]
                     v3z = ch[id_] - ch[ia]
                     det = (v1x * (v2y * v3z - v2z * v3y)
                            - v1y * (v2x * v3z - v2z * v3x)
@@ -461,25 +513,36 @@ def _region_flat_horizontal(region: list[int], ch: list[int]) -> bool:
     return all(ch[v] == ch[region[0]] for v in region)
 
 
-def _region_projected_area2(region: list[int]) -> int:
+def _region_projected_area2(geom, region: list[int]) -> int:
     a2 = 0
     n = len(region)
+    px = [geom.corner_projected_xy[i][0] for i in range(geom.corner_count)]
+    py = [geom.corner_projected_xy[i][1] for i in range(geom.corner_count)]
     for i in range(n):
         j = (i + 1) % n
-        a2 += (HEX_CORNER_PROJECTED_X[region[i]] * HEX_CORNER_PROJECTED_Y[region[j]]
-               - HEX_CORNER_PROJECTED_X[region[j]] * HEX_CORNER_PROJECTED_Y[region[i]])
+        a2 += (px[region[i]] * py[region[j]]
+               - px[region[j]] * py[region[i]])
     return abs(a2)
 
 
-def find_min_partition(slope: int) -> list[list[int]]:
-    """Engine-equivalent minimum-region partition for a slope."""
-    ch = decode_corner_heights(slope)
+def find_min_partition(slope: int, geom=None) -> list[list[int]]:
+    """Engine-equivalent minimum-region partition for a slope.
+
+    `geom` selects the projection (defaults to `HexGeom()`).  The
+    algorithm is projection-independent: it sweeps every chord-mask
+    subset of `geom.all_chords`, drops masks with crossing chords or
+    non-coplanar regions, and minimises (region count, -flat_area).
+    """
+    if geom is None:
+        geom = HexGeom()
+    ch = geom.decode_corner_heights(slope)
+    chords = geom.all_chords
     best: list[list[int]] | None = None
-    best_count = CORNER_COUNT + 1
+    best_count = geom.corner_count + 1
     best_flat_area = -1
 
-    for mask in range(1 << 9):
-        chords_set = [HEX_ALL_CHORDS[i] for i in range(9) if mask & (1 << i)]
+    for mask in range(1 << len(chords)):
+        chords_set = [chords[i] for i in range(len(chords)) if mask & (1 << i)]
         ok = True
         for i in range(len(chords_set)):
             for j in range(i + 1, len(chords_set)):
@@ -491,13 +554,13 @@ def find_min_partition(slope: int) -> list[list[int]]:
         if not ok:
             continue
 
-        cand = _compute_regions_from_chord_mask(mask)
+        cand = _compute_regions_from_chord_mask(geom, mask)
         if cand is None:
             continue
-        if not all(_region_coplanar(r, ch) for r in cand):
+        if not all(_region_coplanar(geom, r, ch) for r in cand):
             continue
 
-        flat_area = sum(_region_projected_area2(r)
+        flat_area = sum(_region_projected_area2(geom, r)
                         for r in cand if _region_flat_horizontal(r, ch))
         if (len(cand) < best_count
                 or (len(cand) == best_count and flat_area > best_flat_area)):
@@ -507,11 +570,13 @@ def find_min_partition(slope: int) -> list[list[int]]:
             if best_count == 1:
                 break
 
-    return best if best is not None else [[0, 1, 2, 3, 4, 5]]
+    return best if best is not None else [list(range(geom.corner_count))]
 
 
-def trivial_partition() -> list[list[int]]:
-    return [[E, SE, SW, W_C, NW, NE]]
+def trivial_partition(geom=None) -> list[list[int]]:
+    if geom is None:
+        geom = HexGeom()
+    return [list(range(geom.corner_count))]
 
 
 # ---- Polygon fill (independent re-implementation of synth_overlay.cc) -----
@@ -617,8 +682,8 @@ def hash_noise01(x: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 
 def centre_fan_field(slope: int, corner_values, centre_value: float,
-                     geom: HexGeom) -> np.ndarray:
-    """Per-pixel barycentric mix over the slope's 6 centre-fan triangles."""
+                     geom) -> np.ndarray:
+    """Per-pixel barycentric mix over the slope's centre-fan triangles."""
     vx = np.array(geom.vx, dtype=np.float32)
     vy = np.array(geom.lifted_vy(slope), dtype=np.float32)
     weight = np.asarray(corner_values, dtype=np.float32)
@@ -634,8 +699,9 @@ def centre_fan_field(slope: int, corner_values, centre_value: float,
     field = np.full((geom.h, geom.w), cw, dtype=np.float32)
     assigned = np.zeros((geom.h, geom.w), dtype=bool)
 
-    for i in range(CORNER_COUNT):
-        j = (i + 1) % CORNER_COUNT
+    n = geom.corner_count
+    for i in range(n):
+        j = (i + 1) % n
         ax, ay, aw = vx[i], vy[i], weight[i]
         bx, by, bw = vx[j], vy[j], weight[j]
         denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
@@ -651,10 +717,10 @@ def centre_fan_field(slope: int, corner_values, centre_value: float,
     return field
 
 
-def iter_region_polygons(slope: int, geom: HexGeom):
+def iter_region_polygons(slope: int, geom):
     """Yield `(region, xs, ys)` for each polygon in `find_min_partition(slope)`."""
     vy = geom.lifted_vy(slope)
-    for region in find_min_partition(slope):
+    for region in find_min_partition(slope, geom):
         if len(region) < 3:
             continue
         xs = [geom.vx[i] for i in region]
@@ -681,16 +747,16 @@ def face_normal_brightness(pts) -> int:
     return lambert_brightness(0.0, 0.0, 1.0)
 
 
-def region_brightness(region: list[int], slope: int, geom: HexGeom) -> int:
+def region_brightness(region: list[int], slope: int, geom) -> int:
     """Lambert brightness (256 = 1.0×) for one coplanar region."""
-    ch = decode_corner_heights(slope)
+    ch = geom.decode_corner_heights(slope)
     vy = geom.lifted_vy(slope)
     pts = [(geom.vx[i], vy[i], ch[i] * geom.lift) for i in region]
     return face_normal_brightness(pts)
 
 
-def silhouette_mask(slope: int, geom: HexGeom) -> np.ndarray:
-    """Boolean (H, W) mask of pixels inside the slope's hex silhouette."""
+def silhouette_mask(slope: int, geom) -> np.ndarray:
+    """Boolean (H, W) mask of pixels inside the slope silhouette."""
     buf = np.zeros((geom.h, geom.w, 4), dtype=np.uint8)
     sentinel = (1, 1, 1)
     for _region, xs, ys in iter_region_polygons(slope, geom):
@@ -699,7 +765,7 @@ def silhouette_mask(slope: int, geom: HexGeom) -> np.ndarray:
     return buf[..., 3] != 0
 
 
-def rasterise_outline(buf: np.ndarray, geom: HexGeom, slope: int,
+def rasterise_outline(buf: np.ndarray, geom, slope: int,
                       path, color_rgb: tuple[int, int, int],
                       closed: bool):
     """Walk `path` (a sequence of corner indices), drawing each edge."""
@@ -731,17 +797,22 @@ def repo_root_for(script_path: Path) -> Path:
 
 
 def slope_keyed_entries(halves: int = 1, slope_filter=None):
-    """Default `iter_entries` for slope-keyed assets."""
+    """Default `iter_entries` for slope-keyed assets.
+
+    Uses `geom.iter_valid_slopes()` / `geom.decode_corner_heights()`,
+    so the same factory drives both `HexGeom` and `SquareGeom` runs;
+    the per-cell comment names corners via `geom.corner_labels`.
+    """
     def gen(geom):
+        labels = geom.corner_labels
         for half in range(halves):
-            for slope in iter_valid_slopes():
+            for slope in geom.iter_valid_slopes():
                 if slope_filter is not None and not slope_filter(slope):
                     continue
-                ch = decode_corner_heights(slope)
+                ch = geom.decode_corner_heights(slope)
                 side = "" if halves == 1 else ("front " if half == 0 else "back ")
-                comment = (f"{side}corners=(E={ch[E]} SE={ch[SE]} "
-                           f"SW={ch[SW]} W={ch[W_C]} "
-                           f"NW={ch[NW]} NE={ch[NE]})")
+                inner = " ".join(f"{labels[i]}={ch[i]}" for i in range(geom.corner_count))
+                comment = f"{side}corners=({inner})"
                 yield slope, half, (slope, half), comment
     return gen
 
@@ -749,7 +820,12 @@ def slope_keyed_entries(halves: int = 1, slope_filter=None):
 def bake_pakset(*, script_path: Path, asset_name: str, obj_name: str,
                 render_cell, iter_entries,
                 default_cols: int = 12, argv=None):
-    """Run argparse, bake atlas + .dat for one synth-overlay family."""
+    """Run argparse, bake atlas + .dat for one synth-overlay family.
+
+    Hex is the production projection; `--projection square` swaps in
+    `square_synth.SquareGeom` for the upstream-Britain pixel-diff
+    harness (`tools/threed/diff_grounds.py`).
+    """
     p = argparse.ArgumentParser()
     p.add_argument("--w", type=int, default=DEFAULT_W,
                    help=f"raster tile width (default {DEFAULT_W})")
@@ -757,11 +833,17 @@ def bake_pakset(*, script_path: Path, asset_name: str, obj_name: str,
                    help=f"atlas columns (default {default_cols})")
     p.add_argument("--out-dir", type=Path, default=script_path.parent,
                    help="output directory (default: the script's own dir)")
+    p.add_argument("--projection", choices=("hex", "square"), default="hex",
+                   help="ground geom (hex by default; square for upstream diff)")
     args = p.parse_args(argv)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    geom = HexGeom(raster_w=args.w)
+    if args.projection == "square":
+        from tools.threed.square_synth import SquareGeom
+        geom = SquareGeom(raster_w=args.w)
+    else:
+        geom = HexGeom(raster_w=args.w)
     entries = list(iter_entries(geom))
     n_entries = len(entries)
     rows = (n_entries + args.cols - 1) // args.cols
@@ -794,10 +876,16 @@ def bake_pakset(*, script_path: Path, asset_name: str, obj_name: str,
     Image.fromarray(atlas, mode="RGBA").save(str(png_path))
     dat_path.write_text("\n".join(dat_lines))
 
+    def _pretty(p: Path) -> str:
+        try:
+            return p.relative_to(rel_root).as_posix()
+        except ValueError:
+            return str(p)
+
     print(f"{script_rel.as_posix()}: wrote {n_entries} cells into "
-          f"{png_path.relative_to(rel_root)} "
+          f"{_pretty(png_path)} "
           f"({args.cols}x{rows} atlas, {atlas.shape[1]}x{atlas.shape[0]} px)",
           file=sys.stderr)
     print(f"{script_rel.as_posix()}: wrote .dat with {n_entries} entries -> "
-          f"{dat_path.relative_to(rel_root)}",
+          f"{_pretty(dat_path)}",
           file=sys.stderr)
