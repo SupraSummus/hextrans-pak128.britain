@@ -101,6 +101,40 @@ hex edges under a simple wood-rail palette), keyed by slope,
 mirroring the marker / borders shape; delete the upstream stub once
 the baker emits a real `fence.{png,dat}`.
 
+**Lightmap multiplier scale mismatch.**  The square-bake diff
+against upstream `grounds/images/texture-lightmap.png` shows a
+consistent ≈ 1.1–1.4× brightness ratio across slopes — our flat
+cell renders grey 132, upstream's renders grey 188.  The Lambert
+*shape* is right (cell IoUs sit at 0.90–0.99 even on the worst
+multi-region slopes); only the absolute scale differs.  That's
+`tools/threed/lightmap.py::brightness_to_grey_rgb`'s
+`create_textured_tile` convention — `gray5 = brightness/16` lands
+flat at gray8 ≈ 132 for the hex engine's multiplier path, but
+pak128-standard's `create_textured_tile` uses a different scale.
+Concrete next move when the hex engine's lightmap path is
+validated in-engine (i.e. we can see the actual rendered ground
+under climate-texture multiplication): if the result reads too
+dark, parameterise `brightness_to_grey_rgb` by a per-projection
+multiplier scale and bump it for the hex engine to match
+upstream's apparent brightness.  Soft trigger.
+
+**Square-bake diff harness coverage.**  `tools/threed/diff_grounds.py`
+runs a parametric ground baker through `square_synth.SquareGeom` and
+pixel-diffs against the upstream pak128.Britain authored cell atlas,
+exercising slope decode + region partition + Lambert + polygon fill +
+atlas layout end-to-end.  Only `light_texture` is wired into the
+`ASSETS` table today (mean IoU 0.97 vs `grounds/images/texture-lightmap.png`,
+min 0.90 on the most-sloped triple-region cells); the other procedural
+bakers — `slopes`/`basement` (`back_wall.py`), `sidewalk`, `marker`,
+`borders`, `water` — have upstream square counterparts under
+`grounds/images/` (e.g. `ground-slope-walls-128.png`,
+`ground-newfoundation-128.png`, `ls-water-128.png`) and would each
+benefit from an `ASSETS` entry.  Concrete next move per baker: identify
+the upstream PNG + dat object name, add the entry, run the diff, fix
+any < 0.90 IoU regressions surfaced (likely 1-pixel rasterisation
+offsets at corner ramps, or palette-multiplier scale mismatches that
+the harness reports as `ratio ≠ 1.0`).
+
 **One rail way under hex.**  Port `…/rail_060_*` so a carriage has
 somewhere to sit.  Ground is done; this is the second half of the
 "spine visible in-engine" milestone.
