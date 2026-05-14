@@ -46,3 +46,6 @@ makeobj-extended*
 # Bake / fetch caches and debug renders.
 .cache/
 out/
+
+# Python.
+__pycache__/
