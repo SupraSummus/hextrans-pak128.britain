@@ -67,6 +67,14 @@ def main(argv: list[str]) -> int:
     cam.rotation_mode = "XYZ"
     sun.rotation_mode = "XYZ"
 
+    # Many older upstream blends ship with Output=RGB and a non-transparent
+    # film (artist convention has since moved to RGBA + film_transparent;
+    # see CLAUDE.md and the pak128.Britain contributing-graphics thread).
+    # Force the modern convention so output is alpha-cut on a transparent
+    # background regardless of what the .blend was last saved with.
+    scn.render.film_transparent = True
+    scn.render.image_settings.color_mode = "RGBA"
+
     from pathlib import Path
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)

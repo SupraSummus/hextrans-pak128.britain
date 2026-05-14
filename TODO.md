@@ -61,13 +61,14 @@ atlas size after the first ~10 asset bakes; if the cumulative is
 under 10 MB this question retires.  Trigger: ten assets baked.
 
 **Wire up runtime `.wav` fetching.**  Sounds were stripped from
-history; the engine still expects to load them.  Concrete next
-move when audio first matters in-engine: write `wavs.lock`
-pinned to a known-good upstream `simutrans-pak128.britain` SHA
-(the SHA whose `sound/` we want), write
-`tools/sound/fetch_wav.py` mirroring `fetch_blend.py`, and
-decide whether the engine's sound loader calls the fetcher
-directly or a pre-launch step warms `.cache/`.  Soft trigger.
+history; the engine still expects to load them.  `pak.lock` and
+`tools/threed/fetch_pak.py` already pin and fetch from the
+upstream pak repo (currently for the calibration diff).  Concrete
+next move when audio first matters in-engine: decide whether the
+engine's sound loader calls `fetch_pak` directly or a pre-launch
+step warms `.cache/pak/<sha>/sound/`.  Either way the SHA bump
+lives in `pak.lock` so PNG and wav consumers stay in lock-step.
+Soft trigger.
 
 **Engine facing count cutover.**  Vehicles currently bake under
 the engine's 4-or-8-direction convention with hex-heading
@@ -90,12 +91,14 @@ port the material-swap code from the upstream `-65` script into
 a `--mask` mode on hex_render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
-**Per-asset fit overrides.**  hex_render.py's auto-fit is
-heuristic — picks the longer of (span_x, span_y) as the
-longitudinal axis, scales to 80% of tile diameter, grounds at
-min z.  Wrong on assets where span_y > span_x but the artist
-intended X-native (the heuristic flips them).  Also can't
-handle multi-tile assets (the carriage IS one tile; a long loco
-might want to overflow).  Concrete next move when the first
-asset trips this: add `tools/threed/fit.toml` or a `bake.py`
-kwarg, fall back to auto-fit when unspecified.  Soft trigger.
+**Multi-tile asset overflow.**  hex_render.py now applies a single
+pakset-wide scale (`_BLEND_TO_HEX_SCALE = 2R/24`) under the
+calibration contract documented in CLAUDE.md, so a long loco at
+its real upstream size will render larger than one cell.  The atlas
+is currently one row of W×W cells; a mainline loco needs to be
+sliced across multiple cells with a known per-cell offset, matching
+the engine's multi-tile vehicle convention.  Concrete next move
+when the first mainline-loco-length asset is ported: extend
+`hex_render.py` to emit multi-cell atlases driven by the model's
+post-scale extent, and wire the resulting cell layout into the
+`.dat`.  Soft trigger.
