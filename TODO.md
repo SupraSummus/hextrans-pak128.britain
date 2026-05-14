@@ -72,10 +72,38 @@ reference cube against the same cube through
 `hextrans-pak128/tools/threed/render.py::HexCamera`; they should
 agree to within renderer noise.  Trigger: any second-asset bake.
 
-**Ground tiles + one rail way.**  Port
-`hextrans-pak128/landscape/grounds/` and `…/rail_060_*` so the
-carriage has somewhere to sit.  At that point the spine is
-visible in-engine.
+**Ground bake gaps: climate_texture, way_ground, fence.**  Eight
+parametric ground families port from pak128 live under `grounds/*.py`
+now (light_texture, back_wall → slopes + basement, marker, borders,
+water, sidewalk, shore_trans, slope_trans).  Three pieces still
+missing.  `climate_texture` is biome art with no tile geometry baked
+in — pak128 reuses upstream's `texture-climate.png` unchanged; the
+hex engine multiplies it against the lightmap at runtime via
+`create_textured_tile`.  Britain doesn't ship one yet, so the
+lightmap atlas composites against nothing.  Concrete next move:
+either author a Britain-flavoured 8-climate biome palette (one tile
+per climate, no tile geometry) and ship as
+`grounds/climate_texture.{png,dat}`, or vendor pak128's
+`texture-climate.png` as a placeholder with a note.  `way_ground` is
+the per-`(axis, slope)` ground lightmap for tiles carrying a way —
+depends on pak128's `tools/threed/render.py` z-buffer rasterizer and
+`way.py`, neither of which is ported into britain's `tools/threed/`.
+Concrete next move: port both modules (small — ~350 lines + ~130
+lines) or re-express way_ground's three faces directly via
+`fill_polygon` in the engine's screen-space Lambert frame (skipping
+the Model / HexCamera abstraction).  `grounds/fences.dat`
+(`Obj=ground Name=Fence`) is the boundary fence at climate
+transitions; the upstream stub references photographic
+`images/fence-*.png` stripped from history, same un-ported state as
+the train / building dats waiting on per-asset bakes.  Concrete next
+move: write `grounds/fence.py` as a small procedural baker (low-side
+hex edges under a simple wood-rail palette), keyed by slope,
+mirroring the marker / borders shape; delete the upstream stub once
+the baker emits a real `fence.{png,dat}`.
+
+**One rail way under hex.**  Port `…/rail_060_*` so a carriage has
+somewhere to sit.  Ground is done; this is the second half of the
+"spine visible in-engine" milestone.
 
 **Bulk-strip remaining unported upstream dats?**  Each upstream
 dat is deleted once its bake script's SPEC verifies (CLAUDE.md →
