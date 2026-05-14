@@ -2,9 +2,10 @@
 
 Reproduces the 4/8-view camera + sun positions from
 `render_SimutransRender_pak128Britain-65.py` at the repo root, but as a
-plain `blender -b -P` script with no addon registration. This is the
-square-dimetric output the upstream `.blend`s were authored for; the hex
-camera will land separately.
+plain `blender -b -P` script with no addon registration.  Output is the
+square-dimetric sprite the upstream `.blend`s were authored for; kept as
+a pipeline regression check against the upstream PNGs.  The hex bake
+lives in `hex_render.py`.
 
 Run as:
 
