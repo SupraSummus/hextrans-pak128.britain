@@ -9,27 +9,42 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**Hex-camera `blend_render.py`.**  The square-dimetric spike at
-`tools/threed/blend_render.py` proves the `blender -b -P` +
-`fetch_blend.py` pipeline against the upstream `-65` script.  The
-hex camera is a separate harness whose math mirrors
-`hextrans-pak128/tools/threed/render.py::HexCamera` (anchored to
-`HexGeom`, no yaw, orthographic, z-lift via `PIXELS_PER_UNIT`).
-Concrete next move: write `tools/threed/hex_render.py` driven off
-the same `fetch_blend.py`, factoring shared scene-prep out of the
-square spike at the same time.  Trigger: first asset bake.
+**`.dat` validation gap.**  `vehicles/trains/4wheel_1850s_first/`
+ships a `.dat` whose vanilla-vs-extended key triage was guessed,
+not looked up.  CLAUDE.md → "Engine facts — look up, don't fit"
+is the rule we broke.  Authoritative key list is
+`hextrans/src/simutrans/descriptor/writer/vehicle_writer.cc`; no
+makeobj binary is in this tree to fail-fast on bad keys.
+Concrete next move: clone the engine, read `vehicle_writer.cc`,
+revise the dat, and ideally build makeobj to actually compile
+the asset.  Trigger: any push toward second-asset bake.
 
-**Bake one asset end-to-end.**  Pick a single passenger carriage
-(no depth-clip slicing, no multi-tile geometry).  Lands the
-per-asset template — `bake.py` shape, dat schema delta, what
-`out/` debug looks like — plus shakes out every silent-failure
-landmine from `CLAUDE.md` → "Engine facts" (scale, sun, anchor y).
-Trigger: `hex_render.py` exists.
+**hex_render.py output validation.**  hex_render.py is
+believed-correct on paper but never compared against an engine
+reference render.  E-facing of 4wheel-1850s-first reads as a
+small dark blob rather than a recognizable carriage end —
+either the projection is off, the auto-fit picked wrong on
+that rotation, or the source mesh genuinely degenerates from
+that angle.  Concrete next move: pixel-compare a hex_render
+output of a procedural reference cube against the same cube
+through `hextrans-pak128/tools/threed/render.py::HexCamera`;
+they should agree to within renderer noise.  Trigger: any
+second-asset bake.
 
-**Ground tiles + one rail way.**  Once the carriage bakes,
-porting `hextrans-pak128/landscape/grounds/` and `…/rail_060_*`
-gives the carriage somewhere to sit.  At that point the spine is
+**Ground tiles + one rail way.**  Port
+`hextrans-pak128/landscape/grounds/` and `…/rail_060_*` so the
+carriage has somewhere to sit.  At that point the spine is
 visible in-engine.
+
+**Directory layout migration.**  This repo holds the upstream
+flat layout (`trains/*.dat` referencing PNGs in sibling
+subfolders) AND the per-asset layout introduced this session
+(`vehicles/trains/4wheel_1850s_first/{bake.py, *.png, *.dat}`).
+Rule under construction: ported assets live under the per-asset
+layout; the flat `trains/` etc. are read-only reference until
+their assets get ported.  Concrete next move: write the rule
+into CLAUDE.md once the second per-asset bake confirms the
+layout holds up.  Soft trigger.
 
 After the spine: expand by asset family (rail vehicles, road
 vehicles, buildings, industries).  Per-family progress is
@@ -63,3 +78,24 @@ the old convention needs a rebake.  Concrete next move when
 that engine port lands: bump `blends.lock` (if helpful) and run
 the full CI rebake; otherwise no work needed until then.  Soft
 trigger.
+
+**`sp_*` player-colour mask pass.**  Upstream blends use a
+`sp_*` material naming convention for player-colour masks (see
+`render_SimutransRender_pak128Britain-65.py` "Make Masks" path).
+hex_render.py renders the native materials only; the mask render
+is a second pass that swaps those materials for the engine's
+mask palette and emits a parallel `_mask.png` set the dat
+references via `EmptyImage[FRONT-...]` etc.  Concrete next move:
+port the material-swap code from the upstream `-65` script into
+a `--mask` mode on hex_render.py.  Trigger: first asset that
+gameplay-actually-needs livery support (probably a BR-era loco).
+
+**Per-asset fit overrides.**  hex_render.py's auto-fit is
+heuristic — picks the longer of (span_x, span_y) as the
+longitudinal axis, scales to 80% of tile diameter, grounds at
+min z.  Wrong on assets where span_y > span_x but the artist
+intended X-native (the heuristic flips them).  Also can't
+handle multi-tile assets (the carriage IS one tile; a long loco
+might want to overflow).  Concrete next move when the first
+asset trips this: add `tools/threed/fit.toml` or a `bake.py`
+kwarg, fall back to auto-fit when unspecified.  Soft trigger.

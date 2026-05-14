@@ -1,0 +1,205 @@
+"""Hex-camera headless renderer for the upstream Pak128.Britain blends.
+
+Sibling to `blend_render.py` (which reproduces the square-dimetric
+upstream view).  This one renders into the hex projection defined in
+`hextrans/src/simutrans/display/hex_proj.h` (mirrored in `hex_synth.py`).
+
+Strategy: pre-shear the model under a parent Empty so the projection's
+anisotropic y/z scales survive Blender's isotropic ortho camera.  The
+camera looks straight along world +Y; the parent Empty's matrix encodes
+shear and per-facing Z rotation.  Sun is one fixed world-direction; the
+model rotates beneath it (pak128 convention -- see CLAUDE.md ->
+"Structural anchors").
+
+Run as:
+
+    blender -b <blend_path> -P tools/threed/hex_render.py -- \\
+        --out out/<asset> --name <stem> [--views 8|6|4]
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from math import radians
+from pathlib import Path
+
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from hex_synth import (  # noqa: E402
+    DEFAULT_W, HEX_TILE_RADIUS, SUN_DIR, hex_proj_shear,
+)
+
+
+# (suffix, model Z rotation deg).  Same 8-direction labels as
+# blend_render.py so dat files port without facing relabelling.
+_VIEWS = [
+    ("S",   0),
+    ("SW", 45),
+    ("W",  90),
+    ("NW",135),
+    ("N", 180),
+    ("NE",225),
+    ("E", 270),
+    ("SE",315),
+]
+_FOUR = {"S", "W", "N", "E"}
+_SIX = {"S", "SW", "NW", "N", "NE", "SE"}
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--name", required=True)
+    ap.add_argument("--views", type=int, choices=[4, 6, 8], default=8)
+    ap.add_argument("--width", type=int, default=DEFAULT_W,
+                    help="output image width (and height) in pixels")
+    return ap.parse_args(argv)
+
+
+def _setup_camera(bpy, mathutils, width: int) -> None:
+    """Override the scene's camera into an ortho view aligned for hex.
+
+    Camera position: south of origin, looking north (+Y).  Standard
+    Blender 'front view'.  Ortho_scale = 2R so world x in [-R, R] maps
+    to the image's full width.
+    """
+    cam = bpy.data.objects.get("Camera")
+    if cam is None:
+        raise SystemExit("scene has no object named 'Camera'")
+    cam.rotation_mode = "XYZ"
+    # World z=0 lands at row `mid_y = top_pad + u = w/2 + u` of a w-tall
+    # image; lifting the camera by `(mid_y - h/2) / pixels_per_world` puts
+    # the ground row at mid_y and leaves the `top_pad` band of headroom
+    # above for z-lifted geometry (vehicles tilted via shear, deck heights).
+    # For W=128: mid_y=96, h=128, so lift = (96 - 64) / 64 = 0.5 world units.
+    pixels_per_world = width / (2.0 * HEX_TILE_RADIUS)
+    mid_y = width // 4 + width // 2  # top_pad (w/2) + u (w/4)
+    z_lift = (mid_y - width / 2.0) / pixels_per_world
+    cam.location = (0.0, -10.0, z_lift)
+    cam.rotation_euler = (radians(90), 0.0, 0.0)
+    cam.data.type = "ORTHO"
+    cam.data.ortho_scale = 2.0 * HEX_TILE_RADIUS
+
+    scn = bpy.context.scene
+    scn.render.resolution_x = width
+    scn.render.resolution_y = width
+    scn.render.resolution_percentage = 100
+    scn.render.film_transparent = True
+
+
+def _setup_sun(bpy) -> None:
+    """One fixed world sun: from south, 60 deg above horizon.
+
+    Reuses the scene's existing 'Sphere' object (the upstream blends'
+    sun).  Lamp's local -Z is the light direction; rotating 30 deg around
+    X takes -Z from (0,0,-1) to (0, sin30, -cos30) = (0, 0.5, -sqrt3/2),
+    matching `SUN_DIR`.
+    """
+    sun = bpy.data.objects.get("Sphere")
+    if sun is None:
+        return  # not all blends carry the named sun; leave default lighting
+    sun.rotation_mode = "XYZ"
+    sun.rotation_euler = (radians(30), 0.0, 0.0)
+
+
+def _reparent_to_shear_root(bpy, mathutils) -> tuple["bpy.types.Object", "mathutils.Matrix"]:
+    """Create an Empty whose matrix_basis carries the hex projection
+    shear, parent every existing world-space object (except the camera
+    and the sun) under it.  Per-facing rotation will compose onto this
+    Empty's matrix_basis.
+
+    Also computes a `fit` 4x4: scale + translate that maps the model's
+    actual bounding box into the pak128 hex world unit convention
+    (longitudinal axis along X, max footprint = ~0.8 * tile diameter,
+    z=0 at the model's floor).  Britain blends are authored at
+    ~24 units/tile and individual assets have arbitrary offsets and
+    axes; without auto-fit, every per-asset bake.py would need explicit
+    calibration constants.
+
+    Returns (root_empty, fit_matrix).
+    """
+    M = mathutils.Matrix
+    V = mathutils.Vector
+    scn = bpy.context.scene
+    skip = {"Camera", "Sphere"}
+
+    # Bounding box across visible meshes in world space (pre-shear).
+    pts = []
+    for obj in scn.objects:
+        if obj.type != "MESH" or obj.name in skip or obj.hide_render:
+            continue
+        for v in obj.bound_box:
+            pts.append(obj.matrix_world @ V(v))
+    if not pts:
+        raise SystemExit("no renderable mesh objects to fit")
+    xs = [p.x for p in pts]; ys = [p.y for p in pts]; zs = [p.z for p in pts]
+    cx = (min(xs) + max(xs)) / 2.0
+    cy = (min(ys) + max(ys)) / 2.0
+    z_floor = min(zs)
+    span_x = max(xs) - min(xs)
+    span_y = max(ys) - min(ys)
+    # Longitudinal axis: whichever is longer becomes X. If the model is
+    # native-Y (most britain carriages), pre-rotate 90deg around Z.
+    rotate_z = 90.0 if span_y > span_x else 0.0
+    long_span = max(span_x, span_y)
+    # Fit to 80% of tile diameter (= 2 * HEX_TILE_RADIUS).
+    target = 0.8 * 2.0 * HEX_TILE_RADIUS
+    scale = target / long_span if long_span > 0 else 1.0
+
+    fit = (M.Scale(scale, 4)
+           @ M.Rotation(radians(rotate_z), 4, "Z")
+           @ M.Translation((-cx, -cy, -z_floor)))
+
+    root = bpy.data.objects.new("hex_proj_root", None)
+    scn.collection.objects.link(root)
+    for obj in list(scn.objects):
+        if obj.name in skip or obj is root:
+            continue
+        if obj.parent is None:
+            obj.parent = root
+            obj.matrix_parent_inverse = M.Identity(4)
+    return root, fit
+
+
+def _facing_matrix(mathutils, rot_z_deg: int, fit: "mathutils.Matrix") -> "mathutils.Matrix":
+    """`shear @ facing_rotation @ fit` -- root matrix for one facing.
+
+    Order applies right-to-left: model (raw blend coords) -> fit (centered,
+    scaled to hex tile) -> facing rotation -> shear (projection).
+    """
+    M = mathutils.Matrix
+    shear = M(hex_proj_shear())
+    rot = M.Rotation(radians(rot_z_deg), 4, "Z")
+    return shear @ rot @ fit
+
+
+def main(argv: list[str]) -> int:
+    import bpy  # only resolvable inside Blender
+    import mathutils
+
+    args = _parse_args(argv)
+    out_dir = Path(args.out).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    _setup_camera(bpy, mathutils, args.width)
+    _setup_sun(bpy)
+    root, fit = _reparent_to_shear_root(bpy, mathutils)
+
+    scn = bpy.context.scene
+    for suffix, rot_z in _VIEWS:
+        if args.views == 4 and suffix not in _FOUR:
+            continue
+        if args.views == 6 and suffix not in _SIX:
+            continue
+        root.matrix_basis = _facing_matrix(mathutils, rot_z, fit)
+        scn.render.filepath = str(out_dir / f"{args.name}_{suffix}.png")
+        bpy.ops.render.render(animation=False, write_still=True)
+
+    return 0
+
+
+if __name__ == "__main__":
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    sys.exit(main(argv))
