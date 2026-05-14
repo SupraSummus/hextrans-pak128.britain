@@ -266,15 +266,42 @@ difference, not a calibration bug.
 **Calibration validation loop.**  `tools/threed/diff_upstream.py`
 runs `render.py --viewpoint square` against an upstream blend, fetches the
 corresponding pakset PNG via `fetch_pak.py` (pinned by `pak.lock`),
-and reports per-facing silhouette IoU and mean abs(RGB-delta).
-Calibrated assets land at IoU ≥ 0.93 across all 8 facings (the
-residual is colour, not geometry — livery material swap, see the
-`sp_*` follow-up in `TODO.md`).  Worst IoU under 0.90 means real
-drift: the blend's frame is what's wrong, not the hex bake; fix
-the blend (or the alignment mode) before extending hex coverage.
-This is the only step that touches upstream PNGs — see "Don't
-bake the answer" above; comparison is regression check, not
+and reports two independent per-facing metrics:
+
+  * **Contour** — silhouette IoU plus the absolute XOR pixel count.
+    Geometry-only; ignores RGB entirely.
+  * **Colour** — mean abs(RGB-delta) restricted to the silhouette
+    intersection.  Colour-only; pixels missing from one or the other
+    don't bleed in.
+
+A calibrated asset's bboxes match upstream within ±1 px on every
+facing — bbox match is the geometry-only check.  Calibrated assets
+*typically* land at IoU >= 0.93 (XOR pixel count single-digit per
+facing, just the AA edge ring of a sub-pixel offset).  The
+diagnostic flow when IoU is under 0.90:
+
+  * Bboxes drift > ±1 px → real contour drift; the blend's frame is
+    what's wrong, fix the blend or the alignment mode.
+  * Bboxes match but IoU still low → material-handling discrepancy,
+    not geometry (e.g. cockpit glass with alpha-blend rendering
+    semi-transparent in Cycles where upstream's older pipeline
+    rendered opaque — see `TODO.md` -> aircraft alpha-blend entry).
+    The contour metric reflects this honestly; the calibration
+    isn't broken.
+  * Bbox + IoU healthy but colour delta high → livery material swap
+    (see `TODO.md` -> `sp_*` mask pass), not a calibration problem.
+The bottom row of `grid.png` colours the silhouette XOR (red =
+ours-only, blue = upstream-only) so contour drift is visible at a
+glance.  This is the only step that touches upstream PNGs — see
+"Don't bake the answer" above; comparison is regression check, not
 steering signal.
+
+`tools/threed/check.py` is the driver: it imports a bake script,
+reads `BLEND` and `UPSTREAM_STEM` (declared next to `SPEC`), and
+runs the diff with no extra path-passing.  `--all` sweeps every
+bake script under `trains/` for a fleet-wide summary; scripts
+without `UPSTREAM_STEM` are skipped with a notice (fill in when
+the upstream sprite stem is known).
 
 ## What to carry from upstream, tiered
 
@@ -598,10 +625,15 @@ Present:
   both so .dat keys port without relabelling.
 - `tools/threed/diff_upstream.py` — drives `render.py --viewpoint
   square --keep-per-facing`, fetches the matching upstream PNG via
-  `fetch_pak.py`, and reports per-facing silhouette IoU + mean
-  abs(RGB-delta) against the upstream sprite.  Returns non-zero if
-  any facing is below 0.90 IoU — see "Calibration validation loop"
-  above.
+  `fetch_pak.py`, and reports the contour and colour metrics from
+  "Calibration validation loop" above (silhouette IoU + XOR pixel
+  count, and intersection-restricted mean abs(RGB-delta)).  Returns
+  non-zero if any facing is below 0.90 IoU.
+- `tools/threed/check.py` — convenience driver around
+  `diff_upstream.py`.  Takes a bake-script path (or `--all`),
+  imports it, reads `BLEND` and `UPSTREAM_STEM` from the module,
+  runs the diff, and prints a per-asset worst-IoU + sum-XOR-pixel
+  summary.  See "Calibration validation loop" above.
 - `tools/threed/dat.py` — Simutrans `.dat` parse / port / emit.
   Exposes `Vehicle` (typed dataclass covering both hex-engine
   and Extended schema; list fields may carry

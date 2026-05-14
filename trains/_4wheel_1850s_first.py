@@ -57,6 +57,7 @@ SPEC = Vehicle(
     ],
 )
 BLEND = "trains/Carriages/4wheel-1850.blend"
+UPSTREAM_STEM = "trains/carriages/4wheel-1850-first-lnwr"
 
 
 if __name__ == "__main__":

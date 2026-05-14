@@ -123,6 +123,25 @@ that engine port lands: bump `blends.lock` (if helpful) and run
 the full CI rebake; otherwise no work needed until then.  Soft
 trigger.
 
+**Aircraft alpha-blend materials render too transparent.**
+`air/dragon_rapide` lands at IoU 0.84-0.92 across facings —
+contour-failed by the 0.93 calibration bar.  Bboxes match upstream
+within ±1 px on all 8 facings; the XOR is interior holes, 12-51
+upstream-only pixels per facing concentrated in the cockpit/glass
+region, our alpha 0-16 there (`diff_upstream` diagnostic dump
+under S facing, only_up bbox (49,79)-(80,97)).  Almost certainly
+the cockpit-window / glass materials carrying alpha-blend that
+Cycles renders semi-transparent where upstream's older pipeline
+rendered opaque.  Trains weren't affected (4wheel-1850s-first
+worst IoU 0.93 on identical render.py).  Concrete next move: try
+forcing `mat.blend_method = 'OPAQUE'` (or `'CLIP'`) on every
+material in `render.py`'s scene-prep, rerun `check.py --all`,
+confirm trains don't regress, then rebake the plane.  If that
+breaks something legitimate (e.g. a future asset wants real
+translucent glass), gate it behind a Viewpoint flag.  Trigger:
+already in the way — diff_upstream fails CI on the dragon-rapide
+port until this is resolved.
+
 **`sp_*` player-colour mask pass.**  Upstream blends use a
 `sp_*` material naming convention for player-colour masks (see
 `render_SimutransRender_pak128Britain-65.py` "Make Masks" path).

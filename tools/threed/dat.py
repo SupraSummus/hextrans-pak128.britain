@@ -118,6 +118,10 @@ class Vehicle:
     smoke: str | None = None
     sound: str | None = None
 
+    # Aircraft
+    minimum_runway_length: int | None = None
+    range: int | None = None
+
     # Indexed lists.  Field name = dat key, except `payload_by_class`
     # which targets the upstream `payload[N]=` convention.
     constraint_prev: list[str] = field(
