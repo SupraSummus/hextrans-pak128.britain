@@ -64,3 +64,19 @@ def bake_vehicle(
     return out_dat
 
 
+def bake_main(spec: Vehicle, blend: str, file: str) -> Path:
+    """Convenience for single-vehicle bake scripts.
+
+    Derives `out_dir` and `basename` from the calling script's
+    `__file__`, so each bake script's bottom collapses to:
+
+        if __name__ == "__main__":
+            bake_main(SPEC, BLEND, __file__)
+
+    Multi-object bake units call `bake_vehicle` directly per
+    output instead.
+    """
+    path = Path(file).resolve()
+    return bake_vehicle(
+        spec, blend=blend, basename=path.stem, out_dir=path.parent,
+    )

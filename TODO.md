@@ -9,18 +9,18 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**Port a second vehicle.**  Only `_4wheel_1850s_first` exists
-under the new shape.  Everything else (multi-object support, the
-seeder workflow via `seed_python`, the unit boundary decisions) is
-on-paper-only until a second port exercises it.  Concrete next
-move: pick a multi-object upstream (e.g. `gwr-king` = loco +
-tender) so the bake-emits-N-outputs path runs end-to-end, plus a
-single-object loco for variety.  Will surface what the seeder
-output actually looks like in a bake script, how blends map to
-objects (one blend per object? one blend with multiple
-collections? unknown until we look at one), and whether the
-`HERE / REPO / ASSET` boilerplate wants extracting into a shared
-helper once it's duplicated three times.
+**Port a multi-object vehicle.**  Five single-object ports
+exist now (1850s-first, open-third, br-cl15, br-9f,
+blackpool-brush), so the seeder workflow + the `bake_main`
+single-vehicle convenience are validated.  The multi-object
+path — one bake script emitting N dat+png pairs — is still
+on-paper-only.  Concrete next move: pick a multi-object
+upstream like `gwr-king` (loco + tender) and run a bake script
+that calls `bake_vehicle` twice with distinct `basename` (and
+typically distinct `blend`) per output.  Will surface how blends
+map to objects (one blend per object? one blend with multiple
+collections? unknown until we look at one) and whether
+`bake_main` should sprout a multi-spec variant.
 
 **makeobj smoke-compile.**  No makeobj binary in this tree, so
 we've never actually compiled a port to `.pak`.  `Vehicle`'s
@@ -45,6 +45,19 @@ first freight wagon ports: add fields + extend the bake script's
 atlas pass to render per-freight variants, with a naming
 convention like `<basename>.png` (empty) plus
 `<basename>_<good>.png` per loaded variant.  Soft trigger.
+
+**Sparse way_constraint indexing.**  Upstream uses sparse,
+category-indexed flag lists like `way_constraint_permissive[1]=1`
+and `way_constraint_prohibitive[0]=0` — the index is the
+constraint category, the value is the per-category flag.
+`Vehicle.way_constraint_permissive` is currently a dense `list[str]`
+which can only emit `[0]=, [1]=, …` densely, and there's no
+`way_constraint_prohibitive` field at all.  `blackpool_brush`
+drops both keys on port (see its comment).  Concrete next move
+when the second tram/road vehicle that uses these ports: model
+the field as `dict[int, int]` (or similar), add
+`way_constraint_prohibitive` back, and teach `emit_vehicle` to
+walk dict items.  Soft trigger.
 
 **Hex viewpoint output validation.**  `render.py` with
 `HEX_VIEWPOINT` is believed-correct on paper and shares its

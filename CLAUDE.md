@@ -425,13 +425,14 @@ intentionally supported by the parser and emitter but not yet
 demonstrated end-to-end; the first multi-object port will validate
 how blends map to objects in real upstream blend files.
 
-All three files in a bake-unit triple share the same `_`-prefixed
-basename — `ls trains/_4wheel*` enumerates them, and a `git mv` of
-the script suggests the corresponding artefact moves.  The
-prefix isn't asset identity (`Name=` inside the dat carries that,
-without the `_`), it's just the filesystem convention for "files
-this repo owns" — kept consistent across the triple so they
-move and grep together.
+All three files in a bake-unit triple share the same basename.
+A leading `_` is required only when the asset name starts with a
+digit (Python identifier rules — see "Importable bake scripts"
+below); letter-leading assets like `br_cl15` go plain.  The
+underscore (when present) isn't asset identity — `Name=` inside
+the dat carries that — it's the filesystem cost of making the
+script importable, kept consistent across the triple so the
+files move and grep together.
 
 The file/dir structure is **decoupled from vehicle identity** —
 one script may emit 1, 2, or 11 outputs (~40 % of `trains/`
@@ -442,11 +443,11 @@ script's choice per-object, not derived from the script's name.
 
 **Bake script shape.**  A bake script holds its gameplay data
 inline as a typed `Vehicle` instance and a blend reference, then
-calls `bake_vehicle` from `tools/threed/bake.py`.  The full
+calls `bake_main` from `tools/threed/bake.py`.  The full
 single-vehicle bake script:
 
 ```python
-from tools.threed.bake import bake_vehicle
+from tools.threed.bake import bake_main
 from tools.threed.dat import Vehicle
 
 SPEC = Vehicle(
@@ -463,13 +464,14 @@ SPEC = Vehicle(
 BLEND = "trains/Carriages/4wheel-1850.blend"
 
 if __name__ == "__main__":
-    here = Path(__file__).resolve().parent
-    bake_vehicle(SPEC, blend=BLEND, basename=Path(__file__).stem, out_dir=here)
+    bake_main(SPEC, BLEND, __file__)
 ```
 
-`bake_vehicle` does the fetch-blend / run-render / emit-dat
-dance.  Multi-object bake units call it once per output, with
-distinct `basename` (and typically distinct `blend`) per call.
+`bake_main` derives out-dir + basename from `__file__` and calls
+the underlying `bake_vehicle` (fetch-blend / run-render /
+emit-dat).  Multi-object bake units skip the convenience and
+call `bake_vehicle` directly per output, with distinct `basename`
+(and typically distinct `blend`) per call.
 
 `Vehicle` fields cover both hex-engine (keys
 `descriptor/writer/vehicle_writer.cc` reads) and
@@ -494,15 +496,16 @@ emit, matching upstream's convention of omitting keys that take
 the engine's default.  Multi-object bake scripts hold a list of
 `Vehicle`s and call `emit_vehicle` once per output.
 
-**Importable bake scripts.**  Asset names often start with a
-digit (`4wheel_…`), not a valid Python identifier — the leading
+**Importable bake scripts.**  Asset names that start with a
+digit (`4wheel_…`) aren't valid Python identifiers — a leading
 `_` keeps the script importable
-(`from trains import _4wheel_1850s_first`).  Generated artefacts
-share the same `_`-prefixed basename so a triple moves and greps
-together.  `tools/__init__.py`, `tools/threed/__init__.py`, and
-`trains/__init__.py` (each empty) make the repo a proper package
-tree so bake scripts can `from tools.threed.dat import …` without
-a `sys.path` hack.  Run as a module from the repo root:
+(`from trains import _4wheel_1850s_first`); generated artefacts
+share the prefix so the triple moves and greps together.
+Letter-leading names (`br_cl15`, `blackpool_brush`) go plain —
+no underscore.  `tools/__init__.py`, `tools/threed/__init__.py`,
+and `trains/__init__.py` (each empty) make the repo a proper
+package tree so bake scripts can `from tools.threed.dat import …`
+without a `sys.path` hack.  Run as a module from the repo root:
 
     python3 -m trains._4wheel_1850s_first
 
@@ -543,7 +546,7 @@ SPEC is shown to match the upstream (run `port_vehicle` on the
 upstream, diff against SPEC field-by-field — the verification
 loop the 4wheel-1850s-first port followed), the upstream file
 is `git rm`d.  This avoids the `Name=` collision that makeobj
-would hit recursing over both flat and `_`-prefixed dats, and
+would hit recursing over both upstream and ported dats, and
 keeps `trains/` showing exactly two states per asset:
 unported-flat or ported-triple, never both.
 
