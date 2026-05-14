@@ -173,6 +173,86 @@ move:
 When a render doesn't match expectations, the first move is
 back-solve from these, not tweak the camera.
 
+## Upstream blend calibration contract
+
+The pak128.Britain blends are not bespoke per-asset — they share a
+standardised world frame defined in the "Contributing graphics to
+pak128.Britain" sticky on the Simutrans forum (jamespetts' April
+2017 update, msg 162208).  Per-asset bakes inherit the contract;
+none of the values below should be guessed from a single model's
+bounding box.
+
+**Camera scale.**  Upstream's
+`render_SimutransRender_pak128Britain-65.py` uses a fixed ortho
+camera with `ortho_scale = 24` rendering to 128 × 128 px.  That
+ratio (`BLEND_ORTHO_SCALE` in
+`tools/threed/hex_render.py`) is the single pakset-wide scale
+constant — it corresponds to the artist-side 15 m ruler (46 m for
+aircraft, log-scaled for large ships) used to calibrate geometry in
+Blender.  Width and height for land vehicles are authored at 1.25×
+the length scale by convention; bakers do not undo this.
+
+**Long axis along Y.**  All upstream Britain blends with a
+longitudinal axis (carriages, locos, road vehicles, ships, planes)
+are authored so `span_y > span_x`.  Auto-detecting "which is the
+long axis" by bounding-box comparison and rotating to a different
+canonical inverts every such asset's facings (the standard
+configuration was the failing case in the original `hex_render.py`
+auto-fit) — trust the contract instead.
+
+**Z = 0 is the renderer's hex-frame floor, not an upstream
+invariant.**  The .blend's native z = 0 is wherever the artist left
+it; visible geometry routinely dips below (e.g. 4wheel-1850 has
+`z_min ≈ −1.54`).  The hex renderer pins the lowest visible vertex
+to z = 0 by computing `z_floor = min(zs)` and translating by
+`−z_floor`.  Don't read the upstream z origin; let the bbox drive
+the shift.
+
+**XY centring is per-asset, not per-frame.**  Artists place the
+asset anywhere inside the camera view; upstream compensates with
+per-facing camera offset (`"vehicles"` alignment vs `"bases"` /
+`"normal"`).  Hex bakers re-centre under their fixed camera using
+the bounding-box midpoint; this is the only piece of fit math that
+reads the model, and it reads only position, never scale.
+
+**Alignment mode is asset-class-dependent.**  Trains, trams, water
+craft and aircraft use upstream's **`vehicles` alignment** camera
+positions (`blend_render.py --align vehicles`, `op_list "2"`); road
+vehicles, buildings, signals and stops use **`normal alignment`**
+(`--align bases`, `op_list "1"`, or `"0"` for 4-view buildings).
+The choice only affects `blend_render.py` (the square-dimetric
+regression reproducer); the hex camera is single and fixed.
+
+**Old blends ship with broken scene settings.**  Many .blend files
+predate the RGBA + `film_transparent = True` convention and still
+have `Output = RGB` and a solid world background.  Renderers must
+force the modern convention regardless of what the .blend was
+saved with — `blend_render.py` and `hex_render.py` both set
+`film_transparent = True` and `image_settings.color_mode = "RGBA"`
+on entry.  Trusting the .blend's state gives black/cyan
+backgrounds with no other diagnostic.
+
+**Hex vs. square facing-to-screen shift.**  The square pak renders
+a world rotated 45° in screen space, so its `_S.png` shows the
+**world-SE** facing of the model; hex `_S.png` shows the world-S
+facing.  Expect a one-position rotation when comparing hex vs.
+square renders of the same asset (e.g. end-on appears at SE / NW
+in square, at S / N in hex).  This is a coordinate-system
+difference, not a calibration bug.
+
+**Calibration validation loop.**  `tools/threed/diff_upstream.py`
+runs `blend_render.py` against an upstream blend, fetches the
+corresponding pakset PNG via `fetch_pak.py` (pinned by `pak.lock`),
+and reports per-facing silhouette IoU and mean abs(RGB-delta).
+Calibrated assets land at IoU ≥ 0.93 across all 8 facings (the
+residual is colour, not geometry — livery material swap, see the
+`sp_*` follow-up in `TODO.md`).  Worst IoU under 0.90 means real
+drift: the blend's frame is what's wrong, not the hex bake; fix
+the blend (or the alignment mode) before extending hex coverage.
+This is the only step that touches upstream PNGs — see "Don't
+bake the answer" above; comparison is regression check, not
+steering signal.
+
 ## What to carry from upstream, tiered
 
 The Britain pak has decades of accumulated `.dat` content.  Per
@@ -267,19 +347,23 @@ read-only** sources rather than checked-out trees:
    for `.wav` sound effects after they were stripped from this
    repo's history.
 
-The intended pattern for each, once implemented (neither
-fetcher nor lock file exists yet — see `TODO.md`):
+The pattern:
 
 - A `*.lock` file at the repo root holds one upstream commit SHA
-  (`blends.lock`, `wavs.lock`).
+  per upstream repo (`blends.lock`, `pak.lock`).  One file per
+  upstream repo, not per file-type — `pak.lock` covers both pakset
+  PNGs (used by `diff_upstream.py`) and `.wav` sound effects (when
+  runtime sound fetching lands).
 - A `tools/<area>/fetch_*.py` script resolves `<path within
   upstream repo>` against that SHA, fetches the individual blob
   over HTTP, caches under a `.gitignore`d `.cache/` dir.
-- Consumers (per-asset `bake.py`, the runtime sound loader)
-  call the fetcher rather than reading files directly.
+- Consumers (per-asset `bake.py`, the runtime sound loader, the
+  calibration diff) call the fetcher rather than reading files
+  directly.
 
-Net once landed: a session touching one asset downloads one
-blend (or one wav), not the tree.  Upstream repo size becomes
+Present:  `fetch_blend.py` (blends repo) and `fetch_pak.py` (pak
+repo) both implement the pattern.  A session touching one asset
+downloads one blend, not the tree; upstream repo size is
 irrelevant to the day-to-day.
 
 If the upstream HTTP endpoint requires auth or routing, the
@@ -336,30 +420,33 @@ Lives at `tools/threed/` in this repo, not in the blends repo
 (blends are upstream-owned and stay reusable; our hex-rendering
 opinions don't belong there).
 
-Present state — square-dimetric spike:
+Present:
 
-- `tools/threed/fetch_blend.py` — HTTP fetch + `.cache/` resolver,
-  SHA pinned via `blends.lock` at the repo root.  Anonymous, no
-  proxy; `raw.githubusercontent.com` serves the blobs at the
-  sizes we encounter (verified end-to-end on
-  `Trains/Railcars/br-350-lnr.blend`, ~3 MB).
+- `tools/threed/fetch_blend.py` — HTTP fetch + `.cache/` resolver
+  against `jamespetts/Pak128.Britain-blends`, SHA pinned via
+  `blends.lock`.
+- `tools/threed/fetch_pak.py` — same pattern against
+  `jamespetts/simutrans-pak128.britain`, SHA pinned via `pak.lock`.
+  Used by `diff_upstream.py` today and by future runtime `.wav`
+  fetching (see `TODO.md`).
 - `tools/threed/blend_render.py` — `blender -b -P` harness
   reproducing the 4/8-view camera + sun positions verbatim from
-  the upstream `render_SimutransRender_pak128Britain-65.py` at
-  the repo root.  No addon registration, no GUI.  Output is the
-  square-dimetric sprite the upstream `.blend`s were authored
-  for, useful as a pipeline regression check (rendered output
-  should match the upstream PNG to within renderer noise).
-
-Not yet present — hex camera:
-
-- A second harness whose camera math mirrors
-  `hextrans-pak128/tools/threed/render.py::HexCamera` (anchored
-  to `HexGeom`, no yaw, orthographic, z-lift via
-  `PIXELS_PER_UNIT`).  Facing count read from the engine's
-  current `get_dirs()` convention, not hard-coded.  The first
-  asset bake will drive this and is the right time to factor
-  shared camera/scene setup out of the square spike.
+  the upstream `render_SimutransRender_pak128Britain-65.py`.
+  No addon registration, no GUI.  Output is the square-dimetric
+  sprite the upstream `.blend`s were authored for; the
+  calibration regression check.
+- `tools/threed/hex_render.py` — `blender -b -P` harness for the
+  hex camera, mirroring `hextrans-pak128/tools/threed/render.py::
+  HexCamera`.  Anchored to `HexGeom`, no yaw, orthographic, z-lift
+  via `PIXELS_PER_UNIT`.  Facing count read from the engine's
+  current `get_dirs()` convention, not hard-coded.  Applies the
+  upstream blend calibration contract (see above) and emits a
+  single-row atlas PNG.
+- `tools/threed/diff_upstream.py` — drives `blend_render.py`,
+  fetches the matching upstream PNG via `fetch_pak.py`, and
+  reports per-facing silhouette IoU + mean abs(RGB-delta) against
+  the upstream sprite.  Returns non-zero if any facing is below
+  0.90 IoU — see "Calibration validation loop" above.
 
 The Britain blends already carry the `sp_*` material-name
 convention for player-colour masks; port that pass over from the
@@ -385,15 +472,18 @@ Ubuntu 24.04 (and the CCW image it derives from) ships nothing
 `bake.py` end-to-end:
 
 ```
-apt-get install -y blender python3-numpy libegl1
+apt-get install -y blender python3-numpy python3-pil libegl1
 ```
 
 `blender` (4.0.2 on noble) provides the `blender -b -P` harness;
 its bundled Python is the system `python3.12`, so `python3-numpy`
 lands `numpy` where `hex_render.py`'s `import numpy as np` will
-find it.  `libegl1` is the runtime Blender's GL backend dlopens —
-without it Cycles aborts with SIGABRT before the first render
-even though `--background` would suggest no display needed.
+find it.  `python3-pil` (Pillow) is only needed by
+`diff_upstream.py` for the side-by-side grid composition, not by
+the Blender harnesses themselves.  `libegl1` is the runtime
+Blender's GL backend dlopens — without it Cycles aborts with
+SIGABRT before the first render even though `--background` would
+suggest no display needed.
 
 No GPU required; Cycles falls back to CPU.  ~4 s per facing on
 a small carriage.

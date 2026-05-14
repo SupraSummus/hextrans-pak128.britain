@@ -39,6 +39,17 @@ from hex_synth import (  # noqa: E402
 )
 
 
+# Pakset-wide scale carrying upstream Britain blends into hex world units.
+# Upstream blends are authored against a fixed ortho camera with
+# `ortho_scale = 24` rendering to 128 px (`blend_render.py` reproduces this
+# verbatim).  Hex uses `ortho_scale = 2 * HEX_TILE_RADIUS` at the same image
+# width.  The ratio is the single constant that takes any upstream blend's
+# native frame into hex world units while preserving relative sizes between
+# assets (a long loco stays bigger than a short carriage).
+BLEND_ORTHO_SCALE = 24.0
+_BLEND_TO_HEX_SCALE = (2.0 * HEX_TILE_RADIUS) / BLEND_ORTHO_SCALE
+
+
 # (suffix, model Z rotation deg).  Same 8-direction labels as
 # blend_render.py so dat files port without facing relabelling.
 _VIEWS = [
@@ -119,13 +130,12 @@ def _reparent_to_shear_root(bpy, mathutils) -> tuple["bpy.types.Object", "mathut
     and the sun) under it.  Per-facing rotation will compose onto this
     Empty's matrix_basis.
 
-    Also computes a `fit` 4x4: scale + translate that maps the model's
-    actual bounding box into the pak128 hex world unit convention
-    (longitudinal axis along X, max footprint = ~0.8 * tile diameter,
-    z=0 at the model's floor).  Britain blends are authored at
-    ~24 units/tile and individual assets have arbitrary offsets and
-    axes; without auto-fit, every per-asset bake.py would need explicit
-    calibration constants.
+    The `fit` 4x4 carries upstream's standardised frame into hex world
+    units: a single pakset-wide scale (`_BLEND_TO_HEX_SCALE`), XY centring
+    so the asset sits on the tile, and a Z-floor adjustment so the
+    lowest visible geometry rests at z=0.  No per-asset rotation: the
+    upstream Britain blends are authored with the long axis along world
+    Y, and the per-facing `rot_z` in `_VIEWS` handles all turning.
 
     Returns (root_empty, fit_matrix).
     """
@@ -134,7 +144,6 @@ def _reparent_to_shear_root(bpy, mathutils) -> tuple["bpy.types.Object", "mathut
     scn = bpy.context.scene
     skip = {"Camera", "Sphere"}
 
-    # Bounding box across visible meshes in world space (pre-shear).
     pts = []
     for obj in scn.objects:
         if obj.type != "MESH" or obj.name in skip or obj.hide_render:
@@ -147,19 +156,8 @@ def _reparent_to_shear_root(bpy, mathutils) -> tuple["bpy.types.Object", "mathut
     cx = (min(xs) + max(xs)) / 2.0
     cy = (min(ys) + max(ys)) / 2.0
     z_floor = min(zs)
-    span_x = max(xs) - min(xs)
-    span_y = max(ys) - min(ys)
-    # Longitudinal axis: whichever is longer becomes X. If the model is
-    # native-Y (most britain carriages), pre-rotate 90deg around Z.
-    rotate_z = 90.0 if span_y > span_x else 0.0
-    long_span = max(span_x, span_y)
-    # Fit to 80% of tile diameter (= 2 * HEX_TILE_RADIUS).
-    target = 0.8 * 2.0 * HEX_TILE_RADIUS
-    scale = target / long_span if long_span > 0 else 1.0
 
-    fit = (M.Scale(scale, 4)
-           @ M.Rotation(radians(rotate_z), 4, "Z")
-           @ M.Translation((-cx, -cy, -z_floor)))
+    fit = M.Scale(_BLEND_TO_HEX_SCALE, 4) @ M.Translation((-cx, -cy, -z_floor))
 
     root = bpy.data.objects.new("hex_proj_root", None)
     scn.collection.objects.link(root)
