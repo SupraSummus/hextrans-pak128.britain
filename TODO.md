@@ -9,16 +9,6 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**Land the history rewrite.**  Run the blob-size-by-extension
-analysis from `CLAUDE.md` → "Repo size strategy" against an
-unshallowed clone.  Pick the strip set from the migration-burden
-side of the content/burden split spelled out there — sprites
-(`.png`/`.jpg`/`.xcf`), stray `.blend`s, JP's research material
-(`.pdf`/`.ods`/`.xls`/...) where the heft justifies the removal.
-`.wav` stays; it's shipped sound content, not migration burden.
-Coordinate with anyone holding outstanding branches, then run
-`git filter-repo` and force-push.
-
 **Stand up `tools/threed/`.**  Copy
 `hextrans-pak128/tools/threed/` as the baseline.  Add
 `fetch_blend.py` (HTTP fetch + `.cache/` resolver) and a stub
@@ -46,13 +36,6 @@ done, not by adding "completed" notes.
 
 ## Open design questions
 
-**Acceptability of the history rewrite.**  The
-`git filter-repo` pass is destructive — clone hashes change,
-outstanding branches need rebasing.  Concrete next move: enumerate
-who has branches against the upstream pak repo or against this
-fork; if it's only the maintainer, just do it.  Trigger: before
-the first heavy session that would clone the unstripped history.
-
 **Auth shape for `fetch_blend.py`.**  Upstream blends repo HTTP
 endpoint — is it anonymous-readable, or does it route through the
 local proxy seen in `git remote -v`?  Concrete next move: try a
@@ -66,6 +49,15 @@ Switching to CI-artefact-only saves repo bytes at the cost of
 "see the change in the PR".  Concrete next move: measure committed
 atlas size after the first ~10 asset bakes; if the cumulative is
 under 10 MB this question retires.  Trigger: ten assets baked.
+
+**Wire up runtime `.wav` fetching.**  Sounds were stripped from
+history; the engine still expects to load them.  Concrete next
+move when audio first matters in-engine: write `wavs.lock`
+pinned to a known-good upstream `simutrans-pak128.britain` SHA
+(the SHA whose `sound/` we want), write
+`tools/sound/fetch_wav.py` mirroring `fetch_blend.py`, and
+decide whether the engine's sound loader calls the fetcher
+directly or a pre-launch step warms `.cache/`.  Soft trigger.
 
 **Engine facing count cutover.**  Vehicles currently bake under
 the engine's 4-or-8-direction convention with hex-heading

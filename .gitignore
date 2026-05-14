@@ -21,3 +21,23 @@ makeobj-extended
 *.pak
 *.exe
 makeobj-extended*
+
+# Stripped from history; runtime fetches from upstream pak repo.
+*.wav
+
+# Stripped from history; live in the blends repo.
+*.blend
+*.blend1
+*.blend2
+
+# JP's research material; lives in the upstream pak repo.
+*.pdf
+*.ods
+*.xls
+*.xlsx
+*.doc
+*.xcf
+
+# Bake / fetch caches and debug renders.
+.cache/
+out/
