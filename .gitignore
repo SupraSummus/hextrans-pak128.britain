@@ -33,10 +33,15 @@ makeobj-extended*
 # JP's research material; lives in the upstream pak repo.
 *.pdf
 *.ods
+*.odt
 *.xls
 *.xlsx
 *.doc
+*.pptx
 *.xcf
+
+# IDE detritus.
+*.sln
 
 # Bake / fetch caches and debug renders.
 .cache/
