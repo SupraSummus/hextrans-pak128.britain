@@ -21,10 +21,7 @@ new bake script).
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-from tools.threed.bake import bake_vehicle
+from tools.threed.bake import bake_main
 from tools.threed.dat import Vehicle
 
 
@@ -53,7 +50,7 @@ SPEC = Vehicle(
     constraint_prev=["any"],
     constraint_next=["any"],
     payload_by_class=[0, 0, 0, 18],
-    comfort=[0, 38, 41, 69],
+    comfort_by_class=[0, 38, 41, 69],
     liverytype=[
         "LNWR-Early", "MR-Early", "MR-Standard", "GNR-early",
         "LSWR-Indian-red", "GWR-early", "GWR-two-tone",
@@ -63,6 +60,4 @@ BLEND = "trains/Carriages/4wheel-1850.blend"
 
 
 if __name__ == "__main__":
-    here = Path(__file__).resolve().parent
-    bake_vehicle(SPEC, blend=BLEND, basename=Path(__file__).stem, out_dir=here)
-    sys.exit(0)
+    bake_main(SPEC, BLEND, __file__)

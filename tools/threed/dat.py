@@ -99,6 +99,7 @@ class Vehicle:
     max_loading_time: int | None = None
     overcrowded_capacity: int | None = None
     catering_level: int | None = None
+    comfort: int | None = None  # scalar default; class breakdown in comfort_by_class
 
     # Economics
     cost: int | None = None
@@ -128,7 +129,7 @@ class Vehicle:
         metadata={"dat_key": "Constraint[Next]"},
     )
     payload_by_class: list[int] = _list_field(dat_key="payload")
-    comfort: list[int] = _list_field()
+    comfort_by_class: list[int] = _list_field(dat_key="comfort")
     liverytype: list[str] = _list_field()
     upgrade: list[str] = _list_field()
     way_constraint_permissive: list[str] = _list_field()

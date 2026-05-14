@@ -90,11 +90,16 @@ class TestEmitVehicle(unittest.TestCase):
         self.assertEqual(body, [])
 
     def test_emits_extended_fields(self):
-        v = Vehicle(name="A", waytype="track", axles=4, comfort=[10, 20])
+        v = Vehicle(name="A", waytype="track", axles=4, comfort_by_class=[10, 20])
         text = self._emit(v)
         self.assertIn("axles=4\n", text)
         self.assertIn("comfort[0]=10\n", text)
         self.assertIn("comfort[1]=20\n", text)
+
+    def test_scalar_comfort_emits_unindexed(self):
+        text = self._emit(Vehicle(name="A", waytype="track", comfort=49))
+        self.assertIn("comfort=49\n", text)
+        self.assertNotIn("comfort[", text)
 
     def test_payload_by_class_uses_remapped_dat_key(self):
         v = Vehicle(name="A", waytype="track", payload_by_class=[0, 0, 0, 18])
@@ -122,7 +127,7 @@ class TestPortVehicle(unittest.TestCase):
             speed=120,
             weight=12.5,
             payload=42,
-            comfort=[1, 2, 3],
+            comfort_by_class=[1, 2, 3],
             constraint_prev=["any"],
         )
         # Render -> parse the resulting source as a Python expression
