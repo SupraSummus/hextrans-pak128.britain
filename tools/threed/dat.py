@@ -38,7 +38,10 @@ _TERMINATOR_RE = re.compile(r"^-+\s*$")
 
 # Single-row 8-facing atlas; column i corresponds to facings[i]
 # in render.py / viewpoints.py HEX_VIEWPOINT.  Match exactly or
-# the engine renders the wrong sprite per direction.
+# the engine renders the wrong sprite per direction.  makeobj's
+# image-ref parser (image_writer.cc) reads `<file>.X.Y` as
+# row=X, col=Y, so a single-row atlas addresses cells as
+# `.0.<col>` — see "Atlas layout" in CLAUDE.md.
 _HEX_FACINGS: tuple[str, ...] = ("S", "SW", "W", "NW", "N", "NE", "E", "SE")
 
 
@@ -179,7 +182,7 @@ def emit_vehicle(vehicle: Vehicle, *, out_dir: Path, basename: str) -> Path:
     """Write `<out_dir>/<basename>.dat` from a Vehicle.
 
     Emits every set field on the Vehicle.  Image refs point at
-    `./<basename>.col.0` for col in 0..7, matching the single-row
+    `./<basename>.0.<col>` for col in 0..7, matching the single-row
     hex atlas baked alongside (PNG must live at
     `<out_dir>/<basename>.png`).  Returns the dat path.
     """
@@ -192,7 +195,7 @@ def emit_vehicle(vehicle: Vehicle, *, out_dir: Path, basename: str) -> Path:
         for i, v in enumerate(getattr(vehicle, attr)):
             lines.append(f"{dat_key}[{i}]={v}")
     for col, facing in enumerate(_HEX_FACINGS):
-        lines.append(f"EmptyImage[{facing}]=./{basename}.{col}.0")
+        lines.append(f"EmptyImage[{facing}]=./{basename}.0.{col}")
     lines.append("----------")
 
     out_path = out_dir / f"{basename}.dat"

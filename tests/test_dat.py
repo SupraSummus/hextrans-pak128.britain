@@ -86,7 +86,7 @@ class TestEmitVehicle(unittest.TestCase):
         self.assertEqual(lines[1], "name=A")
         self.assertEqual(lines[2], "waytype=track")
         # No copyright / freight / etc. lines.
-        body = lines[3:lines.index("EmptyImage[S]=./x.0.0")]
+        body = lines[3:lines.index("EmptyImage[S]=./x.0.0")]  # row=0, col=0
         self.assertEqual(body, [])
 
     def test_emits_extended_fields(self):
@@ -114,9 +114,11 @@ class TestEmitVehicle(unittest.TestCase):
         self.assertIn("Constraint[Next][1]=C\n", text)
 
     def test_emits_eight_facing_image_refs(self):
+        # makeobj parses `<file>.X.Y` as row=X, col=Y, so the single-row
+        # hex atlas's 8 facings address as `.0.0` .. `.0.7`.
         text = self._emit(Vehicle(name="A", waytype="track"))
         for col, facing in enumerate(("S", "SW", "W", "NW", "N", "NE", "E", "SE")):
-            self.assertIn(f"EmptyImage[{facing}]=./x.{col}.0\n", text)
+            self.assertIn(f"EmptyImage[{facing}]=./x.0.{col}\n", text)
 
 
 class TestPortVehicle(unittest.TestCase):

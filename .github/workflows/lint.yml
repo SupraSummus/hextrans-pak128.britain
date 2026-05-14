@@ -1,0 +1,30 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install numpy
+      - run: python3 -m unittest discover -s tests -v
+
+  rebake-grounds:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install numpy Pillow
+      - name: Re-run parametric ground bakers
+        run: make bake-grounds
+      - name: Verify byte-identical output
+        run: git diff --exit-code -- grounds/

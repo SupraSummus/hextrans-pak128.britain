@@ -13,6 +13,7 @@ _UpgradeReport_Files*
 /Pak128.Britain-Extended.VC.db
 /pak128.Britain-Ex*
 .~lock*
+makeobj
 makeobj-extended
 *.db
 *.opendb
@@ -46,6 +47,11 @@ makeobj-extended*
 # Bake / fetch caches and debug renders.
 .cache/
 out/
+
+# `make` staging dir (DESTDIR in Makefile).
+build/
+simupak128.Britain-Ex.zip
+simupak128.Britain-Ex.tbz2
 
 # Python.
 __pycache__/

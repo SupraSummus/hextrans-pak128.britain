@@ -593,13 +593,17 @@ unported-flat or ported-triple, never both.
 ### Atlas layout
 
 Each per-asset PNG is a single row of N facing renders, sliced by
-makeobj into 128×128 sprites (cell width = pak tile width).  Cell
-`(col, row)` is addressed from the .dat as `<file>.<col>.<row>`.
+makeobj into 128×128 sprites (cell width = pak tile width).
+makeobj's image-ref parser (`descriptor/writer/image_writer.cc`)
+reads `<file>.X.Y` as **row=X, col=Y**, so a single-row atlas
+addresses its cells as `.0.<col>`.  Getting the order wrong gives
+`invalid image number` when col exceeds the atlas width in cells,
+or silently transposed rendering when both indices fit.
 
 Column order is the `facings` list in `HEX_VIEWPOINT`
 (`tools/threed/viewpoints.py`): `S, SW, W, NW, N, NE, E, SE` for the
 default 8-view bake.  Per-asset .dat keys (`EmptyImage[S]=…0.0`,
-`EmptyImage[SW]=…1.0`, …) must match this order or the engine
+`EmptyImage[SW]=…0.1`, …) must match this order or the engine
 renders the wrong sprite per facing — there is no run-time
 consistency check.
 
@@ -748,13 +752,41 @@ suggest no display needed.
 No GPU required; Cycles falls back to CPU.  ~4 s per facing on
 a small carriage.
 
-## CI rebake check
+## CI
 
-Match `hextrans-pak128`'s convention: every push reruns the bake
-for changed assets (detected by changes to `bake.py` or the
-relevant `blends.lock` entry), asserts the committed PNG is
-byte-identical.  Stops silent drift between source `.blend` and
-committed atlas.
+Two workflows, matching `hextrans-pak128`'s split:
+
+**Lint** (`.github/workflows/lint.yml`, push + PR).  `rebake-grounds`
+re-runs every parametric ground baker via `make bake-grounds` and
+asserts `git diff --exit-code -- grounds/` — byte-identical or the
+job fails.  Stops silent drift between `grounds/<asset>.py` and the
+committed PNG/dat siblings.  `tests` runs the `python3 -m unittest`
+suite under `tests/` (needs `numpy` for the `hex_synth` import
+chain pulled in by `test_square_synth`).
+
+Vehicle rebake is not wired — vehicles need Blender + libegl1 + a
+blend fetch per asset (~minutes per asset of CPU Cycles render),
+too heavy for every push.  Selective vehicle rebake (gated on
+`bake.py` or `blends.lock` diff) is a future-work entry in
+`TODO.md`.
+
+**Build** (`.github/workflows/build.yml`, push + PR + manual).
+Clones `SupraSummus/hextrans`, builds `makeobj`, runs
+`make MAKEOBJ=./makeobj clean all archives`, publishes
+`simupak128.Britain-Ex-nightly.zip` to the `Nightly` GitHub release
+on `main` pushes.  Scope is gated in the Makefile (see
+`TODO.md` → "Expand build scope as categories bake"): the
+top-level `DIRS128` list selects which categories the build
+visits, and the per-dir `ported_dats` filter narrows that to
+`.dat` files with a sibling `.png` so a partly-ported dir's
+upstream-reference dats stay out of makeobj's input list.  No
+upstream PNG-fetch indirection: ported assets compile, unported
+ones are silently skipped.
+
+The `copy` step fetches `demo.sve` and `symbol.BigLogo.pak` from
+the `pak.lock`-pinned upstream pak via `tools/threed/fetch_pak.py`
+— both were stripped from history (binary deliverables, no source)
+and are filled in at build time rather than committed.
 
 Full rebake on demand for blends-repo SHA bumps.
 
