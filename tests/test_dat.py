@@ -269,22 +269,25 @@ class TestPortWay(unittest.TestCase):
         w = port_way(entries)  # must not raise
         self.assertEqual(w.name, "x")
 
-    def test_carries_icon_and_cursor_verbatim(self):
-        # `> ` prefix on icon is upstream tabfile syntax for a menu
-        # entry — preserved through port + emit, the cursorskin
-        # writer in the engine consumes whatever string we hand it.
+    def test_drops_icon_and_cursor_on_port(self):
+        # Upstream `icon=`/`cursor=` reference cells under the pak's
+        # stripped images/ dir — they'd make makeobj error out at
+        # build time if they survived a port unchanged (see
+        # `Way.icon` field doc).  port_way drops them; the bake
+        # script's SPEC stays clean, and a future icon/cursor
+        # baker fills them back in pointing at hex-atlas cells.
         entries = [
             ("obj", "way"), ("Name", "x"), ("waytype", "track"),
             ("icon", "> ./images/x.3.4"),
             ("cursor", "./images/x.3.5"),
         ]
         w = port_way(entries)
-        self.assertEqual(w.icon, "> ./images/x.3.4")
-        self.assertEqual(w.cursor, "./images/x.3.5")
+        self.assertIsNone(w.icon)
+        self.assertIsNone(w.cursor)
         with TemporaryDirectory() as d:
             text = emit_way(w, out_dir=Path(d), basename="x").read_text()
-        self.assertIn("icon=> ./images/x.3.4\n", text)
-        self.assertIn("cursor=./images/x.3.5\n", text)
+        self.assertNotIn("icon=", text)
+        self.assertNotIn("cursor=", text)
 
     def test_rejects_non_way_obj(self):
         with self.assertRaisesRegex(ValueError, "not obj=way"):

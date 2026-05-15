@@ -346,6 +346,9 @@ def port_vehicle(object_entries: list[tuple[str, str]]) -> Vehicle:
     return Vehicle(**kwargs)
 
 
+_WAY_PORT_DROP: frozenset[str] = frozenset({"icon", "cursor"})
+
+
 def port_way(object_entries: list[tuple[str, str]]) -> Way:
     """Convert one parsed upstream `obj=way` object to a `Way`.
 
@@ -354,7 +357,11 @@ def port_way(object_entries: list[tuple[str, str]]) -> Way:
     scalar `Way` field the upstream dat sets; image refs (Upstream
     `Image[<square_ribi>]`, `ImageUp[N]`, `Diagonal[<dir>]`, `cursor`,
     `icon`) are dropped — the hex bake re-emits them from its own
-    atlas under `image[<hex_ribi>][N]=...` keys.
+    atlas under `image[<hex_ribi>][N]=...` keys.  `icon` / `cursor`
+    upstream values point at `./images/<name>.X.Y` cells that live in
+    the upstream pak's stripped images/ dir and would make makeobj
+    error out (see `Way.icon` field doc); they're dropped here so a
+    seeded SPEC bakes cleanly without manual scrubbing.
     """
     lookup = {k.lower(): v for k, v in object_entries}
     if lookup.get("obj", "").lower() != "way":
@@ -364,6 +371,8 @@ def port_way(object_entries: list[tuple[str, str]]) -> Way:
     kwargs: dict = {}
     for k, v in object_entries:
         kl = k.lower()
+        if kl in _WAY_PORT_DROP:
+            continue
         if kl in scalars and not _INDEX_RE.search(k):
             kwargs[kl] = _coerce(v)
 

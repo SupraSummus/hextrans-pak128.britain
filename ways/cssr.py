@@ -37,7 +37,13 @@ SPEC = Way(
     maintenance=375,
 )
 BLEND = "ways/ns-cssr.blend"
+MATERIALS = {
+    "Ballast": (87, 87, 87),
+    "Wood": (118, 118, 118),
+    "Rail": (133, 133, 133),
+    "RailTop": (183, 183, 183),
+}
 
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, BLEND, __file__)
+    bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)

@@ -897,6 +897,39 @@ Two layers, kept honestly split:
     in blend coords, **not** our intra-tile system — comparing it
     against `HEX_TILE_RADIUS = 1` would be a category error.
 
+**Rail-grade material recolour** (per-rail `MATERIALS` dicts).
+Upstream ships ~20 rail-grade dats (cast_iron through cssri) that
+render from one underlying geometry — within-family silhouette IoU
+is 1.000, cross-family ≥ 0.96.  The visual differentiation is
+material recolour: four blend slots (`Rail`, `RailTop`, `Wood`,
+`Ballast`) shift hue and value per variant.  We mirror that:
+each `ways/<rail>.py` declares its own `MATERIALS = {…}` inline
+(colocated with the SPEC, no central catalog), passes it through
+`bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)`,
+`pak/bake.py::bake_way` serialises to JSON on the `--materials`
+arg, and `pak/bake_way.py` parses it back with `json.loads` and
+applies via `mat.diffuse_color` before render.  Old-style
+(`use_nodes=False`) materials in `ns-cssr.blend` render via the
+diffuse colour directly under Cycles' auto-conversion; node-graph
+materials would need a different override path.
+
+The current `MATERIALS` values were seeded by K-means-clustering
+the lit pixels of upstream's NS-chord cell (the typical straight-
+rail cross-section view) and luminance-ranking the centroids into
+Ballast / Wood / Rail / RailTop.  Output is rendered RGB as it
+appears upstream — no shading-attenuation compensation, so first
+bakes land ~30 % darker.  The sampler isn't committed; it was a
+one-off investigation step.  Adding new variants from upstream is
+re-implement-as-needed: read the upstream PNG, mask the
+transparency key, K-means cluster, paste the four colours into a
+new `ways/<rail>.py`.
+
+The Transparent ground plane in `ns-cssr.blend` (Plane.005,
+material `Transparent`) is dropped via `_STRIP_MATERIALS` in the
+bake driver — diffuse 0.8 grey with no texture wired up, it
+otherwise contaminates ~50 % of the lit pixels with fake bright
+grey that upstream's atlases don't show.
+
 Note on what's intentionally **not** here:
 
 - No numpy rasterizer.  An earlier session ported pak128's
