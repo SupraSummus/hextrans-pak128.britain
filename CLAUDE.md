@@ -364,10 +364,11 @@ The applied strip set:
   originals stay reachable upstream.
 - `.suo`/`.vcxproj`/`.vcproj` — IDE detritus.
 - `.pak` — compiled `makeobj` output; regenerates from `.dat`.
-- `.wav` — sound effects.  Fetched on demand from the upstream
-  pak repo at runtime, parallel to blend fetching (see "Asset
-  sourcing without cloning" below); the hex pak doesn't ship
-  them in git.
+- `.wav` — sound effects.  Fetched at pak-build time by the
+  `copy` Makefile target via `tools/threed/fetch_wavs.py` (scans
+  ported `.dat`s for `sound=*.wav` references, pulls each through
+  `fetch_pak`, stages into `$(PAKDIR)/sound/`).  See "Asset sourcing
+  without cloning" below; the hex pak doesn't ship them in git.
 - `.tab~`/`.dat~`/`.bak` — editor backups.
 
 Kept in git: `.dat` (gameplay catalog), `.tab` (config),
@@ -414,9 +415,11 @@ The pattern:
 
 - A `*.lock` file at the repo root holds one upstream commit SHA
   per upstream repo (`blends.lock`, `pak.lock`).  One file per
-  upstream repo, not per file-type — `pak.lock` covers both pakset
-  PNGs (used by `diff_upstream.py`) and `.wav` sound effects (when
-  runtime sound fetching lands).
+  upstream repo, not per file-type — `pak.lock` covers pakset PNGs
+  (used by `diff_upstream.py`), `.wav` sound effects (staged into
+  the pak by `tools/threed/fetch_wavs.py` in the Makefile `copy`
+  step), and the boot-screen / demo deliverables (`symbol.BigLogo.pak`,
+  `demo.sve`).
 - A `tools/<area>/fetch_*.py` script resolves `<path within
   upstream repo>` against that SHA, fetches the individual blob
   over HTTP, caches under a `.gitignore`d `.cache/` dir.
@@ -425,8 +428,10 @@ The pattern:
   directly.
 
 Present:  `fetch_blend.py` (blends repo) and `fetch_pak.py` (pak
-repo) both implement the pattern.  A session touching one asset
-downloads one blend, not the tree; upstream repo size is
+repo) both implement the pattern; `fetch_wavs.py` is a thin
+batch helper over `fetch_pak` that scans ported dats for
+`sound=*.wav` references and pulls each one.  A session touching
+one asset downloads one blend, not the tree; upstream repo size is
 irrelevant to the day-to-day.
 
 If the upstream HTTP endpoint requires auth or routing, the
@@ -698,15 +703,26 @@ Present:
   fetches the blend, runs the hex renderer, writes the atlas
   PNG, and emits the dat.  Bake scripts shrink to imports +
   SPEC + a single `bake_vehicle(...)` call.
+- `tools/threed/bake_units.py` — `discover()` returns every
+  per-asset bake script (`.py` with `.dat` + `.png` siblings outside
+  `tools/`, `tests/`, `grounds/`, `simutranslator/`), and
+  `import_script(path)` imports it by its repo-relative dotted
+  name.  Shared by `reemit_dats`, `fetch_wavs`, and
+  `tests/test_ported_dats` so the catalog has one definition of
+  what counts as a ported asset.
 - `tools/threed/reemit_dats.py` — catalog-wide driver that
-  imports every bake script (any `.py` with `.dat` + `.png`
-  siblings outside `tools/`, `tests/`, `grounds/`,
-  `simutranslator/`) and calls `emit_vehicle` on its `SPEC`.
-  No Blender, no render.  Wired into CI as the `reemit-dats`
-  lint job to catch SPEC ↔ committed-`.dat` drift on every push.
-  Raises on a bake script without `SPEC: Vehicle` rather than
-  silently skipping — the first multi-object bake unit will need
-  to extend this (see `TODO.md` → "Multi-object reemit hook").
+  imports every `discover()`-ed bake script and calls
+  `emit_vehicle` on its `SPEC`.  No Blender, no render.  Wired
+  into CI as the `reemit-dats` lint job to catch SPEC ↔
+  committed-`.dat` drift on every push.  Raises on a bake script
+  without `SPEC: Vehicle` rather than silently skipping — the
+  first multi-object bake unit will need to extend this (see
+  `TODO.md` → "Multi-object reemit hook").
+- `tools/threed/fetch_wavs.py` — catalog-wide driver that walks
+  `bake_units.discover()`, reads each `SPEC.sound`, and pulls the
+  named wav from the upstream pak via `fetch_pak`.  Invoked by
+  the Makefile `copy` step to stage sounds into `$(PAKDIR)/sound/`
+  on every build.
 - `tests/test_dat.py` — `unittest`-based smoke tests for parse,
   emit, port, seed_python, and the schema-enforcement-at-
   construction property.  Run via
