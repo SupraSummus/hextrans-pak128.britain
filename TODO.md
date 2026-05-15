@@ -35,16 +35,31 @@ a new category's first asset is ported: uncomment its
 `DIRS128 += <dir>` (and matching `TR_DIRS += <dir>`) line, push,
 watch CI go green.
 
-**Vehicle rebake in CI.**  Lint workflow re-runs the parametric
-ground bakers and asserts byte-identical, but vehicle bakes don't
-run on CI — they need Blender + `libegl1` + a per-asset blend fetch
-(~minutes of Cycles per asset).  Concrete next move when the bake
-catalog grows past the ~5-asset spike: a `rebake-vehicles` job
-gated on diff-detected `bake.py` or `blends.lock` changes (path
-filter on the workflow trigger), installing Blender once and only
-rebaking the touched assets.  `CLAUDE.md` → "CI" notes this gap.
-Trigger: when drift in committed vehicle atlases is first observed
-(or when ~10 vehicles are baked, whichever comes first).
+**Vehicle render rebake in CI.**  The `reemit-dats` lint job
+re-emits every vehicle bake unit's `.dat` from its `SPEC` and
+asserts byte-identical, but the *render* side (atlas PNG) isn't
+wired — vehicle bakes need Blender + `libegl1` + a per-asset
+blend fetch (~minutes of Cycles per asset).  Concrete next move
+when the bake catalog grows past the ~5-asset spike: a
+`rebake-vehicles` job gated on diff-detected `bake.py` or
+`blends.lock` changes (path filter on the workflow trigger),
+installing Blender once and only rebaking the touched assets.
+`CLAUDE.md` → "CI" notes this gap.  Trigger: when drift in
+committed vehicle atlases is first observed (or when ~10
+vehicles are baked, whichever comes first).
+
+**Multi-object reemit hook.**  `tools/threed/reemit_dats.py`
+introspects each bake script's `SPEC: Vehicle` attribute and
+re-emits one `.dat` per script.  Multi-object bake units (one
+script emits N dat+png pairs — designed but not yet exercised,
+see "Bake units and per-asset layout" in `CLAUDE.md`) have no
+single `SPEC` and won't fit this shape; the worst case is a
+script with `SPEC` *plus* an additional tender output that gets
+silently missed.  Concrete next move when the first multi-object
+bake unit lands: replace the `SPEC` introspection with a
+per-script `reemit_dats(out_dir)` hook (or a `SPECS` list +
+basename map convention), and update the existing single-object
+scripts to expose the hook.  Trigger: first multi-object port.
 
 **Freight-image subsystem unmodelled.**  Hex `vehicle_writer.cc`
 reads `freightimage[<dir>]` (single-freight visual variant),

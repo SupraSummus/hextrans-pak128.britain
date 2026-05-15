@@ -28,3 +28,18 @@ jobs:
         run: make bake-grounds
       - name: Verify byte-identical output
         run: git diff --exit-code -- grounds/
+
+  reemit-dats:
+    # Catches drift between a bake script's SPEC and its committed
+    # `.dat` sibling without re-rendering — vehicle bakes need Blender
+    # + Cycles (minutes per asset), too heavy for every push.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Re-emit every vehicle bake unit's .dat from its SPEC
+        run: python3 -m tools.threed.reemit_dats
+      - name: Verify byte-identical output
+        run: git diff --exit-code -- '*.dat'

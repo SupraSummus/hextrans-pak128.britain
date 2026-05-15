@@ -549,12 +549,13 @@ without a `sys.path` hack.  Run as a module from the repo root:
 
     python3 -m trains._4wheel_1850s_first
 
-Catalog-wide tooling (e.g. a future enumerator / linter / CI
-rebake driver — none built yet) can import the bake scripts as
-modules and read SPECs as Python values without baking.  `Name=`
-inside the dat is its own namespace — the pak's internal
-identity, hyphens kept upstream-compatible, what makeobj keys on
-(verified in `root_writer.cc`).
+Catalog-wide tooling imports the bake scripts as modules and
+reads `SPEC` as a Python value without baking — see
+`tools/threed/reemit_dats.py` for the worked example (used by
+the `reemit-dats` CI job; see "CI" below).  `Name=` inside the
+dat is its own namespace — the pak's internal identity, hyphens
+kept upstream-compatible, what makeobj keys on (verified in
+`root_writer.cc`).
 
 **Seeding a new asset.**  When porting fresh from upstream:
 
@@ -697,6 +698,15 @@ Present:
   fetches the blend, runs the hex renderer, writes the atlas
   PNG, and emits the dat.  Bake scripts shrink to imports +
   SPEC + a single `bake_vehicle(...)` call.
+- `tools/threed/reemit_dats.py` — catalog-wide driver that
+  imports every bake script (any `.py` with `.dat` + `.png`
+  siblings outside `tools/`, `tests/`, `grounds/`,
+  `simutranslator/`) and calls `emit_vehicle` on its `SPEC`.
+  No Blender, no render.  Wired into CI as the `reemit-dats`
+  lint job to catch SPEC ↔ committed-`.dat` drift on every push.
+  Raises on a bake script without `SPEC: Vehicle` rather than
+  silently skipping — the first multi-object bake unit will need
+  to extend this (see `TODO.md` → "Multi-object reemit hook").
 - `tests/test_dat.py` — `unittest`-based smoke tests for parse,
   emit, port, seed_python, and the schema-enforcement-at-
   construction property.  Run via
@@ -760,15 +770,20 @@ Two workflows, matching `hextrans-pak128`'s split:
 re-runs every parametric ground baker via `make bake-grounds` and
 asserts `git diff --exit-code -- grounds/` — byte-identical or the
 job fails.  Stops silent drift between `grounds/<asset>.py` and the
-committed PNG/dat siblings.  `tests` runs the `python3 -m unittest`
-suite under `tests/` (needs `numpy` for the `hex_synth` import
-chain pulled in by `test_square_synth`).
+committed PNG/dat siblings.  `reemit-dats` runs
+`python3 -m tools.threed.reemit_dats` (imports every vehicle bake
+script, re-runs `emit_vehicle` from its `SPEC` — no Blender, no
+render) and asserts `git diff --exit-code -- '*.dat'`; catches dat
+drift between a bake script's SPEC and its committed `.dat` sibling
+on every push.  `tests` runs the `python3 -m unittest` suite under
+`tests/` (needs `numpy` for the `hex_synth` import chain pulled in
+by `test_square_synth`).
 
-Vehicle rebake is not wired — vehicles need Blender + libegl1 + a
-blend fetch per asset (~minutes per asset of CPU Cycles render),
-too heavy for every push.  Selective vehicle rebake (gated on
-`bake.py` or `blends.lock` diff) is a future-work entry in
-`TODO.md`.
+Vehicle *render* rebake is not wired — vehicles need Blender +
+libegl1 + a blend fetch per asset (~minutes per asset of CPU Cycles
+render), too heavy for every push.  Selective vehicle rebake
+(gated on `bake.py` or `blends.lock` diff) is a future-work entry
+in `TODO.md`.
 
 **Build** (`.github/workflows/build.yml`, push + PR + manual).
 Clones `SupraSummus/hextrans`, builds `makeobj`, runs
