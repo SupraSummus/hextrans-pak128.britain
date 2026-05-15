@@ -22,7 +22,7 @@ up front (the BMesh edit buffer bypasses v.co writes).
 
 Run as:
 
-    blender -b <blend_path> -P tools/threed/render.py -- \\
+    blender -b <blend_path> -P pak/render.py -- \\
         --out <dir> --name <stem> --viewpoint hex|square \\
         [--keep-per-facing] [--cols-per-row N]
 """

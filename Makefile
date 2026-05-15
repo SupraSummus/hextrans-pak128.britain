@@ -143,13 +143,13 @@ copy:
 #   @mkdir -p $(PAKDIR)/text/citylists 
 	@mkdir -p $(PAKDIR)/sound
 	@cp -p sound/* $(PAKDIR)/sound
-	@python3 -m tools.threed.fetch_wavs $(PAKDIR)/sound
+	@python3 -m pak.fetch_wavs $(PAKDIR)/sound
 #	@mkdir -p $(PAKDIR)/scenario
 #	@cp -p scenario/* $(PAKDIR)/scenario
-	@cp -p "$$(python3 -m tools.threed.fetch_pak demo.sve)" $(PAKDIR)/demo.sve
+	@cp -p "$$(python3 -m pak.fetch_pak demo.sve)" $(PAKDIR)/demo.sve
 	@cp -p licence.txt $(PAKDIR)
 	@cp -p compat.tab $(PAKDIR)
-	@cp -p "$$(python3 -m tools.threed.fetch_pak symbol.BigLogo.pak)" $(PAKDIR)/symbol.BigLogo.pak
+	@cp -p "$$(python3 -m pak.fetch_pak symbol.BigLogo.pak)" $(PAKDIR)/symbol.BigLogo.pak
 
 $(DIRS32):
 	@echo "===> PAK32 $@"

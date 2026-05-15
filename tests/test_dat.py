@@ -1,4 +1,4 @@
-"""Tests for `tools.threed.dat`.
+"""Tests for `pak.dat`.
 
 Run from the repo root:
 
@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from tools.threed.dat import (
+from pak.dat import (
     Vehicle,
     emit_vehicle,
     parse,

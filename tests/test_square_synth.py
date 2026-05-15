@@ -1,4 +1,4 @@
-"""Tests for `tools.threed.square_synth.SquareGeom`.
+"""Tests for `pak.square_synth.SquareGeom`.
 
 Pinned against the upstream pak128.Britain `texture-lightmap.png`
 cell layout (reverse-engineered in CLAUDE.md / square_synth's
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import unittest
 
-from tools.threed.hex_synth import find_min_partition
-from tools.threed.square_synth import (
+from pak.hex_synth import find_min_partition
+from pak.square_synth import (
     NE, NW, SE, SW,
     SQUARE_SLOPE_COUNT,
     SquareGeom,

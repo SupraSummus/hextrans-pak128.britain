@@ -1,6 +1,6 @@
 """Fetch every `.wav` referenced by a ported asset's bake unit.
 
-Walks every per-asset bake script (`tools.threed.bake_units.discover`),
+Walks every per-asset bake script (`pak.bake_units.discover`),
 reads `SPEC.sound`, and pulls each unique wav from the upstream pak
 repo via `fetch_pak` into `<dest>/`.  Sound effects were stripped from
 this repo's history (CLAUDE.md -> "Repo size strategy") so the
@@ -11,7 +11,7 @@ the same `SPEC: Vehicle` that drives `emit_vehicle` also names the
 wav.  The committed `.dat` is the derived artefact; never read it
 here.
 
-Usage: python3 -m tools.threed.fetch_wavs <dest-dir>
+Usage: python3 -m pak.fetch_wavs <dest-dir>
 """
 
 from __future__ import annotations

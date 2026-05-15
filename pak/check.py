@@ -7,11 +7,11 @@ thing a caller needs to remember is the bake-script path.
 
 Usage::
 
-    python3 -m tools.threed.check trains/_4wheel_1850s_first.py
-    python3 -m tools.threed.check --all
+    python3 -m pak.check trains/_4wheel_1850s_first.py
+    python3 -m pak.check --all
 
 `--all` walks the repo for bake scripts (anything that imports
-`tools.threed.bake`) and runs the diff for each one that declares
+`pak.bake`) and runs the diff for each one that declares
 `UPSTREAM_STEM`.  Scripts without the constant are skipped with a
 notice -- fill them in when the upstream sprite stem is known.
 A summary line per asset reports worst-facing IoU and total XOR
@@ -25,12 +25,10 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from tools.threed import diff_upstream
+from pak import REPO_ROOT, diff_upstream
 
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
-_SKIP_DIRS = {"tools", "tests", "out", ".cache", ".git"}
+_SKIP_DIRS = {"pak", "tests", "out", ".cache", ".git"}
 
 
 def _load(script: Path):
@@ -43,15 +41,15 @@ def _load(script: Path):
 
 
 def _discover() -> list[Path]:
-    """All bake scripts in the repo (anything that imports `tools.threed.bake`)."""
+    """All bake scripts in the repo (anything that imports `pak.bake`)."""
     out: list[Path] = []
-    for p in sorted(ROOT.rglob("*.py")):
+    for p in sorted(REPO_ROOT.rglob("*.py")):
         if p.name == "__init__.py":
             continue
-        rel = p.relative_to(ROOT)
+        rel = p.relative_to(REPO_ROOT)
         if rel.parts and rel.parts[0] in _SKIP_DIRS:
             continue
-        if "from tools.threed.bake import" in p.read_text():
+        if "from pak.bake import" in p.read_text():
             out.append(p)
     return out
 
@@ -65,7 +63,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int] | None:
         print(f"{script.name}: no {missing}, skipping (add one to enable diff)")
         return None
 
-    out_dir = ROOT / "out" / "diff" / script.stem
+    out_dir = REPO_ROOT / "out" / "diff" / script.stem
     metrics = diff_upstream.run(blend, stem, views=views, out_dir=out_dir)
 
     print(f"wrote {out_dir / 'grid.png'}")
@@ -89,7 +87,7 @@ def main(argv: list[str]) -> int:
     summary: list[tuple[str, float, int]] = []
     rc = 0
     for s in scripts:
-        print(f"=== {s.relative_to(ROOT)} ===")
+        print(f"=== {s.relative_to(REPO_ROOT)} ===")
         result = _run_one(s, args.views)
         if result is None:
             continue
@@ -109,5 +107,5 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(REPO_ROOT))
     sys.exit(main(sys.argv[1:]))

@@ -11,7 +11,7 @@ reference is still needed; see TODO.md).
 
 Run as:
 
-    python3 tools/threed/diff_upstream.py \\
+    python3 pak/diff_upstream.py \\
         <blend_path_in_blends_repo> \\
         <upstream_png_stem_in_pak_repo> \\
         [--views 8|4] [--out out/diff/<name>]
@@ -38,7 +38,7 @@ mask pass).
 Dependencies (system Python, not Blender's bundled): `numpy`, `Pillow`.
 Blender (`apt-get install blender`) for the render half.
 
-`tools/threed/check.py` is the more ergonomic entry point -- it
+`pak/check.py` is the more ergonomic entry point -- it
 imports a bake script and reads `BLEND` + `UPSTREAM_STEM` from the
 module, so callers don't carry two paths.  `diff_upstream.run()`
 returns structured metrics for programmatic callers.
@@ -52,9 +52,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from pak import REPO_ROOT
+
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
 VIEWS_8 = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
 VIEWS_4 = ["S", "W", "N", "E"]
 
@@ -152,8 +153,8 @@ def run(blend: str, stem: str, *, views: int = 8, out_dir: Path) -> list[FacingM
     per-facing metrics.  Side effects: writes `grid.png` and per-facing
     PNGs into `out_dir`.
     """
-    from tools.threed.fetch_blend import fetch as fetch_blend
-    from tools.threed.fetch_pak import fetch as fetch_pak
+    from pak.fetch_blend import fetch as fetch_blend
+    from pak.fetch_pak import fetch as fetch_pak
 
     view_list = VIEWS_8 if views == 8 else VIEWS_4
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -175,7 +176,7 @@ def format_table(metrics: list[FacingMetric]) -> str:
 def main(argv: list[str]) -> int:
     args = _parse(argv)
     stem_name = Path(args.stem).name
-    out_dir = Path(args.out) if args.out else ROOT / "out" / "diff" / stem_name
+    out_dir = Path(args.out) if args.out else REPO_ROOT / "out" / "diff" / stem_name
 
     metrics = run(args.blend, args.stem, views=args.views, out_dir=out_dir)
 
@@ -187,5 +188,5 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(REPO_ROOT))
     sys.exit(main(sys.argv[1:]))

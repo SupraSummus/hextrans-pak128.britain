@@ -20,12 +20,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from tools.threed.dat import Vehicle, emit_vehicle
-from tools.threed.fetch_blend import fetch
+from pak import REPO_ROOT
+from pak.dat import Vehicle, emit_vehicle
+from pak.fetch_blend import fetch
 
 
-_REPO = Path(__file__).resolve().parents[2]
-_RENDER_SCRIPT = _REPO / "tools" / "threed" / "render.py"
+_RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
 
 
 def bake_vehicle(
@@ -58,7 +58,7 @@ def bake_vehicle(
 
     out_dat = emit_vehicle(spec, out_dir=out_dir, basename=basename)
     try:
-        print(f"wrote {out_dat.relative_to(_REPO)}", flush=True)
+        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
     except ValueError:
         print(f"wrote {out_dat}", flush=True)
     return out_dat

@@ -48,7 +48,7 @@ installing Blender once and only rebaking the touched assets.
 committed vehicle atlases is first observed (or when ~10
 vehicles are baked, whichever comes first).
 
-**Multi-object reemit hook.**  `tools/threed/reemit_dats.py`
+**Multi-object reemit hook.**  `pak/reemit_dats.py`
 introspects each bake script's `SPEC: Vehicle` attribute and
 re-emits one `.dat` per script.  Multi-object bake units (one
 script emits N dat+png pairs — designed but not yet exercised,
@@ -109,8 +109,8 @@ vendored from upstream pak128.Britain verbatim (see
 geometry — replace with a Britain-flavoured hex-native palette when
 in-game appearance warrants.  Two pieces still missing.  `way_ground` is
 the per-`(axis, slope)` ground lightmap for tiles carrying a way —
-depends on pak128's `tools/threed/render.py` z-buffer rasterizer and
-`way.py`, neither of which is ported into britain's `tools/threed/`.
+depends on pak128's `pak/render.py` z-buffer rasterizer and
+`way.py`, neither of which is ported into britain's `pak/`.
 Concrete next move: port both modules (small — ~350 lines + ~130
 lines) or re-express way_ground's three faces directly via
 `fill_polygon` in the engine's screen-space Lambert frame (skipping
@@ -130,7 +130,7 @@ consistent ≈ 1.1–1.4× brightness ratio across slopes — our flat
 cell renders grey 132, upstream's renders grey 188.  The Lambert
 *shape* is right (cell IoUs sit at 0.90–0.99 even on the worst
 multi-region slopes); only the absolute scale differs.  That's
-`tools/threed/lightmap.py::brightness_to_grey_rgb`'s
+`pak/lightmap.py::brightness_to_grey_rgb`'s
 `create_textured_tile` convention — `gray5 = brightness/16` lands
 flat at gray8 ≈ 132 for the hex engine's multiplier path, but
 pak128-standard's `create_textured_tile` uses a different scale.
@@ -141,8 +141,8 @@ dark, parameterise `brightness_to_grey_rgb` by a per-projection
 multiplier scale and bump it for the hex engine to match
 upstream's apparent brightness.  Soft trigger.
 
-**Square-bake diff harness coverage.**  `tools/threed/diff_grounds.py`
-runs a parametric ground baker through `square_synth.SquareGeom` and
+**Square-bake diff harness coverage.**  `pak/diff_grounds.py`
+runs a parametric ground baker through `pak.square_synth.SquareGeom` and
 pixel-diffs against the upstream pak128.Britain authored cell atlas,
 exercising slope decode + region partition + Lambert + polygon fill +
 atlas layout end-to-end.  Only `light_texture` is wired into the

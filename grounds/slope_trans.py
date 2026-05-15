@@ -40,7 +40,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.threed import hex_synth
+from pak import hex_synth
 
 
 SLOPE_RED   = np.array([255, 0,   0,   255], dtype=np.uint8)

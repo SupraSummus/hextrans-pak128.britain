@@ -17,8 +17,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from tools.threed.bake_units import discover, import_script
-from tools.threed.dat import emit_vehicle
+from pak.bake_units import discover, import_script
+from pak.dat import emit_vehicle
 
 
 class TestPortedDats(unittest.TestCase):

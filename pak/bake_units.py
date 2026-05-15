@@ -2,7 +2,7 @@
 
 A bake unit is a `.py` with both a `.dat` and a `.png` sibling
 sharing its stem — the per-asset triple defined in CLAUDE.md ->
-"Bake units and per-asset layout".  Top-level dirs like `tools/`,
+"Bake units and per-asset layout".  Top-level dirs like `pak/`,
 `tests/`, `grounds/`, `simutranslator/` are excluded; vehicle
 categories (`air/`, `trains/`, `trams/`, …) are the consumers.
 """
@@ -13,19 +13,20 @@ import importlib
 from pathlib import Path
 from types import ModuleType
 
+from pak import REPO_ROOT
 
-_REPO = Path(__file__).resolve().parents[2]
-_SKIP_DIRS = {"tools", "tests", "grounds", "simutranslator", ".cache",
+
+_SKIP_DIRS = {"pak", "tests", "grounds", "simutranslator", ".cache",
               "build", "__pycache__"}
 
 
 def discover() -> list[Path]:
     """Per-asset bake scripts in canonical sorted order."""
     scripts: list[Path] = []
-    for path in sorted(_REPO.rglob("*.py")):
+    for path in sorted(REPO_ROOT.rglob("*.py")):
         if path.name == "__init__.py":
             continue
-        rel = path.relative_to(_REPO)
+        rel = path.relative_to(REPO_ROOT)
         if rel.parts[0] in _SKIP_DIRS:
             continue
         stem = path.with_suffix("")
@@ -36,5 +37,5 @@ def discover() -> list[Path]:
 
 def import_script(script: Path) -> ModuleType:
     """Import a bake-unit script by its repo-relative dotted path."""
-    rel = script.relative_to(_REPO).with_suffix("")
+    rel = script.relative_to(REPO_ROOT).with_suffix("")
     return importlib.import_module(".".join(rel.parts))

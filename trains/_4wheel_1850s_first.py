@@ -15,14 +15,14 @@ or import (`from trains import _4wheel_1850s_first`) to read
 `SPEC` without baking.
 
 To seed a `Vehicle(...)` for a new asset, see
-`tools.threed.dat.seed_python` (one-time, paste output into the
+`pak.dat.seed_python` (one-time, paste output into the
 new bake script).
 """
 
 from __future__ import annotations
 
-from tools.threed.bake import bake_main
-from tools.threed.dat import Vehicle
+from pak.bake import bake_main
+from pak.dat import Vehicle
 
 
 SPEC = Vehicle(

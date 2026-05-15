@@ -17,8 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.threed import hex_synth
-from tools.threed.hex_synth import (
+from pak import hex_synth
+from pak.hex_synth import (
     HexGeom,
     fill_polygon,
     hash_noise01,
