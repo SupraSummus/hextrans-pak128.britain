@@ -31,7 +31,7 @@ DESTFILE ?= simupak128.Britain-Ex
 TR_DIRS :=
 
 OUTSIDE :=
-#OUTSIDE += pak1file/128
+OUTSIDE += pak1file/128
 #TR_DIRS += pak1file/128
 
 DIRS32 :=
@@ -193,13 +193,22 @@ $(OUTSIDE):
 GROUND_BAKERS := light_texture back_wall marker borders water \
                  shore_trans slope_trans sidewalk climate_texture
 
-.PHONY: bake-grounds $(addprefix bake-,$(GROUND_BAKERS))
+.PHONY: bake-grounds $(addprefix bake-,$(GROUND_BAKERS)) bake-outside
 
-bake-grounds: $(addprefix bake-,$(GROUND_BAKERS))
+bake-grounds: $(addprefix bake-,$(GROUND_BAKERS)) bake-outside
 
 $(addprefix bake-,$(GROUND_BAKERS)): bake-%:
 	@echo "===> BAKE grounds/$*"
 	@python3 -m grounds.$*
+
+# `pak1file/128/` lives outside the `grounds/` family because makeobj
+# must emit it as its own ground.Outside.pak — see pak1file/readme.txt
+# and the OUTSIDE Makefile target above.  The dir name (`128`) isn't a
+# legal Python module, so invoke the script via PYTHONPATH rather than
+# `python3 -m`.
+bake-outside:
+	@echo "===> BAKE pak1file/128/outside"
+	@PYTHONPATH=. python3 pak1file/128/outside.py
 
 clean:
 	@echo "===> CLEAN"

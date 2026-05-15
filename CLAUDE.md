@@ -45,6 +45,16 @@ filename matches the engine `Name=` field (`light_texture`,
 right baker.  Ported from `hextrans-pak128/landscape/grounds/`; see
 TODO.md for the gaps (texture-climate, way_ground, fence).
 
+One ground asset (`Outside`, the void cell shown beyond the map
+edge) ships under `pak1file/128/` instead, mirroring upstream's
+layout — see `pak1file/readme.txt`, which records that the loader
+historically required a standalone `ground.Outside.pak`.  Makeobj
+emits per-object paks when fed a directory output (the `OUTSIDE`
+Makefile target) rather than a bundled `<dir>.pak` filename.  The
+bake script sits as a sibling of its `.dat`/`.png` outputs as
+elsewhere, but runs through PYTHONPATH rather than `python3 -m`
+because the `128` subdir isn't a legal Python module name.
+
 The pak is unplayable until a critical mass of ground + ways +
 vehicles is baked, and that's fine — the engine isn't shipping
 either.  `TODO.md` tracks which assets have crossed the line.
