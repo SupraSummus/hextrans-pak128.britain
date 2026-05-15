@@ -802,12 +802,26 @@ Two layers, kept honestly split:
   `blender -b -P`).  Opens the blend, strips authored cameras /
   lights and the `Sphere` sun-direction visualizer (matching the
   vehicle harness in `pak/render.py`), bakes `matrix_world` into
-  mesh vertex data, scales uniformly so the rail strand spans one
-  hex through-tile chord (R·√3), applies the hex projection shear,
-  and renders through Cycles.  Today bakes one cell (the `s_n`
-  straight) as a baseline; the per-ribi composition loop — clone
-  the atom per `StraightPath`, `bmesh.ops.bisect_plane`-clip at
-  cap planes, transform onto the chord — is the next layer.
+  mesh vertex data, then walks `HEX_ENTRIES` (popcount-then-ribi).
+  For each ribi: clones the atom meshes per
+  `pak.way_topology.for_edges_paths(edges)` segment, rotates +
+  translates the clone onto the segment's chord, bisects against
+  the segment's cap planes (`pak.way_topology.cap_plane`) + the
+  six hex-outline planes (`pak.way.hex_clip_planes()`), applies
+  the hex projection shear, and renders one PNG.  Per-cell PNGs
+  go to a temp dir (or `--cell-dir` for debugging); the stitched
+  atlas (8 cols, popcount-major) lands at `<out>/<name>.png`.
+
+  Bisect convention: every cap- and outline-plane normal points
+  **inward** (toward the chord midpoint, or toward the hex centre
+  for outline planes), and `bmesh.ops.bisect_plane` runs with
+  `clear_inner=True` so the kept half is the +normal side.  Two
+  places this contract lives — the plane builders in `pak.way` /
+  `pak.way_topology`, and the bisect call in `_bisect_mesh` —
+  must agree, or every clone gets deleted instead of clipped.
+  `tests/test_way.py` pins the +normal-side-keep convention so a
+  future refactor that inverts one side trips the test instead of
+  silently emptying the atlas.
 
   Naming pitfall worth pinning: in `ns-cssr.blend` the mesh named
   `Plane` is **not** an upstream ruler — it's the 2048-poly ballast
@@ -815,6 +829,61 @@ Two layers, kept honestly split:
   generically (e.g. "anything called Plane") loses the ballast
   silhouette.  Default-strip is `{Sphere}` only; per-blend extras
   go via `--strip`.
+
+  Atom scale and composition:
+
+  * **Hex** scales the blend by `INTRA_TILE_PER_BLEND_UNIT` (=
+    `2R/UPSTREAM_ORTHO_SCALE` = `1/12` at current constants, the
+    same blend → intra-tile conversion `fit_kind="hex"` uses for
+    vehicles) — so a hex rail's gauge, sleeper width and
+    ballast extent land at the right **intra-tile** size.  Two
+    coord systems not to conflate:
+
+      * **Tile coords** are integers (adjacent tile is `(x+1, y)`
+        in either projection — no projection difference here).
+      * **Intra-tile coords** are continuous within one tile.
+        Our pakset fixes tile edge = 1 intra-tile unit in both
+        projections (`HEX_TILE_RADIUS` = the square tile side),
+        so a way of width `WAY_WIDTH = 0.4` crosses every tile
+        edge at the same fractional width in both projections,
+        and a way spanning a tile boundary has the same
+        complete-way-width at the crossing.
+
+    Blend coords are upstream's authoring frame, a third ruler;
+    `INTRA_TILE_PER_BLEND_UNIT` is the only conversion between
+    them.  Pixel sizes between projections differ (hex at
+    `ortho_scale = 2R` renders 1 intra-tile unit at 64 px;
+    upstream-square at `ortho_scale = 24` renders 1 blend unit
+    at 5.33 px) and that's by design — what's preserved is
+    intra-tile size, not pixel size.
+
+  * **Multi-atom-per-chord tiling** applies to **both
+    projections** — the blend's 8.78-unit strand is shorter than
+    every load-bearing chord in either system: hex at `1/12`
+    scale gives a `0.73`-unit atom against a `√3 ≈ 1.73` chord,
+    and square at native gives an 8.78-unit atom against a
+    24-unit NS chord (= `2 * SQUARE_TILE_HALF` in blend coords).
+    Upstream's NS cell visibly has 9+ sleepers — more than one
+    9-sleeper atom holds — so upstream itself tiles atoms along
+    the chord; our pipeline mirrors that.
+    `pak.way_topology.atom_offsets_along_path` returns
+    `ceil(chord_len / atom_y_extent)` chord-offset slots centred
+    on the chord midpoint; the bake driver places one atom per
+    slot, and the cap bisect trims the outer pair's overrun.
+    The blend's symmetric sleeper layout (9 ties centred on Y=0)
+    makes consecutive atoms' end-sleepers meet flush within
+    sub-millimetre intra-tile units, so the rail reads continuous
+    across the tiled atoms without explicit seam handling.
+
+  * **Square** keeps native blend scale (`atom_scale=None`) and
+    skips the blend → intra-tile conversion entirely.
+    `SQUARE_PROJECTION` exists only as the upstream-coord
+    **calibration view** for the open square diff harness
+    (mirror of `SQUARE_VIEWPOINT` with `fit_kind="none"`), so its
+    pixels are directly comparable to pak128.Britain's published
+    cells.  Its `SQUARE_TILE_HALF = UPSTREAM_ORTHO_SCALE / 2` is
+    in blend coords, **not** our intra-tile system — comparing it
+    against `HEX_TILE_RADIUS = 1` would be a category error.
 
 Note on what's intentionally **not** here:
 
@@ -829,12 +898,32 @@ Note on what's intentionally **not** here:
   duplicate Python source-of-truth for "what a rail looks like in
   cross-section."
 
-- No square-pak calibration loop for ways.  The blend renders
-  through Cycles whose output is treated as the authored truth; we
-  validate by eye + by adjacency tests (do rails meet flush at
-  shared edges?) rather than pixel-diffing against upstream's
-  square `Image[NS]` cells (which were rendered from this same
-  blend through a different camera convention anyway).
+- No square-pak calibration loop for ways yet — but the
+  *infrastructure* for one (a `--projection square` mode in
+  `pak/bake_way.py`, switching tile geometry, ribi vocabulary,
+  camera + sun, ortho_scale, extrinsic, atlas layout) **does** ship,
+  via `pak/way_proj.py::Projection`.  The actual diff harness
+  (`pak/diff_way.py`) is the open consumer; until it lands we
+  validate hex by eye + by adjacency tests (do rails meet flush at
+  shared edges?).  See TODO.md → "Way square-projection diff
+  harness".
+
+  Topology duplication is **deliberate, deferred**.  The square
+  path-dispatch helpers (`_square_between_edges`, `_square_bend`,
+  `_square_curve`, `_square_stub`, `square_for_edges_paths`) in
+  `pak/way_proj.py` are line-for-line copies of their hex
+  counterparts in `pak/way_topology.py`.  Consolidating them through
+  a shared `tile`-geom parameter would be the natural next refactor,
+  but doing it before the diff harness has bent the API would be
+  premature — the right shape will fall out of what the diff harness
+  actually needs to swap.  The shared invariants (`cap_plane`,
+  `path_chord_*`, the +normal-keep bisect convention) live in
+  `pak/way_topology.py` and are projection-agnostic;
+  `tests/test_way.py::_ProjectionInvariants` is the mixin that runs
+  the property-based checks against both projections' entries lists,
+  so an asymmetry (a square ribi whose paths have outward-pointing
+  cap normals, say) trips the test instead of silently miscomposing
+  an atlas.
 
 ## CI
 

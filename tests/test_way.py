@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import unittest
 
+import math
+
 from pak.way import (
     HEX_ENTRIES,
     HEX_TILE_RADIUS,
@@ -31,11 +33,20 @@ from pak.way import (
     SLOPE_HEX_ENTRIES,
     SLOPE_HEX_HALF_DOUBLE_ENTRIES,
     SLOPE_HEX_HALF_ENTRIES,
+    hex_clip_planes,
     ribi_edges,
     ribi_label,
 )
 from pak.way import edge_midpoint
-from pak.way_topology import for_edges_paths, stub_paths
+from pak.way_topology import (
+    atom_offsets_along_path,
+    cap_plane,
+    for_edges_paths,
+    path_chord_angle,
+    path_chord_length,
+    path_chord_midpoint,
+    stub_paths,
+)
 
 
 class RibiVocabulary(unittest.TestCase):
@@ -150,6 +161,218 @@ class PathCoordinates(unittest.TestCase):
         scale = 1.0 - STUB_LENGTH_FRACTION
         self.assertAlmostEqual(sx, mx * scale)
         self.assertAlmostEqual(sy, my * scale)
+
+
+class ChordTransform(unittest.TestCase):
+    """`path_chord_angle` is the Z rotation such that the atom's +Y axis
+    lines up with the chord direction; `path_chord_midpoint` and
+    `path_chord_length` are the chord's centre + Euclidean span."""
+
+    def test_north_south_chord(self):
+        # N edge midpoint to S edge midpoint — atom should rotate 180°
+        # (atom +Y points south after rotation), centre at origin,
+        # length = R*sqrt(3).
+        path = for_edges_paths(("N", "S"))[0]
+        self.assertAlmostEqual(path_chord_length(path), math.sqrt(3.0))
+        self.assertAlmostEqual(path_chord_midpoint(path)[0], 0.0)
+        self.assertAlmostEqual(path_chord_midpoint(path)[1], 0.0)
+        angle = path_chord_angle(path)
+        # R_z(angle) @ (0, 1, 0) should be (0, -1, 0).
+        self.assertAlmostEqual(-math.sin(angle), 0.0)
+        self.assertAlmostEqual(math.cos(angle), -1.0)
+
+    def test_stub_chord_direction(self):
+        # Stub from inside the tile out to the N edge — atom +Y rotates
+        # to point north (toward +Y), so angle ≈ 0.
+        path = stub_paths("N")[0]
+        angle = path_chord_angle(path)
+        self.assertAlmostEqual(-math.sin(angle), 0.0, places=6)
+        self.assertAlmostEqual(math.cos(angle), 1.0, places=6)
+
+    # `chord_length_matches_endpoints` lives on the projection-
+    # agnostic mixin (`HexInvariants`, `SquareInvariants`).
+
+
+class AtomTiling(unittest.TestCase):
+    """`atom_offsets_along_path` returns chord-offset slots for each
+    atom in a multi-atom tiling.  `pak/bake_way.py` consumes this when
+    one atom is shorter than the chord and the rail needs to stay
+    continuous along the path."""
+
+    def test_short_chord_emits_one_centred_atom(self):
+        # Chord much shorter than atom step → single atom at the
+        # midpoint; the cap bisect handles the overrun.
+        self.assertEqual(atom_offsets_along_path(0.4, 0.7), [0.0])
+
+    def test_atoms_centred_on_chord_midpoint(self):
+        # Symmetric around 0: a 3-atom run at step 0.7 sits at
+        # {-0.7, 0.0, +0.7}.
+        offsets = atom_offsets_along_path(1.7, 0.7)
+        self.assertEqual(len(offsets), 3)
+        self.assertEqual(sum(offsets), 0.0)
+        for k in range(len(offsets) - 1):
+            self.assertAlmostEqual(offsets[k + 1] - offsets[k], 0.7)
+
+    def test_count_covers_chord(self):
+        # n = ceil(chord / step); n atoms span n*step ≥ chord.
+        for chord, step in [(0.5, 0.7), (1.0, 0.7), (1.7, 0.7),
+                            (2.0, 0.7), (2.1, 0.7), (3.5, 0.7)]:
+            offsets = atom_offsets_along_path(chord, step)
+            self.assertGreaterEqual(len(offsets) * step, chord)
+            # n-1 step span ≤ chord (one fewer wouldn't cover).
+            self.assertLess((len(offsets) - 1) * step, chord + 1e-9)
+
+    def test_zero_length_chord_emits_one_atom(self):
+        # Edge case the topology layer doesn't actually produce, but
+        # the helper must not divide-by-zero on it.
+        self.assertEqual(atom_offsets_along_path(0.0, 0.7), [0.0])
+
+
+class CapPlanes(unittest.TestCase):
+    """`cap_plane(path, end)` returns `(plane_co, plane_no)` in world XY
+    with `plane_no` pointing inward (toward the chord midpoint), so a
+    bisect that clears the half-space opposite the normal removes
+    overrun beyond the cap and keeps the path interior."""
+
+    def test_skip_returns_none(self):
+        # 60°-adjacent V-bend → apex caps suppressed.
+        paths = for_edges_paths(("N", "NE"))
+        self.assertEqual(len(paths), 2)
+        self.assertIsNone(cap_plane(paths[0], "b"))  # leg A's apex cap
+        self.assertIsNone(cap_plane(paths[1], "a"))  # leg B's apex cap
+
+
+# ---- Projection-parametric invariants --------------------------------------
+# The cap-plane / clip-plane / chord-length contracts are projection-
+# agnostic — the bake driver's bisect calls (`pak/bake_way.py::_bisect_mesh`
+# with `clear_inner=True`) depend on every plane normal pointing inward,
+# regardless of whether the tile is hex or square.  Express the contract
+# once as a mixin, instantiate twice.
+
+class _ProjectionInvariants:
+    """Mixin asserting `pak/bake_way.py`'s composition contracts hold
+    across the full ribi list.  Subclasses set `entries` (popcount-then-
+    ribi list of `(label, edges)`), `for_edges_paths` (path dispatch
+    callable), and `clip_planes` (tile-outline plane builder)."""
+
+    entries: list
+    for_edges_paths: staticmethod
+    clip_planes: staticmethod
+
+    def _paths(self):
+        for _, edges in self.entries:
+            for path in self.for_edges_paths(edges):
+                yield path
+
+    def test_chord_length_matches_endpoints(self):
+        for path in self._paths():
+            dx = path.end[0] - path.start[0]
+            dy = path.end[1] - path.start[1]
+            self.assertAlmostEqual(path_chord_length(path),
+                                   math.hypot(dx, dy))
+
+    def test_cap_normal_points_inward(self):
+        for path in self._paths():
+            for end in ("a", "b"):
+                cp = cap_plane(path, end)
+                if cp is None:
+                    continue
+                _, (nx, ny) = cp
+                if end == "a":
+                    toward = (path.end[0] - path.start[0],
+                              path.end[1] - path.start[1])
+                else:
+                    toward = (path.start[0] - path.end[0],
+                              path.start[1] - path.end[1])
+                self.assertGreater(nx * toward[0] + ny * toward[1], 0.0)
+
+    def test_cap_normal_perpendicular_to_cap_dir(self):
+        for path in self._paths():
+            for end, cap in (("a", path.cap_a), ("b", path.cap_b)):
+                cp = cap_plane(path, end)
+                if cp is None:
+                    continue
+                _, (nx, ny) = cp
+                self.assertAlmostEqual(nx * cap[0] + ny * cap[1], 0.0)
+                self.assertAlmostEqual(math.hypot(nx, ny), 1.0)
+
+    def test_clip_plane_normals_point_inward(self):
+        for (cx, cy), (nx, ny) in self.clip_planes():
+            # Origin sits on the +normal side, the side bisect keeps.
+            self.assertGreater((0.0 - cx) * nx + (0.0 - cy) * ny, 0.0)
+            self.assertAlmostEqual(math.hypot(nx, ny), 1.0)
+
+
+class HexInvariants(_ProjectionInvariants, unittest.TestCase):
+    entries = HEX_ENTRIES
+    for_edges_paths = staticmethod(for_edges_paths)
+    clip_planes = staticmethod(hex_clip_planes)
+
+
+class SquareInvariants(_ProjectionInvariants, unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Late-bind so importing this test module doesn't pull
+        # `way_proj` (which transitively pulls numpy via `hex_synth`)
+        # at collection time on pure-stdlib runs.
+        from pak.way_proj import SQUARE_PROJECTION
+        cls.entries = SQUARE_PROJECTION.entries
+        cls.for_edges_paths = staticmethod(SQUARE_PROJECTION.for_edges_paths)
+        cls.clip_planes = staticmethod(SQUARE_PROJECTION.clip_planes)
+
+
+class HexClipPlanesGeometry(unittest.TestCase):
+    """Hex-specific clip-plane facts: count + apothem distance.  The
+    inward-normal invariant is covered by `HexInvariants`."""
+
+    def test_six_planes(self):
+        self.assertEqual(len(hex_clip_planes()), 6)
+
+    def test_planes_pass_through_edge_midpoints(self):
+        # Each plane_co at the apothem = sqrt(3)/2 from origin.
+        for (cx, cy), _ in hex_clip_planes():
+            self.assertAlmostEqual(math.hypot(cx, cy), math.sqrt(3.0) / 2.0)
+
+
+class SquareProjection(unittest.TestCase):
+    """Square-specific facts: ribi enumeration + canonical labels +
+    bend topology.  The projection-agnostic invariants are covered by
+    `SquareInvariants`."""
+
+    @classmethod
+    def setUpClass(cls):
+        from pak.way_proj import SQUARE_PROJECTION
+        cls.proj = SQUARE_PROJECTION
+
+    def test_fifteen_entries(self):
+        # 2^4 - 1 = 15 non-empty edge subsets.
+        self.assertEqual(len(self.proj.entries), 15)
+
+    def test_singletons_first(self):
+        first = {label for label, _ in self.proj.entries[:4]}
+        self.assertEqual(first, {"N", "S", "E", "W"})
+
+    def test_canonical_labels(self):
+        labels = {label for label, _ in self.proj.entries}
+        for key in ("NS", "EW", "NE", "NW", "SE", "SW",
+                    "NSE", "NSW", "NEW", "SEW", "NSEW"):
+            self.assertIn(key, labels)
+
+    def test_ns_chord_through_origin(self):
+        paths = self.proj.for_edges_paths(("N", "S"))
+        self.assertEqual(len(paths), 1)
+        mx, my = path_chord_midpoint(paths[0])
+        self.assertAlmostEqual(mx, 0.0)
+        self.assertAlmostEqual(my, 0.0)
+
+    def test_ne_bend_two_legs(self):
+        # 90°-adjacent edges share a corner → V-bend approximation.
+        self.assertEqual(len(self.proj.for_edges_paths(("N", "E"))), 2)
+
+    def test_four_way_junction_path_count(self):
+        # C(4, 2) = 6 pairs: 2 opposite (1 chord each) + 4 adjacent
+        # (V-bend = 2 legs each) = 2 + 8 = 10 paths.
+        self.assertEqual(len(self.proj.for_edges_paths(("N", "E", "S", "W"))), 10)
 
 
 class WorldScale(unittest.TestCase):

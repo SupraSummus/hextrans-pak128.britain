@@ -154,3 +154,101 @@ def for_edges_paths(edges):
 # from `between_edges_paths` / `stub_paths` + `HEX_OPPOSITE_EDGE` plus
 # `pak.hex_synth.engine_z_per_step(steps)` for the total chord rise —
 # kept out of this module so it stays painter-agnostic.
+
+
+# ---- Composition helpers --------------------------------------------------
+# The bake driver clones the upstream blend's straight atom (authored
+# along +Y, centred at origin, length = through-tile chord) once per
+# `StraightPath`, transforms the clone onto the chord, then bisects
+# the clone against the cap planes to trim the ends.  Pure math here;
+# the actual mesh ops live in `pak/bake_way.py` (Blender-only).
+
+
+def path_chord_length(path: "StraightPath") -> float:
+    """Euclidean length of the chord from `start` to `end`."""
+    dx = path.end[0] - path.start[0]
+    dy = path.end[1] - path.start[1]
+    return math.hypot(dx, dy)
+
+
+def path_chord_angle(path: "StraightPath") -> float:
+    """Z-rotation `θ` such that `R_z(θ) @ (0, 1, 0)` lands along the
+    chord direction `(end - start) / |end - start|`.  The atom is
+    authored along +Y so this is exactly the angle the bake driver
+    rotates each clone by before translating to the chord midpoint."""
+    dx = path.end[0] - path.start[0]
+    dy = path.end[1] - path.start[1]
+    return math.atan2(-dx, dy)
+
+
+def path_chord_midpoint(path: "StraightPath") -> tuple[float, float]:
+    return ((path.start[0] + path.end[0]) / 2.0,
+            (path.start[1] + path.end[1]) / 2.0)
+
+
+def path_chord_unit(path: "StraightPath") -> tuple[float, float]:
+    """Unit vector along the chord from `start` to `end`."""
+    dx = path.end[0] - path.start[0]
+    dy = path.end[1] - path.start[1]
+    n = math.hypot(dx, dy)
+    return (dx / n, dy / n)
+
+
+def atom_offsets_along_path(chord_length: float, atom_step: float
+                            ) -> list[float]:
+    """Return offset-along-chord values for each atom in a multi-atom
+    tiling of `chord_length` by atoms of Y-extent `atom_step`.
+
+    Atoms are centred on the chord midpoint (offset 0) and tile end-to-
+    end at step `atom_step` so consecutive atoms' near ends meet — when
+    the blend's sleepers are spaced symmetrically inside `atom_step`,
+    tiling preserves the cadence without gaps or overlaps.  The outer
+    atoms overrun the chord ends; `pak/bake_way.py`'s cap-plane bisect
+    trims them.  Always returns at least one offset (= 0.0), so a stub
+    shorter than one atom still emits a single clone the cap bisect
+    can crop.
+
+    >>> atom_offsets_along_path(chord_length=1.7, atom_step=0.7)
+    [-0.7, 0.0, 0.7]
+    >>> atom_offsets_along_path(chord_length=0.4, atom_step=0.7)
+    [0.0]
+    """
+    n = max(1, math.ceil(chord_length / atom_step))
+    half_span = (n - 1) / 2 * atom_step
+    return [-half_span + k * atom_step for k in range(n)]
+
+
+def cap_plane(path: "StraightPath", end: str
+              ) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """`(plane_co, plane_no)` in world XY for the bisect plane at one
+    chord end, or `None` if the cap is suppressed (V-bend apex pair).
+    `end` is `'a'` (the `start` cap) or `'b'` (the `end` cap).
+    `plane_no` points **inward** — toward the chord midpoint — so a
+    bisect that clears the half-space opposite the normal removes the
+    overrun beyond the cap line and keeps the chord interior."""
+    if end == "a":
+        if path.skip_cap_a:
+            return None
+        cap = path.cap_a
+        co = path.start
+        toward = (path.end[0] - path.start[0], path.end[1] - path.start[1])
+    elif end == "b":
+        if path.skip_cap_b:
+            return None
+        cap = path.cap_b
+        co = path.end
+        toward = (path.start[0] - path.end[0], path.start[1] - path.end[1])
+    else:
+        raise ValueError(f"cap_plane: end={end!r} (expected 'a' or 'b')")
+    # Perpendicular to the cap direction in XY.  The cap LINE runs
+    # along `cap` through `co`; the bisect plane contains that line and
+    # the world Z axis, so its normal is one of the two perpendiculars
+    # to `cap` in XY.  Pick the one with positive dot toward the chord
+    # midpoint (the half-space we keep).
+    n1 = (-cap[1], cap[0])
+    n2 = ( cap[1], -cap[0])
+    if n1[0] * toward[0] + n1[1] * toward[1] >= 0.0:
+        normal = n1
+    else:
+        normal = n2
+    return (co, normal)

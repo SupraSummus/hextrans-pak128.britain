@@ -1,12 +1,14 @@
-"""Bake one hex cell of a way asset from an upstream blend.
+"""Bake a hex-way atlas from an upstream blend.
 
-See CLAUDE.md → "Way-bake architecture" for the contract: the
-upstream blend is the geometric atom; this driver scales it onto a
-hex through-tile chord, applies the engine's hex projection shear,
-and renders one cell through Cycles.  Composition into the 63 ribi
-cells + slope variants — clone the atom per `StraightPath` from
-`pak/way_topology.py`, `bmesh.ops.bisect_plane`-clip at cap planes,
-transform onto the chord — is the next layer (see TODO.md).
+See CLAUDE.md → "Way-bake architecture" for the contract: the upstream
+blend is the geometric atom; this driver scales it onto a hex
+through-tile chord, then for each of the 63 hex ribis composes the
+atom along the path segments emitted by `pak/way_topology.py` (stubs,
+chords, V-bend legs, junctions = pairwise chords), bisects each clone
+at its cap planes + the hex outline, applies the engine's hex
+projection shear, and renders one PNG per ribi through Cycles.  The
+per-ribi PNGs are stitched into a single atlas in the same popcount-
+then-ribi order as `pak.way.HEX_ENTRIES`.
 
 Run via:
 
@@ -24,17 +26,28 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+import tempfile
 from pathlib import Path
 
+import bmesh
 import bpy
 import mathutils
+import numpy as np
 
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+# Put the repo root on sys.path so `pak.<module>` imports resolve.
+# `way_topology` uses `from .way import …`, so we need the package form,
+# not a flat sys.path on the `pak/` dir.
+sys.path.insert(0, str(HERE.parent))
 
-from fetch_blend import fetch as fetch_blend  # noqa: E402
-from hex_synth import DEFAULT_W, HEX_TILE_RADIUS, hex_proj_shear  # noqa: E402
+from pak.fetch_blend import fetch as fetch_blend  # noqa: E402
+from pak.hex_synth import DEFAULT_W  # noqa: E402
+from pak.way_proj import PROJECTIONS, Projection  # noqa: E402
+from pak.way_topology import (  # noqa: E402
+    atom_offsets_along_path, cap_plane, path_chord_angle,
+    path_chord_length, path_chord_midpoint, path_chord_unit,
+)
 
 
 def _argv() -> list[str]:
@@ -49,7 +62,7 @@ def _parse(args: list[str]) -> argparse.Namespace:
     p.add_argument("--blend", required=True,
                    help="blend path within the blends repo, e.g. ways/ns-cssr.blend")
     p.add_argument("--name", required=True,
-                   help="output basename (atlas <name>.png, dat-ref base)")
+                   help="output basename (atlas <name>.png)")
     p.add_argument("--out", type=Path, required=True,
                    help="output directory (atlas PNG goes here)")
     # Default-strip: `Sphere` is the upstream sun-direction visualizer
@@ -61,6 +74,18 @@ def _parse(args: list[str]) -> argparse.Namespace:
                    help="comma-separated mesh object names to strip "
                         "(default: 'Sphere'). All cameras + lights "
                         "are always stripped.")
+    p.add_argument("--samples", type=int, default=32,
+                   help="Cycles samples per cell (default 32).")
+    p.add_argument("--only", default="",
+                   help="comma-separated ribi labels to bake; the rest "
+                        "are zero-filled.  Default: all entries.")
+    p.add_argument("--projection", choices=tuple(PROJECTIONS), default="hex",
+                   help="hex (default, production) or square "
+                        "(upstream-diff calibration)")
+    p.add_argument("--cell-dir", type=Path, default=None,
+                   help="directory for per-cell debug PNGs.  Default: a "
+                        "temp dir cleaned up on exit (only the stitched "
+                        "atlas lands in --out).")
     return p.parse_args(args)
 
 
@@ -109,61 +134,53 @@ def _y_extent(atoms) -> tuple[float, float]:
     return y_min, y_max
 
 
-def _scale_and_centre_y(atoms, *, target_length: float,
-                        y_min: float, y_max: float) -> float:
-    """Scale every atom uniformly so the Y extent becomes `target_length`,
-    then shift so Y is centred on origin.  Returns the applied scale
-    factor.
-
-    Uniform scale (not just Y) because the cross-section sizes — rail
-    gauge, sleeper width — share the blend's world scale; squashing Y
-    independently would distort the rail's aspect ratio.
-    """
-    src_len = y_max - y_min
-    scale = target_length / src_len
-    scale_mat = mathutils.Matrix.Diagonal((scale, scale, scale, 1.0))
-    for obj in atoms:
-        obj.data.transform(scale_mat)
-    y_mid = (y_min + y_max) * 0.5 * scale
-    shift = mathutils.Matrix.Translation((0.0, -y_mid, 0.0))
-    for obj in atoms:
-        obj.data.transform(shift)
-    return scale
-
-
-def _apply_extrinsic(atoms, extrinsic_rows) -> None:
-    """Apply a 4x4 row-major extrinsic (the hex projection shear) to
-    every atom's mesh data.  `mesh.transform()` accepts arbitrary 4x4
-    directly (CLAUDE.md landmine #4)."""
-    m = mathutils.Matrix(extrinsic_rows)
+def _scale_uniform(atoms, scale: float) -> None:
+    """Multiply every atom's mesh by `scale` uniformly in XYZ.  Uniform
+    (not just Y) because cross-section sizes (rail gauge, sleeper width,
+    ballast thickness) share the blend's world scale; squashing one
+    axis independently would distort the rail's aspect ratio."""
+    if scale == 1.0:
+        return
+    m = mathutils.Matrix.Diagonal((scale, scale, scale, 1.0))
     for obj in atoms:
         obj.data.transform(m)
 
 
-def _install_hex_camera_and_sun() -> None:
-    """Add the engine's hex camera + sun.  Matches `pak/viewpoints.py`
-    HEX_VIEWPOINT shape: ortho camera looking +Y at the origin,
-    ortho_scale = 2R (so world x in [-R, R] maps to image width); sun
-    pitched 30° from straight-down."""
+def _centre_y(atoms, *, y_min: float, y_max: float) -> None:
+    """Shift every atom along -Y so the Y extent is centred on origin."""
+    y_mid = (y_min + y_max) * 0.5
+    if y_mid == 0.0:
+        return
+    m = mathutils.Matrix.Translation((0.0, -y_mid, 0.0))
+    for obj in atoms:
+        obj.data.transform(m)
+
+
+def _install_camera_and_sun(projection: Projection) -> None:
+    """Add the projection's camera + sun.  For hex this is the engine
+    camera looking +Y with ortho_scale = 2R; for square it's
+    `SQUARE_VIEWPOINT['S']` verbatim (the upstream `vehicles`-alignment
+    'S' facing — see `pak/viewpoints.py` for the cross-pakset
+    convention)."""
     scene = bpy.context.scene
 
     cam_data = bpy.data.cameras.new("_way_camera")
     cam_data.type = "ORTHO"
-    cam_data.ortho_scale = 2.0 * HEX_TILE_RADIUS
+    cam_data.ortho_scale = projection.ortho_scale
     cam_obj = bpy.data.objects.new("_way_camera_obj", cam_data)
     scene.collection.objects.link(cam_obj)
-    cam_obj.location = (0.0, -10.0, 0.5)
-    cam_obj.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+    cam_obj.location = projection.camera_location
+    cam_obj.rotation_euler = projection.camera_rotation_euler
     scene.camera = cam_obj
 
     sun_data = bpy.data.lights.new("_way_sun", type="SUN")
     sun_data.energy = 0.028  # matches viewpoints.py _SUN_ENERGY
     sun_obj = bpy.data.objects.new("_way_sun_obj", sun_data)
     scene.collection.objects.link(sun_obj)
-    sun_obj.rotation_euler = (math.radians(30.0), 0.0, 0.0)
+    sun_obj.rotation_euler = projection.sun_rotation_euler
 
 
-def _configure_render(*, image_width: int, samples: int = 32) -> None:
+def _configure_render(*, image_width: int, samples: int) -> None:
     """Force RGBA + transparent film, fixed resolution, Cycles backend.
     Overrides whatever the blend saved (some Britain blends ship with
     RGB + solid world background)."""
@@ -179,60 +196,296 @@ def _configure_render(*, image_width: int, samples: int = 32) -> None:
     scene.cycles.samples = samples
 
 
+def _clone_atom(template, *, name_suffix: str):
+    """Return a new mesh object whose mesh data is a deep copy of
+    `template.data`.  Linked to the active collection so it participates
+    in the next render."""
+    mesh = template.data.copy()
+    mesh.name = f"{template.data.name}_{name_suffix}"
+    obj = bpy.data.objects.new(f"{template.name}_{name_suffix}", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def _bisect_mesh(mesh, plane_co: tuple[float, float, float],
+                 plane_no: tuple[float, float, float]) -> None:
+    """Bisect `mesh` against the plane defined by `(plane_co, plane_no)`,
+    removing the half-space opposite the normal direction.  No-op on
+    empty meshes."""
+    if len(mesh.vertices) == 0:
+        return
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        # bmesh.ops.bisect_plane: `clear_inner` removes the negative
+        # side (opposite the normal); `clear_outer` removes the positive
+        # side (along the normal).  We construct every plane normal to
+        # point inward (toward the chord midpoint / hex centre), so the
+        # kept half is the +normal side — that means `clear_inner=True`.
+        bmesh.ops.bisect_plane(
+            bm,
+            geom=list(bm.verts) + list(bm.edges) + list(bm.faces),
+            plane_co=plane_co,
+            plane_no=plane_no,
+            clear_inner=True,
+            clear_outer=False,
+        )
+        bm.to_mesh(mesh)
+    finally:
+        bm.free()
+
+
+def _place_atom_along_path(obj, path, *, chord_offset: float = 0.0) -> None:
+    """Bake the per-path transform onto the mesh's vertex data.
+
+    The atom is authored along +Y, centred at origin (post scale +
+    centre_y).  Rotate it around Z so its +Y axis lines up with the
+    chord direction, then translate so its centre lands at
+    `chord_midpoint + chord_offset * chord_dir`.  Multi-atom-per-path
+    tiling threads a list of `chord_offset` values from
+    `atom_offsets_along_path` (one atom per slot along the chord);
+    `chord_offset=0` places the atom centred on the chord midpoint.
+    Atoms overrunning the chord ends are trimmed by `_apply_caps`.
+    """
+    angle = path_chord_angle(path)
+    mx, my = path_chord_midpoint(path)
+    ux, uy = path_chord_unit(path)
+    cx = mx + chord_offset * ux
+    cy = my + chord_offset * uy
+    m = (mathutils.Matrix.Translation((cx, cy, 0.0))
+         @ mathutils.Matrix.Rotation(angle, 4, "Z"))
+    obj.data.transform(m)
+
+
+def _bisect_against_xy_planes(obj, planes_xy) -> None:
+    """Bisect `obj.data` against a sequence of vertical planes, each
+    given as `((co_x, co_y), (no_x, no_y))` in world XY.  The plane
+    contains the world Z axis (extruded vertically), which matches both
+    the per-path cap planes and the tile-outline planes — the only
+    bisects the way bake driver needs."""
+    for (cx, cy), (nx, ny) in planes_xy:
+        _bisect_mesh(obj.data,
+                     plane_co=(cx, cy, 0.0),
+                     plane_no=(nx, ny, 0.0))
+
+
+def _apply_caps(obj, path) -> None:
+    """Bisect the per-path clone at both cap planes (skipping V-bend
+    apex caps marked `skip_cap_*`)."""
+    planes = (cap_plane(path, end) for end in ("a", "b"))
+    _bisect_against_xy_planes(obj, (p for p in planes if p is not None))
+
+
+def _clip_to_outline(obj, projection: Projection) -> None:
+    """Bisect against all tile-edge planes so the composed mesh sits
+    inside the tile silhouette.  Catches atoms whose authored ground
+    plane reaches past the tile corners (ns-cssr's `Plane.005` is the
+    standing example under hex; the same plane sits well inside the
+    larger square tile and is a no-op there)."""
+    _bisect_against_xy_planes(obj, projection.clip_planes())
+
+
+def _apply_extrinsic_to(obj, extrinsic_rows) -> None:
+    m = mathutils.Matrix(extrinsic_rows)
+    obj.data.transform(m)
+
+
 def _render_to(out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     bpy.context.scene.render.filepath = str(out_path)
     bpy.ops.render.render(write_still=True)
 
 
+def _read_png(path: Path) -> np.ndarray:
+    """Load an RGBA PNG via Blender's image loader (already a dep), return
+    a (H, W, 4) uint8 array, origin top-left."""
+    img = bpy.data.images.load(str(path), check_existing=False)
+    try:
+        w, h = img.size
+        # `image.pixels` is a flat RGBA float buffer, bottom-up.
+        pix = np.array(img.pixels[:], dtype=np.float32).reshape((h, w, 4))
+        pix = np.flipud(pix)
+        return (np.clip(pix, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+    finally:
+        bpy.data.images.remove(img)
+
+
+def _save_png(path: Path, atlas: np.ndarray) -> None:
+    """Write an (H, W, 4) uint8 array as RGBA PNG via Blender's image
+    saver (avoids needing PIL inside the bake)."""
+    h, w, _ = atlas.shape
+    img = bpy.data.images.new(name=path.stem, width=w, height=h, alpha=True)
+    try:
+        flat = np.flipud(atlas).astype(np.float32) / 255.0
+        img.pixels = flat.reshape(-1).tolist()
+        img.filepath_raw = str(path)
+        img.file_format = "PNG"
+        img.save()
+    finally:
+        bpy.data.images.remove(img)
+
+
+def _stitch_atlas(projection: Projection, cell_paths: dict[str, Path],
+                  cell_size: int) -> np.ndarray:
+    """Compose an atlas from per-cell PNGs in the projection's entries
+    order plus the `-` (no-way) slot at the front.  Missing entries
+    are zero-filled (transparent).
+
+    Row = index // cols, col = index % cols.  Hex uses 8 cols
+    (popcount-major: row 0 = `-` + 6 singletons; row 7 = the 6-way
+    junction).  Square uses 4 cols (one row per popcount: row 0 = `-`
+    + N/S/E, row 1 = W + 3 pairs, …).
+    """
+    labels = ["-"] + [label for label, _ in projection.entries]
+    cols = projection.atlas_cols
+    n = len(labels)
+    rows = (n + cols - 1) // cols
+    atlas = np.zeros((rows * cell_size, cols * cell_size, 4), dtype=np.uint8)
+    for idx, label in enumerate(labels):
+        path = cell_paths.get(label)
+        if path is None:
+            continue
+        cell = _read_png(path)
+        if cell.shape != (cell_size, cell_size, 4):
+            raise RuntimeError(
+                f"cell {label}: expected {cell_size}x{cell_size} RGBA, "
+                f"got {cell.shape}")
+        r, c = divmod(idx, cols)
+        atlas[r * cell_size:(r + 1) * cell_size,
+              c * cell_size:(c + 1) * cell_size] = cell
+    return atlas
+
+
+def _bake_one_cell(templates, *, label: str, edges: tuple[str, ...],
+                   atom_step: float, projection: Projection,
+                   out_path: Path) -> None:
+    """Compose the atom along every path for this ribi, bisect, render
+    one cell PNG, then tear the clones down.
+
+    `atom_step` is the atom's post-scale Y-extent — the step between
+    consecutive atoms when a chord needs multiple atoms tiled to stay
+    continuous.  Applies to both projections: hex's `1/12` conversion
+    makes the atom short relative to the hex chord, and square's
+    native blend atom is similarly short relative to the upstream
+    square chord (one strand ≈ 8.78 blend units, NS chord = 2 *
+    SQUARE_TILE_HALF = 24).  Outer atoms overrun the chord ends; the
+    cap bisect trims them.
+    """
+    # 1. Hide originals from render (we render the clones).
+    for t in templates:
+        t.hide_render = True
+
+    clones: list = []
+    paths = projection.for_edges_paths(edges)
+
+    # 2. For each path, tile atoms along the chord, transform + cap +
+    # silhouette-clip each clone.
+    for pi, path in enumerate(paths):
+        offsets = atom_offsets_along_path(path_chord_length(path), atom_step)
+        for ai, offset in enumerate(offsets):
+            for t in templates:
+                obj = _clone_atom(t, name_suffix=f"{label}_p{pi}_a{ai}")
+                _place_atom_along_path(obj, path, chord_offset=offset)
+                _apply_caps(obj, path)
+                _clip_to_outline(obj, projection)
+                clones.append(obj)
+
+    # 3. Apply the projection shear (hex only — square uses identity)
+    # to every clone so the camera reproduces the engine's pixels.
+    if projection.extrinsic is not None:
+        for obj in clones:
+            _apply_extrinsic_to(obj, projection.extrinsic)
+
+    # 4. Render.
+    _render_to(out_path)
+
+    # 5. Tear down clones; restore the templates' render visibility for
+    # the next cell.  (Templates stay at their post-scale, pre-shear
+    # state — we never mutate their mesh data during composition.)
+    for obj in clones:
+        mesh = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.meshes.remove(mesh)
+    for t in templates:
+        t.hide_render = False
+
+
 def main() -> None:
     args = _parse(_argv())
+    projection = PROJECTIONS[args.projection]
 
     blend_path = fetch_blend(args.blend)
-    print(f"loading blend: {blend_path}")
+    print(f"loading blend: {blend_path}  projection={projection.name}")
     bpy.ops.wm.open_mainfile(filepath=str(blend_path))
 
     # 1. Strip authored cameras + lights, plus caller-named meshes.
     _strip_scene({n for n in args.strip.split(",") if n})
-    atoms = _atoms()
-    print(f"atoms after strip: {[a.name for a in atoms]}")
+    templates = _atoms()
+    print(f"atoms after strip: {[a.name for a in templates]}")
 
     # 2. Bake matrix_world into mesh data so subsequent transforms
     # compose cleanly.
-    _bake_world_transforms(atoms)
+    _bake_world_transforms(templates)
 
-    # 3. Scale uniformly so the rail's +Y extent matches the hex
-    # through-tile chord (R * sqrt(3)), and shift to origin.
-    #
-    # The R * sqrt(3) target is a working assumption, not a measured
-    # constant: the blend authors a long strand (~8.7 units) that
-    # upstream's render script crops via camera framing, so the blend
-    # doesn't carry "one tile" as a named anchor.  Setting the strand
-    # length to the through-tile chord gets a tile-filling render at
-    # ortho_scale = 2R but adjacent tiles' rails won't be guaranteed
-    # to meet flush — a tile-overlap fraction may be needed (see
-    # TODO.md → "One rail way under hex" → tile-chord convention).
-    y_min, y_max = _y_extent(atoms)
-    target_chord = HEX_TILE_RADIUS * math.sqrt(3.0)
-    scale = _scale_and_centre_y(
-        atoms, target_length=target_chord, y_min=y_min, y_max=y_max,
-    )
-    print(f"rail Y extent before scale: [{y_min:.3f}, {y_max:.3f}] "
-          f"-> after scale {scale:.4f} -> tile chord {target_chord:.3f}")
+    # 3. Apply the projection's uniform atom scale (hex: 1/12 blend ->
+    # intra-tile conversion; square: native blend coords) and centre
+    # the atom on origin so multi-atom tiling positions atoms
+    # symmetrically around the chord midpoint.  `atom_step` (the
+    # post-scale Y-extent) drives the multi-atom-per-chord tiling in
+    # `_bake_one_cell`; both projections tile (the blend's atom is
+    # shorter than the chord in both intra-tile and blend coords —
+    # upstream's NS cell visibly contains more sleepers than one
+    # atom holds).
+    y_min, y_max = _y_extent(templates)
+    if projection.atom_scale is not None:
+        _scale_uniform(templates, projection.atom_scale)
+        y_min *= projection.atom_scale
+        y_max *= projection.atom_scale
+    _centre_y(templates, y_min=y_min, y_max=y_max)
+    atom_step = y_max - y_min
+    print(f"rail Y extent [{y_min:.3f}, {y_max:.3f}] "
+          f"(scale={projection.atom_scale}, atom_step={atom_step:.3f})")
 
-    # 4. Apply the hex projection shear (so a +Y-looking ortho camera
-    # reproduces the engine's hex sx, sy mapping).
-    _apply_extrinsic(atoms, hex_proj_shear())
+    # 4. Camera + sun + render config from the projection.
+    _install_camera_and_sun(projection)
+    _configure_render(image_width=DEFAULT_W, samples=args.samples)
 
-    # 5. Hex camera + sun + render config.
-    _install_hex_camera_and_sun()
-    _configure_render(image_width=DEFAULT_W)
+    # 5. Per-ribi composition + render.  Each cell writes one PNG to
+    # `cell_dir`; `_stitch_atlas` reads them back to compose the
+    # output atlas.
+    out_dir: Path = args.out
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cell_dir: Path
+    cell_dir_owned: tempfile.TemporaryDirectory | None = None
+    if args.cell_dir is not None:
+        cell_dir = args.cell_dir
+        cell_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        cell_dir_owned = tempfile.TemporaryDirectory(prefix="bake_way_")
+        cell_dir = Path(cell_dir_owned.name)
 
-    # 6. Render the through-tile straight as `<name>_hex_s_n.png` —
-    # baseline cell; per-ribi composition is the next layer (TODO.md).
-    out_path = args.out / f"{args.name}_hex_s_n.png"
-    _render_to(out_path)
-    print(f"wrote {out_path}")
+    only = {s for s in args.only.split(",") if s}
+    cell_paths: dict[str, Path] = {}
+    try:
+        for label, edges in projection.entries:
+            if only and label not in only:
+                continue
+            cell_path = cell_dir / f"{args.name}_{label}.png"
+            print(f"baking ribi {label} edges={edges} -> {cell_path.name}")
+            _bake_one_cell(templates, label=label, edges=edges,
+                           atom_step=atom_step, projection=projection,
+                           out_path=cell_path)
+            cell_paths[label] = cell_path
+
+        # 6. Stitch the atlas.
+        atlas_path = out_dir / f"{args.name}.png"
+        atlas = _stitch_atlas(projection, cell_paths, cell_size=DEFAULT_W)
+        _save_png(atlas_path, atlas)
+        print(f"wrote atlas {atlas_path} "
+              f"({atlas.shape[1]}x{atlas.shape[0]}, {len(cell_paths)} cells)")
+    finally:
+        if cell_dir_owned is not None:
+            cell_dir_owned.cleanup()
 
 
 if __name__ == "__main__":

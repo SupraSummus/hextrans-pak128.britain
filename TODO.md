@@ -160,43 +160,50 @@ any < 0.90 IoU regressions surfaced (likely 1-pixel rasterisation
 offsets at corner ramps, or palette-multiplier scale mismatches that
 the harness reports as `ratio ≠ 1.0`).
 
-**One rail way under hex — composition not landed yet.**  `pak/bake_way.py`
-loads the upstream `ns-cssr.blend`, scales the rail strand onto a
-hex through-tile chord, and renders one cell through Cycles
-(`ways/cssr_hex_s_n.png`).  The composition step — walking
-`pak/way_topology.py`'s `StraightPath` list per ribi to compose 63
-hex cells via mesh clone / `bmesh.ops.bisect_plane` clip / chord+cap
-transform — is not implemented.  Concrete next move: extend
-`bake_way.py` with a per-ribi loop that duplicates the atoms,
-transforms each duplicate onto a `StraightPath`, bisects at cap
-planes, renders the composed scene, and stitches the per-cell PNGs
-into one atlas.  See PR #15 for the baseline.  Open follow-ups
-flagged alongside:
+**Way square-projection diff harness.**  Mirror of
+`pak/diff_grounds.py` for ways: per-ribi pixel diff (silhouette IoU
++ intersection-restricted mean abs(RGB-delta)) of our square bake
+against upstream pak128.Britain's authored cells.  The
+**infrastructure** is in place — `pak/bake_way.py --projection
+square` walks the 15 square ribis through the same composition
+pipeline hex uses (clone → place on chord → bisect at caps +
+4 tile-outline planes → render), driven by `pak.way_proj.
+SQUARE_PROJECTION` (`SQUARE_VIEWPOINT["S"]` camera + ortho_scale=24
++ NSEW edges at world ±12 + canonical NSEW-ordered ribi labels).
+The **diff** itself doesn't exist yet.  Concrete next move: add
+`pak/diff_way.py` that drives the bake with `--projection square
+--cell-dir <tmp>`, reads upstream's atlas via `fetch_pak`
+(`ways/images/concrete_sleeper_steel_rail.png` for cssr; cell
+layout 6 cols × 5 rows of 128-px cells, per-ribi `Image[NS] = .1.0`
+mapping in the upstream `.dat`), per-cell shifts our render's bbox
+onto the upstream's bbox to absorb the alignment offset (upstream
+uses "vehicles"-alignment camera positions calibrated for
+ground-clearance, not centred on origin), and reports per-ribi
+IoU + colour delta.  Failure modes the diff is expected to surface:
+`SQUARE_TILE_HALF = 12.0` is currently a guess; the alignment
+shift is currently un-modelled; the V-bend approximation of
+upstream's 90°-curve corner cells will read poorly until corners
+are special-cased (or the topology layer learns about arcs).  The
+diff is the right tool to drive each of those calibrations.
 
-  * **Validate the hex camera setup.**  `bake_way.py` copies
-    `HEX_VIEWPOINT`'s camera location / rotation / sun + `ortho_scale=2R`
-    + `hex_proj_shear()` extrinsic, but those were tuned for vehicle
-    bakes (with `fit_kind="hex"`).  Whether the same camera + shear
-    produces engine-correct hex pixels for ways is unverified — the
-    current render looks plausible but was not measured.  Concrete
-    next move: render a procedural calibration cube through both
-    `bake_way.py` and the engine's hex projection at known world
-    coordinates, diff.
+Once the diff lands and forces a real second consumer of the
+`Projection` accessors, the topology-duplication consolidation
+called out in CLAUDE.md → "Way-bake architecture" becomes the
+natural follow-up: collapse `_square_*` helpers in `pak/way_proj.py`
+back into `pak/way_topology.py` parametrised on a `tile`-geom arg.
 
-  * **Validate the tile-chord convention.**  `bake_way.py` scales the
-    blend strand so its +Y extent equals the through-tile chord
-    (R*sqrt(3)).  Whether adjacent tiles' rails meet flush at the
-    shared edge midpoint under this scale is unverified.  Concrete
-    next move: render two adjacent tiles + check edge alignment
-    pixel-by-pixel.  If they don't match, a small tile-overlap
-    fraction is needed (rail strand longer than chord by a
-    cap-mitre-worth of overlap).
-
-  * **Silhouette clipping.**  `ns-cssr.blend`'s ground plane
-    (`Plane.005`) extends past the hex outline at the lozenge
-    corners.  Either bisect the ground plane against the six hex
-    edge planes before rendering, or post-process the rendered PNG
-    against `hex_plan_clip`.
+**Way camera + tile-chord validation.**  `bake_way.py` copies
+`HEX_VIEWPOINT`'s camera + sun + `hex_proj_shear()` extrinsic
+(tuned for vehicle bakes with `fit_kind="hex"`), and assumes the
+atom's scale gives flush rail joins between adjacent tiles.  Both
+are unverified.  Concrete next move once the square diff
+converges: render two adjacent hex tiles + check edge alignment
+pixel-by-pixel; if rails don't meet flush across the shared edge
+midpoint, a small tile-overlap fraction is needed (strand longer
+than chord by a cap-mitre-worth).  The procedural-cube-vs-engine
+probe described in the original "validate the hex camera setup"
+entry remains the way to pin the camera independently of the
+rail.
 
   * **Ground-plane material.**  The blend's `Transparent` material
     is non-noded and renders as flat grey; the
