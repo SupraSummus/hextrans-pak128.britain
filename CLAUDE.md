@@ -518,6 +518,43 @@ emit-dat).  Multi-object bake units skip the convenience and
 call `bake_vehicle` directly per output, with distinct `basename`
 (and typically distinct `blend`) per call.
 
+**Ways follow the same shape.**  A way bake script holds a typed
+`Way` (covers the hex-engine `Obj=way` schema + the few extended
+keys upstream Britain dats carry: `wear_capacity`, `axle_load`)
+plus a `BLEND` and a `bake_way_main(SPEC, BLEND, __file__)` call:
+
+```python
+from pak.bake import bake_way_main
+from pak.dat import Way
+
+SPEC = Way(
+    name="cssr", waytype="track",
+    intro_year=1968, intro_month=3,
+    topspeed=160, max_weight=22,
+    wear_capacity=4128000000,
+    cost=140000, maintenance=375,
+)
+BLEND = "ways/ns-cssr.blend"
+
+if __name__ == "__main__":
+    bake_way_main(SPEC, BLEND, __file__)
+```
+
+`bake_way_main` shells out to `pak/bake_way.py` under `blender -b
+-P` (the way bake is Blender-only — see `pak.bake_way`'s docstring)
+and then calls `emit_way` to write the dat alongside the rendered
+atlas.  `emit_way` keys the dat's per-ribi image refs against
+`pak/bake_way.py`'s popcount-then-ribi hex atlas layout (`image[-
+][0]` at row 0 col 0, then 63 ribi labels left-to-right, 8 cells
+per row — see `_HEX_WAY_LABELS` in `pak/dat.py`).  Per-blend strip
+extras (e.g. extra debug meshes) thread through `bake_way_main(...,
+strip="Sphere,Ruler")`; the rail strand atom in `ns-cssr.blend`
+only needs the default `Sphere` strip.
+
+Slope sprites (`imageup[<slope_key>][N]`), seasons, the `front`
+layer and `cursor` / `icon` are not yet baked, so `emit_way` omits
+those keys — revisit when the slope-cell pass lands.
+
 `Vehicle` fields cover both hex-engine (keys
 `descriptor/writer/vehicle_writer.cc` reads) and
 Simutrans-Extended schema (`bidirectional`, `comfort`, `axles`,

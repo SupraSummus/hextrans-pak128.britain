@@ -23,8 +23,9 @@ collections? unknown until we look at one) and whether
 `bake_main` should sprout a multi-spec variant.
 
 **Expand build scope as categories bake.**  `make all` compiles
-`grounds/`, `air/`, `trains/`, `trams/` today — the categories
-with at least one ported asset (`.dat`/`.png`/`.py` triple).
+`grounds/`, `air/`, `trains/`, `trams/`, `ways/` today — the
+categories with at least one ported asset (`.dat`/`.png`/`.py`
+triple).
 Other Makefile `DIRS*` lines stay commented out as scope
 statement; per-dir, the `ported_dats` filter feeds only the
 `.dat` files with a sibling `.png` to makeobj, so re-enabling a
@@ -216,13 +217,62 @@ rail.
     Cycles seed + sample count + denoiser is needed before the
     bake can land in CI as a `git diff --exit-code` check.
 
-  * **Per-blend strip lists belong in a per-asset bake script.**
-    `bake_way.py` default-strips `Sphere` only; other Britain way
-    blends may carry their own noise meshes (e.g. ruler / silhouette
-    debug objects).  Move the strip declaration into a future
-    `ways/<asset>.py` Blender-driver wrapper once the asset count
-    grows past 1.  Don't extrapolate the default strip-list from
-    one blend.
+**QA the new way atlases by eye.**  Three ports through
+`bake_way_main` now: `ways/cssr.py` (rail, original worked
+example), `ways/tgv.py` (second rail, validated the renderer
+generalises to a different strand blend) and `ways/tarmac_road.py`
+(first road; bake ran but the silhouette is unverified — see
+"Road-blend generalization" below).  Concrete next move: open
+each atlas in an image viewer and check (a) the strand reads as
+continuous across cells of the same popcount group, (b) cell-edge
+seams between adjacent tile renders join flush, (c) junctions in
+the popcount-3+ rows don't have visible breaks where atoms meet.
+The cssr `ns-cssr.blend` Sphere-only strip suffices for tgv as
+well (both rendered without extra noise meshes); revisit
+`bake_way_main(..., strip=...)` if a future blend ships authored
+debug objects.  Once any port's atlas is QAed clean, `git rm` its
+upstream `ways/<name>.dat` so the triple-or-nothing convention
+holds (cssr already done).
+
+**Bake hex icon + cursor sprites for ways.**  Upstream way dats
+reference dedicated icon + cursor cells in the per-asset PNG —
+typical 5×6 atlas layout puts them at `.3.4` (icon) and `.3.5`
+(cursor).  Our hex atlas is 8×8 ribi cells, no dedicated icon /
+cursor cells baked.  The `Way.icon` / `Way.cursor` fields exist
+on the dataclass and `port_way` harvests upstream values, but
+the current bake scripts leave them `None` because the upstream
+strings (`./images/<name>.3.X`) target the upstream pak's
+stripped `images/` dir — makeobj errors out on the missing
+file.  Two ways forward: (a) point each bake script's `icon` /
+`cursor` at an existing ribi cell (e.g. the through-tile straight
+`./<basename>.1.6` for icon, the no-way `./<basename>.0.0` for
+cursor — pragmatic stopgap, no extra rendering), or (b) extend
+`pak/bake_way.py` with a dedicated icon/cursor render mode that
+appends two cells to the atlas (e.g. at (8,0) and (8,1)) at a
+canonical camera angle.  Trigger: first time blank toolbar
+icons surface in-game.
+
+**Road-blend generalization.**  `bake_way.py` was tuned against
+the rail strand atom in `ns-cssr.blend` (one straight cross-section
+authored along +Y, composed onto every hex ribi chord).  Upstream
+Britain does not ship an analogous straight-atom road blend —
+per-material the blends repo carries `<mat>/{slope1, slope2,
+standard-city-base}.blend`, and the snow-shape family
+`road_snow/{ew-snow, n, ne, nw-diagonal-snow, sew, 3, 3h, -}.blend`
+pre-renders individual ribi shapes rather than composing one.
+`ways/tarmac_road.py` currently points `BLEND` at
+`ways/tarmac/standard-city-base.blend` as the closest analog, but
+this is unverified — the blend may be a four-way junction, a
+multi-tile city panel, or carry materials the bake pipeline doesn't
+expect.  Concrete next move: open one of the
+`<mat>/standard-city-base.blend` blends in Blender, characterise
+its geometry (single strand? junction? extent in tile units?) and
+either (a) point `ways/tarmac_road.py` at it with whatever scale /
+strip extras `bake_way_main` needs, or (b) add a road-specific
+composition mode to `bake_way.py` that consumes the per-shape
+`road_snow/*.blend` family directly.  Trigger: first time the road
+bake runs and produces nonsense, or the first user who needs
+in-game roads.
 
 **Bulk-strip remaining unported upstream dats?**  Each upstream
 dat is deleted once its bake script's SPEC verifies (CLAUDE.md →
