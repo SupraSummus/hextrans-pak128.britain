@@ -63,21 +63,12 @@ either.  `TODO.md` tracks which assets have crossed the line.
 Neither upstream pak nor blends repo is cloned in agent
 sessions.  See "Asset sourcing without cloning" below.
 
-The vanilla (Simutrans-Standard) pak128.Britain lives on
-SourceForge SVN at
-`https://sourceforge.net/p/simutrans/code/HEAD/tree/pak128.Britain/`.
-This is the pre-fork ancestor of the extended pak we carry, and
-was explored as a potential second source.  It is **not used**:
-its `.dat` files are vanilla-schema (no `axle_load=`, `comfort=`,
-`livery_*=`, etc.) and could serve as a diff reference for the
-extended→vanilla key-drop pass, but the engine's
-`descriptor/writer/*_writer.cc` is the authoritative key list and
-the diff isn't worth wiring up an SVN fetcher for.  Its `sound/`
-ships only ~13 generic UI/climate wavs; the ~191 per-vehicle
-wavs our `.dat`s reference are extended-fork curation and only
-exist in the github upstream above.  No `.blend` files — those
-have always lived in `Pak128.Britain-blends`.  Recorded here so
-the next agent doesn't redo the exploration.
+The vanilla (Simutrans-Standard) pak128.Britain on SourceForge SVN
+(`https://sourceforge.net/p/simutrans/code/HEAD/tree/pak128.Britain/`)
+is the pre-fork ancestor and **not used**: vanilla-schema dats,
+~13 generic wavs vs. our 191 extended-fork ones, no blends.  The
+engine's `descriptor/writer/*_writer.cc` is the authoritative
+key list, so the dat diff isn't worth an SVN fetcher.
 
 ## Engine facts (look up, don't fit)
 
@@ -378,25 +369,9 @@ Before committing any new bulk-content type, ask: can the
 runtime fetch it from a pinned upstream SHA over HTTP instead?
 If yes, don't commit it.
 
-To re-run the size analysis (e.g. before a future strip pass),
-against an *unshallowed* clone:
-
-```
-git rev-list --objects --all \
-  | git cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' \
-  | awk '$1=="blob" { n=split($3,a,"."); ext=tolower(a[n]); s[ext]+=$2 }
-         END { for (k in s) printf "%-10s %12d\n", k, s[k] }' \
-  | sort -k2 -rn
-```
-
 The rewrite was destructive: clone hashes changed, outstanding
 branches needed rebasing.  Done.  Further filter-repo passes are
 possible but expect the same coordination cost.
-
-If the proxied HTTP push hits a 413 (Payload Too Large), split
-the push into chunks by walking commit history
-(`git push origin <intermediate-sha>:refs/heads/<branch>` for a
-handful of mid-history commits, then push the tip).
 
 ## Asset sourcing without cloning
 
@@ -1057,6 +1032,29 @@ like "when next refactoring this cluster" is fine — the bar is
 that the work is actionable.
 
 A growing `TODO.md` is fine; a stale one is not.
+
+## Doc trim rules
+
+CLAUDE.md and TODO.md bloat over time — investigations get recorded,
+verifications get filed, speculation accumulates.  Run a trim pass
+when a file's grown hard to skim.
+
+The frame is "does the next person need this to do their job?", not
+"is this true?".  Most stale content is technically true.
+
+For TODO.md, the keeper shape is "implemented, but case XYZ probably
+breaks because Y" — a specific suspected failure with a fix to try.
+"Implemented, go look at the output" without a predicted symptom is
+a hope.  Verify any "blocking" or "in the way" trigger claim against
+actual workflow state before trusting it.
+
+For CLAUDE.md, one-off operational commands belong in git history.
+Investigation records ("we considered X, rejected it") compress to
+the one-sentence conclusion.
+
+One theme per pass.  Trimming and restructuring mix badly.  Re-read
+your own compressions with fresh eyes — they introduce factual drift
+in a way deletions don't.
 
 ## Commit message rules
 
