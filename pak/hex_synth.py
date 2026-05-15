@@ -69,10 +69,41 @@ def engine_z_per_step(height_step: int = 1, w: int = DEFAULT_W) -> float:
 
 # Upstream Britain blends are authored against a fixed ortho camera
 # with this scale rendering to 128x128 px (per the pak128.Britain
-# contributing-graphics thread).  The hex bake derives its world->hex
-# scale ratio as `2 * HEX_TILE_RADIUS / UPSTREAM_ORTHO_SCALE`, and the
-# square viewpoint uses this value verbatim for its camera.
+# contributing-graphics thread).  See `INTRA_TILE_PER_BLEND_UNIT`
+# below for the consequence.
 UPSTREAM_ORTHO_SCALE = 24.0
+
+
+# ---- Coord systems --------------------------------------------------------
+#
+# Three coord systems show up in the bake pipeline; mixing them up is the
+# usual source of "the strand renders 5x too big / too small" bugs.
+#
+# * **Tile coords** — integers.  Adjacent tile is `(x+1, y)` in either
+#   hex or square; no projection difference lives here.  Outside this
+#   module's scope.
+# * **Intra-tile coords** — continuous within one tile.  Tile edge =
+#   1 intra-tile unit in both projections (`HEX_TILE_RADIUS = 1` for
+#   hex's entry-edge length, also the square tile side).  This is
+#   where the cross-projection invariant holds: a way of width 0.4
+#   spans 40% of an edge in *both* projections, so the way is
+#   complete at every tile boundary regardless of which view the
+#   game is rendered through.
+# * **Blend coords** — upstream pak128.Britain's authoring frame
+#   where `ortho_scale = UPSTREAM_ORTHO_SCALE` is the 15 m ruler.
+#   The blend's native unit doesn't equal the intra-tile unit; the
+#   conversion below.
+#
+# The conversion that lands the blend's authored sizes (rail gauge,
+# tie pitch, ballast extent, vehicle dimensions) at the right
+# intra-tile size is:
+
+INTRA_TILE_PER_BLEND_UNIT = (2.0 * HEX_TILE_RADIUS) / UPSTREAM_ORTHO_SCALE
+# = 1/12 at the current pakset constants.  This is the same ratio
+# `pak.render::_compute_fit` applies under `fit_kind="hex"` for
+# vehicles, and the same ratio the way bake will switch to once
+# multi-atom-per-chord composition lands (TODO.md → "Way multi-
+# atom-per-chord composition").
 
 
 # Sun: from south (-y), 60 deg above horizon. Light travels north and

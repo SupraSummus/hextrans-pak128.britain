@@ -59,7 +59,10 @@ class Viewpoint:
     image_width: int
     ortho_scale: float
     sun_energy: float
-    fit_kind: str  # "hex" (centre + z_floor + 1/12 scale) or "none" (identity)
+    # "hex": centre + z_floor + INTRA_TILE_PER_BLEND_UNIT scale.
+    # "none": identity (used by SQUARE_VIEWPOINT — operates in blend
+    # coords so it can pixel-diff against upstream's published cells).
+    fit_kind: str
     extrinsic: Optional[tuple]  # 4x4 row-major tuple, or None for identity
     facings: list[Facing]
 
@@ -187,15 +190,16 @@ def _bake_world_into_meshes(bpy, mathutils):
 def _compute_fit(mathutils, records, fit_kind: str):
     """Build the world->fitted-frame 4x4 the per-facing transform composes
     over.  `fit_kind="none"` is identity (model renders at its native
-    scale).  `fit_kind="hex"` centres the XY bounding box on origin,
-    drops the lowest visible vertex to z=0, and scales by the pakset-wide
-    blend->hex ratio (2R / upstream_ortho_scale)."""
+    blend-coord scale).  `fit_kind="hex"` centres the XY bounding box
+    on origin, drops the lowest visible vertex to z=0, and scales by
+    `INTRA_TILE_PER_BLEND_UNIT` to convert from blend coords into the
+    pakset's intra-tile coord system (see `pak.hex_synth` → "Coord
+    systems")."""
     M = mathutils.Matrix
     if fit_kind == "none":
         return M.Identity(4)
     if fit_kind == "hex":
-        from hex_synth import HEX_TILE_RADIUS, UPSTREAM_ORTHO_SCALE  # noqa: E402
-        scale = (2.0 * HEX_TILE_RADIUS) / UPSTREAM_ORTHO_SCALE
+        from hex_synth import INTRA_TILE_PER_BLEND_UNIT  # noqa: E402
         xs = []; ys = []; zs = []
         for _, orig in records:
             for c in orig:
@@ -205,7 +209,8 @@ def _compute_fit(mathutils, records, fit_kind: str):
         cx = (min(xs) + max(xs)) / 2.0
         cy = (min(ys) + max(ys)) / 2.0
         z_floor = min(zs)
-        return M.Scale(scale, 4) @ M.Translation((-cx, -cy, -z_floor))
+        return (M.Scale(INTRA_TILE_PER_BLEND_UNIT, 4)
+                @ M.Translation((-cx, -cy, -z_floor)))
     raise SystemExit(f"unknown fit_kind: {fit_kind!r}")
 
 

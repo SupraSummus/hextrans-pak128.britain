@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import math
 
+from .hex_synth import HEX_TILE_RADIUS
+
 
 # ---- Hex ribi -------------------------------------------------------------
 # Bit order matches `way_writer.cc::hex_dir_name`: SE=0, S=1, SW=2, NW=3,
@@ -101,21 +103,15 @@ SLOPE_HEX_HALF_DOUBLE_ENTRIES: list[tuple[str, str, bool]] = _half_entries(doubl
 
 
 # ---- Hex tile geometry ----------------------------------------------------
-# Flat-top hex centred at origin.  Corner order matches `hex_corner_t`
-# in `dataobj/ribi.h`; edge naming matches the EDGE convention
-# ("flat-top hexes have due-N and due-S edges, corners do not") —
-# see hextrans/AGENTS.md.
-#
-# `HEX_TILE_RADIUS` is the hex's circumradius in world units, picked so the entry
-# edge length (= R for a regular hexagon) matches the square dimetric
-# tile's side length (1.0).  This way one set of asset widths
-# (`PAVEMENT_HALF_W = 0.5` "fills the entry edge") reads correctly
-# under both projections — square sees a tile-filling road; hex sees
-# a road that fills its entry edge while leaving the hex shoulder
-# corners showing terrain.  `world_to_screen_hex` and `hex_plan_clip`
-# pull this constant so the projection follows the world scale.
-
-HEX_TILE_RADIUS = 1.0
+# Flat-top hex centred at origin, in **intra-tile coords** (see
+# `pak.hex_synth` → "Coord systems").  `HEX_TILE_RADIUS` is the hex's
+# circumradius, picked so the entry edge length (= R for a regular
+# hexagon) equals the square tile side — that's the cross-projection
+# invariant that lets a way of width `WAY_WIDTH = 0.4` render at the
+# same fraction-of-edge in either projection.  Corner order matches
+# `hex_corner_t` in `dataobj/ribi.h`; edge naming matches the EDGE
+# convention ("flat-top hexes have due-N and due-S edges, corners do
+# not") — see hextrans/AGENTS.md.
 
 HEX_CORNERS: dict[str, tuple[float, float]] = {
     "E":  ( HEX_TILE_RADIUS,                 0.0),
@@ -180,3 +176,19 @@ def shared_corner(edge_a: str, edge_b: str) -> str:
 # Useful as a per-length cadence reference for assets that scale a
 # count along the chord (rail's tie cadence, …).
 STRAIGHT_CHORD: float = 2.0 * math.hypot(*edge_midpoint("N"))
+
+
+def hex_clip_planes() -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """The six (plane_co, plane_no) pairs that fence the hex tile outline,
+    in world XY.  Each plane sits on one of the six hex edges with its
+    normal pointing inward — bisecting any composed mesh against this
+    set keeps the part lying inside the hex silhouette.  Used by the
+    bake driver to trim atom overruns at the entry-edge midpoints
+    (e.g. the ground plane in `ns-cssr.blend` extends past the hex
+    corners where the original square tile didn't have a corner)."""
+    out = []
+    for edge in HEX_EDGES:
+        mx, my = edge_midpoint(edge)
+        n = math.hypot(mx, my)
+        out.append(((mx, my), (-mx / n, -my / n)))
+    return out
