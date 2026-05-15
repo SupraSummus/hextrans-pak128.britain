@@ -40,6 +40,6 @@ jobs:
         with:
           python-version: '3.x'
       - name: Re-emit every vehicle bake unit's .dat from its SPEC
-        run: python3 -m tools.threed.reemit_dats
+        run: python3 -m pak.reemit_dats
       - name: Verify byte-identical output
         run: git diff --exit-code -- '*.dat'

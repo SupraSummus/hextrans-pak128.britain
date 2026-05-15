@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.threed import hex_synth
+from pak import hex_synth
 
 
 # ALPHA_RED-keyed two-colour palette.  Engine reads only the red

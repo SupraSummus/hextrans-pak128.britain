@@ -14,8 +14,8 @@ single-object pattern this script follows.
 
 from __future__ import annotations
 
-from tools.threed.bake import bake_main
-from tools.threed.dat import Vehicle
+from pak.bake import bake_main
+from pak.dat import Vehicle
 
 
 SPEC = Vehicle(

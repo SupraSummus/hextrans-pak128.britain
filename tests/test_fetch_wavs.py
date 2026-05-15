@@ -1,4 +1,4 @@
-"""Smoke test for `tools.threed.fetch_wavs.collect`.
+"""Smoke test for `pak.fetch_wavs.collect`.
 
 Reads the actual ported bake units (no network — `fetch_pak` is not
 called).  Anchors the contract that the source of truth is `.py`,
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from tools.threed.fetch_wavs import collect
+from pak.fetch_wavs import collect
 
 
 class TestCollect(unittest.TestCase):

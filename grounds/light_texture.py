@@ -10,7 +10,7 @@ via `create_textured_tile`, so this baker never touches climate colours.
 Per-region shading goes through `hex_synth.find_min_partition` so
 multi-region slopes (saddles, wedges) get one Lambert face per coplanar
 region rather than a single average shade.  Geometry, slope decoding,
-partitioning, and polygon fill all live in `tools/threed/hex_synth.py`
+partitioning, and polygon fill all live in `pak/hex_synth.py`
 so this baker stays in lockstep with the rest of the parametric ground
 family when the engine's synth_geometry constants move.
 
@@ -27,22 +27,22 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.threed import hex_synth
-from tools.threed.hex_synth import (
+from pak import hex_synth
+from pak.hex_synth import (
     HexGeom,
     fill_polygon,
     iter_region_polygons,
     region_brightness,
     seal_horizontal_edges,
 )
-from tools.threed.lightmap import brightness_to_grey_rgb
+from pak.lightmap import brightness_to_grey_rgb
 
 
 def render_lightmap(slope: int, geom: HexGeom | None = None) -> np.ndarray:
     """Render one slope's lightmap cell.
 
     Per-region Lambert brightness encoded as a 5-bit grey via
-    `brightness_to_grey_rgb` — see `tools/threed/lightmap.py` for the
+    `brightness_to_grey_rgb` — see `pak/lightmap.py` for the
     `create_textured_tile` multiplier convention and the reserved-
     palette dodge.
 

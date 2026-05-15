@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.threed import hex_synth
+from pak import hex_synth
 
 
 N_DEPTHS = 6

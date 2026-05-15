@@ -18,8 +18,8 @@ harness picks up any upstream slope-keying changes through the
 `pak.lock` SHA bump rather than a stale local table.
 
 Usage:
-    python3 -m tools.threed.diff_grounds light_texture
-    python3 -m tools.threed.diff_grounds light_texture --out out/lt_diff.png
+    python3 -m pak.diff_grounds light_texture
+    python3 -m pak.diff_grounds light_texture --out out/lt_diff.png
 
 Exits non-zero if any slope drops below the asset's `min_iou` floor
 (see `ASSETS` below — each entry's floor is set slightly under the
@@ -40,7 +40,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from tools.threed.fetch_pak import fetch as fetch_pak
+from pak import REPO_ROOT
+from pak.fetch_pak import fetch as fetch_pak
 
 
 # Outside-silhouette fill upstream uses on the lightmap (engine reads it
@@ -112,7 +113,7 @@ def square_bake(module_name: str, asset_basename: str,
     cmd = [sys.executable, "-m", module_name,
            "--projection", "square",
            "--out-dir", str(work_dir)]
-    subprocess.run(cmd, check=True, cwd=Path(__file__).resolve().parents[2])
+    subprocess.run(cmd, check=True, cwd=REPO_ROOT)
     atlas = np.array(Image.open(work_dir / f"{asset_basename}.png").convert("RGBA"))
     slope_to_cell = parse_slope_to_cell(work_dir / f"{asset_basename}.dat")
     return atlas, slope_to_cell

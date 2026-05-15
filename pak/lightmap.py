@@ -12,7 +12,7 @@ So `grey5 == 16` is the identity multiplier (~1.0×), `grey5 == 0`
 black-outs the pixel, `grey5 == 31` is the brightest peak.
 
 This module owns the grey encoding.  Lambert math (face normal →
-brightness) lives in `hex_synth`: ground bakers route through
+brightness) lives in `pak.hex_synth`: ground bakers route through
 `region_brightness` and bespoke-geometry bakers route through
 `face_normal_brightness`, then both pass the resulting brightness
 through `brightness_to_grey_rgb` here.  Keeping the encoding in one

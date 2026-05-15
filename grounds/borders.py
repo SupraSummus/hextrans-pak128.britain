@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.threed import hex_synth
+from pak import hex_synth
 
 
 OUTLINE_COLOR_RGB = (32, 32, 32)

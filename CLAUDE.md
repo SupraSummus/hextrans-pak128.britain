@@ -38,7 +38,7 @@ cliff faces, water, climate / shore alpha masks, sidewalk).  These
 have no upstream art content — geometry, region partition and
 Lambert shading are functions of engine constants in
 `hextrans/src/simutrans/descriptor/synth_geometry.h` + mirrored in
-`tools/threed/hex_synth.py`.  Each baker is a single
+`pak/hex_synth.py`.  Each baker is a single
 `grounds/<asset>.py` that emits sibling `<asset>.{png,dat}`; the
 filename matches the engine `Name=` field (`light_texture`,
 `shore_trans`, …) so grepping from engine source lands on the
@@ -99,7 +99,7 @@ Recurring lookup categories:
   `hextrans/src/simutrans/dataobj/ribi.h` — `slope_t` and the
   hex `slope_type(ribi)` direction-to-slope map.
 - **Hex camera + lighting:**
-  `hextrans-pak128/tools/threed/hex_synth.py::HexGeom` and
+  `hextrans-pak128/tools/threed/hex.py::HexGeom` and
   `…/render.py::HexCamera, world_to_screen_hex, SUN_DIR`.
   These mirror `display/hex_proj.h` and `display/synth_geometry.h`
   on the engine side — same constants, same orientation.
@@ -220,7 +220,7 @@ bounding box.
 **Camera scale.**  Upstream's
 `render_SimutransRender_pak128Britain-65.py` uses a fixed ortho
 camera with `ortho_scale = 24` rendering to 128 × 128 px.  That
-ratio (the hex `fit_kind` in `tools/threed/render.py` builds
+ratio (the hex `fit_kind` in `pak/render.py` builds
 `2R / 24`) is the single pakset-wide scale
 constant — it corresponds to the artist-side 15 m ruler (46 m for
 aircraft, log-scaled for large ships) used to calibrate geometry in
@@ -254,7 +254,7 @@ reads the model, and it reads only position, never scale.
 craft and aircraft use upstream's **`vehicles` alignment** camera
 positions (`op_list "2"`); road vehicles, buildings, signals and
 stops use **`normal alignment`** (`op_list "1"`, or `"0"` for 4-view
-buildings).  Only `SQUARE_VIEWPOINT` in `tools/threed/viewpoints.py`
+buildings).  Only `SQUARE_VIEWPOINT` in `pak/viewpoints.py`
 hard-codes one alignment (currently "vehicles", chosen to match the
 asset class of the first ported asset); other alignments aren't
 modelled yet.  The hex viewpoint is single and fixed.
@@ -276,7 +276,7 @@ square renders of the same asset (e.g. end-on appears at SE / NW
 in square, at S / N in hex).  This is a coordinate-system
 difference, not a calibration bug.
 
-**Calibration validation loop.**  `tools/threed/diff_upstream.py`
+**Calibration validation loop.**  `pak/diff_upstream.py`
 runs `render.py --viewpoint square` against an upstream blend, fetches the
 corresponding pakset PNG via `fetch_pak.py` (pinned by `pak.lock`),
 and reports two independent per-facing metrics:
@@ -309,7 +309,7 @@ glance.  This is the only step that touches upstream PNGs — see
 "Don't bake the answer" above; comparison is regression check, not
 steering signal.
 
-`tools/threed/check.py` is the driver: it imports a bake script,
+`pak/check.py` is the driver: it imports a bake script,
 reads `BLEND` and `UPSTREAM_STEM` (declared next to `SPEC`), and
 runs the diff with no extra path-passing.  `--all` sweeps every
 bake script under `trains/` for a fleet-wide summary; scripts
@@ -365,7 +365,7 @@ The applied strip set:
 - `.suo`/`.vcxproj`/`.vcproj` — IDE detritus.
 - `.pak` — compiled `makeobj` output; regenerates from `.dat`.
 - `.wav` — sound effects.  Fetched at pak-build time by the
-  `copy` Makefile target via `tools/threed/fetch_wavs.py` (scans
+  `copy` Makefile target via `pak/fetch_wavs.py` (scans
   ported `.dat`s for `sound=*.wav` references, pulls each through
   `fetch_pak`, stages into `$(PAKDIR)/sound/`).  See "Asset sourcing
   without cloning" below; the hex pak doesn't ship them in git.
@@ -417,10 +417,10 @@ The pattern:
   per upstream repo (`blends.lock`, `pak.lock`).  One file per
   upstream repo, not per file-type — `pak.lock` covers pakset PNGs
   (used by `diff_upstream.py`), `.wav` sound effects (staged into
-  the pak by `tools/threed/fetch_wavs.py` in the Makefile `copy`
+  the pak by `pak/fetch_wavs.py` in the Makefile `copy`
   step), and the boot-screen / demo deliverables (`symbol.BigLogo.pak`,
   `demo.sve`).
-- A `tools/<area>/fetch_*.py` script resolves `<path within
+- A `pak/fetch_*.py` script resolves `<path within
   upstream repo>` against that SHA, fetches the individual blob
   over HTTP, caches under a `.gitignore`d `.cache/` dir.
 - Consumers (per-asset `bake.py`, the runtime sound loader, the
@@ -488,12 +488,12 @@ script's choice per-object, not derived from the script's name.
 
 **Bake script shape.**  A bake script holds its gameplay data
 inline as a typed `Vehicle` instance and a blend reference, then
-calls `bake_main` from `tools/threed/bake.py`.  The full
+calls `bake_main` from `pak/bake.py`.  The full
 single-vehicle bake script:
 
 ```python
-from tools.threed.bake import bake_main
-from tools.threed.dat import Vehicle
+from pak.bake import bake_main
+from pak.dat import Vehicle
 
 SPEC = Vehicle(
     name="4-wheel-1850s-first",
@@ -547,16 +547,15 @@ digit (`4wheel_…`) aren't valid Python identifiers — a leading
 (`from trains import _4wheel_1850s_first`); generated artefacts
 share the prefix so the triple moves and greps together.
 Letter-leading names (`br_cl15`, `blackpool_brush`) go plain —
-no underscore.  `tools/__init__.py`, `tools/threed/__init__.py`,
-and `trains/__init__.py` (each empty) make the repo a proper
-package tree so bake scripts can `from tools.threed.dat import …`
-without a `sys.path` hack.  Run as a module from the repo root:
+no underscore.  `pak/__init__.py` and `trains/__init__.py`
+make the repo a proper package tree so bake scripts can
+`from pak.dat import …` without a `sys.path` hack.  Run as a module from the repo root:
 
     python3 -m trains._4wheel_1850s_first
 
 Catalog-wide tooling imports the bake scripts as modules and
 reads `SPEC` as a Python value without baking — see
-`tools/threed/reemit_dats.py` for the worked example (used by
+`pak/reemit_dats.py` for the worked example (used by
 the `reemit-dats` CI job; see "CI" below).  `Name=` inside the
 dat is its own namespace — the pak's internal identity, hyphens
 kept upstream-compatible, what makeobj keys on (verified in
@@ -565,7 +564,7 @@ kept upstream-compatible, what makeobj keys on (verified in
 **Seeding a new asset.**  When porting fresh from upstream:
 
 ```python
-from tools.threed.dat import parse, port_vehicle, seed_python
+from pak.dat import parse, port_vehicle, seed_python
 for obj in parse(Path("trains/<asset>.dat")):
     print(seed_python(port_vehicle(obj)))   # paste into new bake script
 ```
@@ -607,7 +606,7 @@ addresses its cells as `.0.<col>`.  Getting the order wrong gives
 or silently transposed rendering when both indices fit.
 
 Column order is the `facings` list in `HEX_VIEWPOINT`
-(`tools/threed/viewpoints.py`): `S, SW, W, NW, N, NE, E, SE` for the
+(`pak/viewpoints.py`): `S, SW, W, NW, N, NE, E, SE` for the
 default 8-view bake.  Per-asset .dat keys (`EmptyImage[S]=…0.0`,
 `EmptyImage[SW]=…0.1`, …) must match this order or the engine
 renders the wrong sprite per facing — there is no run-time
@@ -619,20 +618,20 @@ multi-state machinery); not relevant for 8-facing vehicles.
 
 ## Bake tooling
 
-Lives at `tools/threed/` in this repo, not in the blends repo
+Lives at `pak/` in this repo, not in the blends repo
 (blends are upstream-owned and stay reusable; our hex-rendering
 opinions don't belong there).
 
 Present:
 
-- `tools/threed/fetch_blend.py` — HTTP fetch + `.cache/` resolver
+- `pak/fetch_blend.py` — HTTP fetch + `.cache/` resolver
   against `jamespetts/Pak128.Britain-blends`, SHA pinned via
   `blends.lock`.
-- `tools/threed/fetch_pak.py` — same pattern against
+- `pak/fetch_pak.py` — same pattern against
   `jamespetts/simutrans-pak128.britain`, SHA pinned via `pak.lock`.
   Used by `diff_upstream.py` today and by future runtime `.wav`
   fetching (see `TODO.md`).
-- `tools/threed/render.py` — `blender -b -P` harness that takes a
+- `pak/render.py` — `blender -b -P` harness that takes a
   `Viewpoint` and renders one atlas (plus optional per-facing PNGs).
   Strips the blend's Camera / Sphere / Lamp objects on entry and
   installs its own from the Viewpoint — the .blend is treated as
@@ -640,24 +639,24 @@ Present:
   reference and this project's hex projection; the only difference
   is which `Viewpoint` gets passed in.  Applies the upstream blend
   calibration contract (see above) and emits a single-row atlas PNG.
-- `tools/threed/viewpoints.py` — `SQUARE_VIEWPOINT` (reproduces
+- `pak/viewpoints.py` — `SQUARE_VIEWPOINT` (reproduces
   the upstream `render_SimutransRender_pak128Britain-65.py`
   "vehicles" alignment verbatim) and `HEX_VIEWPOINT` (camera looking
   +Y at origin, ortho_scale=2R, hex shear baked into mesh via
   `extrinsic`, model rotated per facing).  Same facing labels in
   both so .dat keys port without relabelling.
-- `tools/threed/diff_upstream.py` — drives `render.py --viewpoint
+- `pak/diff_upstream.py` — drives `render.py --viewpoint
   square --keep-per-facing`, fetches the matching upstream PNG via
   `fetch_pak.py`, and reports the contour and colour metrics from
   "Calibration validation loop" above (silhouette IoU + XOR pixel
   count, and intersection-restricted mean abs(RGB-delta)).  Returns
   non-zero if any facing is below 0.90 IoU.
-- `tools/threed/check.py` — convenience driver around
+- `pak/check.py` — convenience driver around
   `diff_upstream.py`.  Takes a bake-script path (or `--all`),
   imports it, reads `BLEND` and `UPSTREAM_STEM` from the module,
   runs the diff, and prints a per-asset worst-IoU + sum-XOR-pixel
   summary.  See "Calibration validation loop" above.
-- `tools/threed/square_synth.py` — `SquareGeom`, a sibling to
+- `pak/square_synth.py` — `SquareGeom`, a sibling to
   `HexGeom` implementing pak128.Britain's square-dimetric tile
   layout (4 corners, base-3 slope encoding, 128×128 cells with the
   flat lozenge spanning `y = 64..127`).  Same `Geom` interface as
@@ -665,10 +664,10 @@ Present:
   `all_chords`, `corner_labels`, `full_path`, plus
   `decode_corner_heights` / `iter_valid_slopes` / `slope_is_valid`
   — so the generic partition / region / fill / outline helpers in
-  `hex_synth.py` work against either projection without isinstance
+  `hex.py` work against either projection without isinstance
   branches.  Exists for `diff_grounds.py`'s test harness (see
   below); not on the hex production path.
-- `tools/threed/diff_grounds.py` — square-projection diff harness
+- `pak/diff_grounds.py` — square-projection diff harness
   for the parametric ground bakers.  Re-runs `grounds/<asset>.py`
   through `SquareGeom`, fetches the matching upstream PNG +
   `Image[N]=...` dat via `fetch_pak`, parses the slope→cell map
@@ -684,7 +683,7 @@ Present:
   decode + partition + Lambert + fill + atlas layout end-to-end
   against authored ground truth; extend `ASSETS` per baker (see
   TODO.md → "Square-bake diff harness coverage").
-- `tools/threed/dat.py` — Simutrans `.dat` parse / port / emit.
+- `pak/dat.py` — Simutrans `.dat` parse / port / emit.
   Exposes `Vehicle` (typed dataclass covering both hex-engine
   and Extended schema; list fields may carry
   `metadata["dat_key"]` to remap field-name → dat-key, e.g.
@@ -698,19 +697,19 @@ Present:
   image subsystem (`freightimage[<dir>]`,
   `freightimage[N][<dir>]`, `freightimagetype[N]`) is the one
   area `Vehicle` doesn't model yet — see `TODO.md`.
-- `tools/threed/bake.py` — per-asset bake driver.
+- `pak/bake.py` — per-asset bake driver.
   `bake_vehicle(spec, blend=..., basename=..., out_dir=...)`
   fetches the blend, runs the hex renderer, writes the atlas
   PNG, and emits the dat.  Bake scripts shrink to imports +
   SPEC + a single `bake_vehicle(...)` call.
-- `tools/threed/bake_units.py` — `discover()` returns every
+- `pak/bake_units.py` — `discover()` returns every
   per-asset bake script (`.py` with `.dat` + `.png` siblings outside
-  `tools/`, `tests/`, `grounds/`, `simutranslator/`), and
+  `pak/`, `tests/`, `grounds/`, `simutranslator/`), and
   `import_script(path)` imports it by its repo-relative dotted
   name.  Shared by `reemit_dats`, `fetch_wavs`, and
   `tests/test_ported_dats` so the catalog has one definition of
   what counts as a ported asset.
-- `tools/threed/reemit_dats.py` — catalog-wide driver that
+- `pak/reemit_dats.py` — catalog-wide driver that
   imports every `discover()`-ed bake script and calls
   `emit_vehicle` on its `SPEC`.  No Blender, no render.  Wired
   into CI as the `reemit-dats` lint job to catch SPEC ↔
@@ -718,7 +717,7 @@ Present:
   without `SPEC: Vehicle` rather than silently skipping — the
   first multi-object bake unit will need to extend this (see
   `TODO.md` → "Multi-object reemit hook").
-- `tools/threed/fetch_wavs.py` — catalog-wide driver that walks
+- `pak/fetch_wavs.py` — catalog-wide driver that walks
   `bake_units.discover()`, reads each `SPEC.sound`, and pulls the
   named wav from the upstream pak via `fetch_pak`.  Invoked by
   the Makefile `copy` step to stage sounds into `$(PAKDIR)/sound/`
@@ -728,7 +727,7 @@ Present:
   construction property.  Run via
   `python3 -m unittest tests.test_dat` (or
   `python3 -m pytest tests/`).
-- `tests/test_square_synth.py` — geometry assertions for
+- `tests/test_square.py` — geometry assertions for
   `SquareGeom`: slope encoding (base-3 weights, `Image[N]` corner
   mapping), validity filter (normalised + adjacency ≤ 2, 65 slopes
   total), screen layout pinned to upstream's `texture-lightmap.png`
@@ -787,12 +786,12 @@ re-runs every parametric ground baker via `make bake-grounds` and
 asserts `git diff --exit-code -- grounds/` — byte-identical or the
 job fails.  Stops silent drift between `grounds/<asset>.py` and the
 committed PNG/dat siblings.  `reemit-dats` runs
-`python3 -m tools.threed.reemit_dats` (imports every vehicle bake
+`python3 -m pak.reemit_dats` (imports every vehicle bake
 script, re-runs `emit_vehicle` from its `SPEC` — no Blender, no
 render) and asserts `git diff --exit-code -- '*.dat'`; catches dat
 drift between a bake script's SPEC and its committed `.dat` sibling
 on every push.  `tests` runs the `python3 -m unittest` suite under
-`tests/` (needs `numpy` for the `hex_synth` import chain pulled in
+`tests/` (needs `numpy` for the `pak.hex_synth` import chain pulled in
 by `test_square_synth`).
 
 Vehicle *render* rebake is not wired — vehicles need Blender +
@@ -815,7 +814,7 @@ upstream PNG-fetch indirection: ported assets compile, unported
 ones are silently skipped.
 
 The `copy` step fetches `demo.sve` and `symbol.BigLogo.pak` from
-the `pak.lock`-pinned upstream pak via `tools/threed/fetch_pak.py`
+the `pak.lock`-pinned upstream pak via `pak/fetch_pak.py`
 — both were stripped from history (binary deliverables, no source)
 and are filled in at build time rather than committed.
 

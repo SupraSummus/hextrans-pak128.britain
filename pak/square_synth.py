@@ -32,7 +32,7 @@ unchanged.
 
 from __future__ import annotations
 
-from tools.threed.hex_synth import (
+from pak.hex_synth import (
     DEFAULT_W, HEIGHT_STEP, hex_height_raster_scale_y,
 )
 

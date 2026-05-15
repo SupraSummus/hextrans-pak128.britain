@@ -18,7 +18,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from tools.threed.fetch_pak import fetch
+from pak.fetch_pak import fetch
 
 
 UPSTREAM = "grounds/images/texture-climate.png"
