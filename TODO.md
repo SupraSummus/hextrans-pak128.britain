@@ -212,11 +212,6 @@ rail.
     texture.  Either re-attach the image via a node tree at bake
     time or replace the ground plane with a procedural ballast.
 
-  * **Cycles non-determinism.**  Re-running `bake_way.py` produces
-    a byte-different PNG each time (Cycles sampling).  Pinning the
-    Cycles seed + sample count + denoiser is needed before the
-    bake can land in CI as a `git diff --exit-code` check.
-
 **QA the new way atlases by eye.**  Three ports through
 `bake_way_main` now: `ways/cssr.py` (rail, original worked
 example), `ways/tgv.py` (second rail, validated the renderer

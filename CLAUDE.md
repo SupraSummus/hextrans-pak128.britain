@@ -966,11 +966,19 @@ Note on what's intentionally **not** here:
 
 Two workflows, matching `hextrans-pak128`'s split:
 
-**Lint** (`.github/workflows/lint.yml`, push + PR).  `rebake-grounds`
-re-runs every parametric ground baker via `make bake-grounds` and
-asserts `git diff --exit-code -- grounds/` — byte-identical or the
-job fails.  Stops silent drift between `grounds/<asset>.py` and the
-committed PNG/dat siblings.  `reemit-dats` runs
+**Lint** (`.github/workflows/lint.yml`, push + PR).  `rebake`
+re-runs every asset baker — parametric grounds via `make
+bake-grounds`, plus a tiny fixed Blender-driven vehicle + way
+sample inlined in the workflow — and asserts
+`git diff --exit-code`.  Same principle as `reemit-dats`,
+different backends; covers render-pipeline drift in
+`grounds/<asset>.py` and Cycles non-determinism across CI
+runners.  See the workflow's "Re-render the Blender-driven
+determinism sample" step for the sample's asset list.  If only the Blender half flakes with byte-different
+PNGs (cross-machine Cycles drift), the first pin to try is
+`scene.render.threads_mode = 'FIXED'; threads = 1` in
+`pak/render.py::_install_camera_and_sun` and
+`pak/bake_way.py::_configure_render`.  `reemit-dats` runs
 `python3 -m pak.reemit_dats` (imports every vehicle bake
 script, re-runs `emit_vehicle` from its `SPEC` — no Blender, no
 render) and asserts `git diff --exit-code -- '*.dat'`; catches dat
@@ -979,11 +987,12 @@ on every push.  `tests` runs the `python3 -m unittest` suite under
 `tests/` (needs `numpy` for the `pak.hex_synth` import chain pulled in
 by `test_square_synth`).
 
-Vehicle *render* rebake is not wired — vehicles need Blender +
-libegl1 + a blend fetch per asset (~minutes per asset of CPU Cycles
-render), too heavy for every push.  Selective vehicle rebake
-(gated on `bake.py` or `blends.lock` diff) is a future-work entry
-in `TODO.md`.
+Full vehicle/way *render* rebake is not wired — the per-asset blend
+fetch + Cycles cost (~minutes per asset) makes a full sweep too
+heavy for every push.  Selective rebake (gated on `bake.py` or
+`blends.lock` diff) is a future-work entry in `TODO.md`; the
+Blender-driven half of `rebake` is the always-on canary that's
+cheap enough to run unconditionally.
 
 **Build** (`.github/workflows/build.yml`, push + PR + manual).
 Clones `SupraSummus/hextrans`, builds `makeobj`, runs
