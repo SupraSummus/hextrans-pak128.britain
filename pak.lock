@@ -1,3 +1,9 @@
-{
-  "jamespetts/simutrans-pak128.britain": "e36ec2321681baa06654be06e4b169965c0beec9"
-}
+commit e36ec2321681baa06654be06e4b169965c0beec9
+
+c2b9f946cf8da222fb8f32f9db9999f3497745418aa35cf86cbcd0a5a0a7afb9  demo.sve
+bae30ddf7f3fff323930bc86e657e0aeeef8c0a60e8566ae20b3735aaa9376e9  grounds/images/texture-climate.png
+5281a6e823f8cf519c39cb842920f44a9f81857c482acdae81e0327a668b3db5  sound/androo4519-class-17.wav
+497bd8937a676981de7f018fe4f46b32fdd31abfe3ecac8decce2d0349af52d4  sound/andysvideo-vickers-vimy.wav
+cfdbb249986df41bdf38cbe243ce18e8688b03da75b45955261803f481ab5a82  sound/the-mart-ban-br-9f.wav
+3dfa867ec0b695f5ae658f82cfb12d6418cd183d7431d5f4c1d1bd66a8e2eb22  sound/tom-tait-tram.wav
+d5e817987a25b965ba58ca24e4bad5f4df827e7871db7765a6e360268628acfd  symbol.BigLogo.pak
