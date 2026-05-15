@@ -394,20 +394,36 @@ The pattern:
   (used by `diff_upstream.py`), `.wav` sound effects (staged into
   the pak by `pak/fetch_wavs.py` in the Makefile `copy`
   step), and the boot-screen / demo deliverables (`symbol.BigLogo.pak`,
-  `demo.sve`).
+  `demo.sve`).  The same file also carries a per-blob sha256
+  manifest — plain text, `commit <sha>` header line followed by
+  `<sha256>  <path>` lines sorted by path (sha256sum format, so
+  `sha256sum -c` reads it directly if you strip the header).  The
+  fetcher validates downloaded bytes against the manifest; defends
+  against upstream serving different bytes for the same path on top
+  of the commit-SHA pin.  One-line-per-entry shape was chosen so
+  inserts and removes show as single-line diffs.
 - A `pak/fetch_*.py` script resolves `<path within
   upstream repo>` against that SHA, fetches the individual blob
-  over HTTP, caches under a `.gitignore`d `.cache/` dir.
+  over HTTP, caches under a `.gitignore`d `.cache/` dir.  Unknown
+  paths are recorded on first fetch (TOFU); CI's
+  `git diff --exit-code` surfaces the manifest change so a human
+  reviews any new upstream dependency.  Mismatches against an
+  already-recorded sha hard-fail with a `SystemExit`.
 - Consumers (per-asset `bake.py`, the runtime sound loader, the
   calibration diff) call the fetcher rather than reading files
   directly.
 
-Present:  `fetch_blend.py` (blends repo) and `fetch_pak.py` (pak
-repo) both implement the pattern; `fetch_wavs.py` is a thin
-batch helper over `fetch_pak` that scans ported dats for
-`sound=*.wav` references and pulls each one.  A session touching
-one asset downloads one blend, not the tree; upstream repo size is
-irrelevant to the day-to-day.
+Present:  `pak/_fetch.py` carries the shared parser / emitter /
+validate-or-record / network loop; `fetch_blend.py` and
+`fetch_pak.py` are ~40-line wrappers that declare a `Source`
+(repo slug, lock filename, cache subdir) and re-export `fetch`.
+`fetch_wavs.py` is a thin batch helper over `fetch_pak` that
+scans ported dats for `sound=*.wav` references and pulls each
+one.  A session touching one asset downloads one blend, not the
+tree; upstream repo size is irrelevant to the day-to-day.  Adding
+a third source is a 10-line `Source` declaration; mixing sources
+within one bake script just means calling the relevant wrappers
+side by side.
 
 If the upstream HTTP endpoint requires auth or routing, the
 fetcher is the single place to handle it.  Keep auth concerns
@@ -636,11 +652,12 @@ opinions don't belong there).
 
 Present:
 
-- `pak/fetch_blend.py` — HTTP fetch + `.cache/` resolver
-  against `jamespetts/Pak128.Britain-blends`, SHA pinned via
-  `blends.lock`.
-- `pak/fetch_pak.py` — same pattern against
-  `jamespetts/simutrans-pak128.britain`, SHA pinned via `pak.lock`.
+- `pak/_fetch.py` — shared `Source`-driven HTTP fetch + `.cache/`
+  resolver + lock-file parser/emitter + validate-or-record.
+- `pak/fetch_blend.py` / `pak/fetch_pak.py` — thin per-source
+  wrappers over `_fetch`.  `Source` carries the GitHub slug, lock
+  filename and `.cache/` subdir; each wrapper re-exports `fetch`
+  for its source.
   Used by `diff_upstream.py` today and by future runtime `.wav`
   fetching (see `TODO.md`).
 - `pak/render.py` — `blender -b -P` harness that takes a
