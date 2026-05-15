@@ -327,21 +327,17 @@ the first-era rail look matters in-game: either author a
 `ways/plateway.blend` (wooden with iron plate on top), or render
 them parametrically without a blend.  Soft trigger.
 
-**Bake hex icon + cursor sprites for ways.**  Upstream way dats
-reference dedicated icon + cursor cells in the per-asset PNG —
-typical 5×6 atlas layout puts them at `.3.4` (icon) and `.3.5`
-(cursor).  Our hex atlas is 8×8 ribi cells, no dedicated icon /
-cursor cells baked.  The `Way.icon` / `Way.cursor` fields exist on
-the dataclass; `port_way` drops the upstream refs (which point at
-the stripped `images/` dir and would error makeobj out), and bake
-scripts leave them `None`.  Two ways forward: (a) point each bake
-script's `icon` / `cursor` at an existing ribi cell (e.g. the
-through-tile straight `./<basename>.1.6` for icon, the no-way
-`./<basename>.0.0` for cursor — pragmatic stopgap, no extra
-rendering), or (b) extend `pak/bake_way.py` with a dedicated
-icon/cursor render mode that appends two cells to the atlas (e.g.
-at (8,0) and (8,1)) at a canonical camera angle.  Trigger: first
-time blank toolbar icons surface in-game.
+**Bake hex icon + cursor sprites for ways.**  Option (a) is in
+today (`emit_way` stubs `cursor=./<basename>.0.0` and
+`icon=./<basename>.1.6` for every way) so `way_builder_t::weg_search`
+picks the way up as a buildable default and the engine doesn't fatal
+with "No road found at all".  Toolbar icons render the no-way and
+straight-through-tile ribi cells instead of dedicated artwork —
+visually crude but functional.  Concrete next move when the visual
+matters: extend `pak/bake_way.py` with a dedicated icon/cursor
+render mode that appends two cells to the atlas (e.g. at (8,0) and
+(8,1)) at a canonical camera angle, then drop the `emit_way` stubs
+and have `port_way` keep upstream's refs.
 
 **Road-blend generalization.**  `bake_way.py` was tuned against
 the rail strand atom in `ns-cssr.blend` (one straight cross-section
@@ -364,6 +360,29 @@ composition mode to `bake_way.py` that consumes the per-shape
 `road_snow/*.blend` family directly.  Trigger: first time the road
 bake runs and produces nonsense, or the first user who needs
 in-game roads.
+
+**Hex re-bake of GUI sprites.**  The engine's
+`skinverwaltung_t::successfully_loaded` fatals on a missing
+Construction / GeneralTools / Logo / freight-icon skin obj at load,
+so the Makefile stages upstream `gui/gui{64,128}/*.png` next to
+their dats and runs makeobj on the staged copy
+(`$(GUI_STAGED)`).  GUI elements don't carry the world-projection
+burden world tiles do — 64/128 px bitmaps render fine under hex —
+so the verbatim-upstream shortcut is sustainable until somebody
+wants a hex-distinctive UI look.  Concrete next move when that
+matters: per-skin re-bake pass (most are cursor / icon strips,
+similar machinery to the ways icon/cursor TODO above), then drop
+`pak.fetch_gui_images` and ship committed sibling PNGs.  Soft
+trigger.
+
+**Hex re-bake of `grounds/fences`.**  The other engine-required
+ground descriptor still without a hex bake — pulled in via the
+same staging pattern as GUI (`$(FENCES_STAGED)/`, fetching
+`grounds/images/fence-{3,4,5}.png` from the upstream pak).  Fence
+sprites are short edge-decorations at climate boundaries; the hex
+re-bake would mirror `grounds/borders.py`'s parametric approach
+rather than try to reproject the upstream sprites.  Trigger: when
+climate-boundary fences look obviously wrong in-game.
 
 **Bulk-strip remaining unported upstream dats?**  Each upstream
 dat is deleted once its bake script's SPEC verifies (CLAUDE.md →

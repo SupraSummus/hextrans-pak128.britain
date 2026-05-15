@@ -202,10 +202,12 @@ class TestEmitWay(unittest.TestCase):
         self.assertEqual(lines[0], "obj=way")
         self.assertEqual(lines[1], "name=A")
         self.assertEqual(lines[2], "waytype=track")
-        # Body between the scalars and the first image ref should
-        # be empty — no `copyright=` / `cost=` etc. lines.
+        # Body between the scalars and the first image ref carries
+        # only the stub cursor/icon refs (option (a) in TODO.md →
+        # "Bake hex icon + cursor sprites for ways"); no other
+        # `copyright=` / `cost=` etc. lines from unset scalars.
         body = lines[3:lines.index("image[-][0]=./x.0.0")]
-        self.assertEqual(body, [])
+        self.assertEqual(body, ["icon=./x.1.6", "cursor=./x.0.0"])
 
     def test_emits_hex_ribi_atlas_refs(self):
         text = self._emit(Way(name="A", waytype="track"))
@@ -274,8 +276,12 @@ class TestPortWay(unittest.TestCase):
         # stripped images/ dir — they'd make makeobj error out at
         # build time if they survived a port unchanged (see
         # `Way.icon` field doc).  port_way drops them; the bake
-        # script's SPEC stays clean, and a future icon/cursor
-        # baker fills them back in pointing at hex-atlas cells.
+        # script's SPEC stays clean.  `emit_way` then fills in stub
+        # refs pointing at existing hex-atlas cells so makeobj's
+        # cursorskin writer sees a non-empty cursor/icon and the
+        # engine's `weg_search` picks the way up as a buildable
+        # default (option (a) in TODO.md → "Bake hex icon + cursor
+        # sprites for ways").
         entries = [
             ("obj", "way"), ("Name", "x"), ("waytype", "track"),
             ("icon", "> ./images/x.3.4"),
@@ -286,8 +292,11 @@ class TestPortWay(unittest.TestCase):
         self.assertIsNone(w.cursor)
         with TemporaryDirectory() as d:
             text = emit_way(w, out_dir=Path(d), basename="x").read_text()
-        self.assertNotIn("icon=", text)
-        self.assertNotIn("cursor=", text)
+        # Stub refs point at hex-atlas cells, not the stripped
+        # upstream images/ dir.
+        self.assertIn("cursor=./x.0.0", text)
+        self.assertIn("icon=./x.1.6", text)
+        self.assertNotIn("images/", text)
 
     def test_rejects_non_way_obj(self):
         with self.assertRaisesRegex(ValueError, "not obj=way"):
