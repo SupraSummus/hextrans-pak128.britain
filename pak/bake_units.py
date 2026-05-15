@@ -16,8 +16,8 @@ from types import ModuleType
 from pak import REPO_ROOT
 
 
-_SKIP_DIRS = {"pak", "tests", "grounds", "simutranslator", ".cache",
-              "build", "__pycache__"}
+_SKIP_DIRS = {"pak", "tests", "grounds", "pak1file", "simutranslator",
+              ".cache", "build", "__pycache__"}
 
 
 def discover() -> list[Path]:
