@@ -55,6 +55,18 @@ HEX_TILE_RADIUS = 1.0
 # given 3D part has comparable on-screen height in both projections.
 PIXELS_PER_UNIT = DEFAULT_W / math.sqrt(2.0)
 
+
+def engine_z_per_step(height_step: int = 1, w: int = DEFAULT_W) -> float:
+    """World-z value whose hex projection lifts the screen by `height_step`
+    engine height steps.  A bespoke render that wants its sloped sprite
+    to align with the engine's ground rendering tilts world-z by this
+    amount across one height-step's worth of slope.  Engine callers
+    pass `z * TILE_HEIGHT_STEP` into `hex_height_raster_scale_y` (see
+    `display/viewport.cc`); we mirror that here — a height_step of 1
+    is `HEIGHT_STEP` raster units, ~16 px lift at W=128.
+    """
+    return hex_height_raster_scale_y(height_step * HEIGHT_STEP, w) / PIXELS_PER_UNIT
+
 # Upstream Britain blends are authored against a fixed ortho camera
 # with this scale rendering to 128x128 px (per the pak128.Britain
 # contributing-graphics thread).  The hex bake derives its world->hex

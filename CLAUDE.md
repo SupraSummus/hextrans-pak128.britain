@@ -777,6 +777,65 @@ suggest no display needed.
 No GPU required; Cycles falls back to CPU.  ~4 s per facing on
 a small carriage.
 
+## Way-bake architecture
+
+Ways (rails, roads, trams) port via a different shape than vehicles
+or grounds: an upstream rail-shape blend like `ways/ns-cssr.blend`
+is treated as the **elementary geometric atom**, and the bake
+**composes** that atom into 63 hex ribi cells (+ slope variants)
+by cloning, clipping, and transforming it onto each ribi's path.
+No parametric cross-section painter; no separate "draw the ballast,
+draw the ties, draw the rails" code.  The blend already has the
+cross-section authored as separable Rail / Sleeper / Ground meshes
+— the composition step just lays them along the right path.
+
+Two layers, kept honestly split:
+
+- **Path geometry** (`pak/way.py`, `pak/way_topology.py`).  Pure
+  data — ribi vocabulary (the `ribi_key` engine contract), slope
+  slot labels, and the per-ribi `StraightPath` list `for_edges_paths`
+  emits (stub for 1 edge, chord / V-bend for 2 edges, junction =
+  pairwise paths for 3+ edges).  No painting, no rasterizer, no
+  Blender.  Tested in `tests/test_way.py`.
+
+- **Bake driver** (`pak/bake_way.py`, runs only inside
+  `blender -b -P`).  Opens the blend, strips authored cameras /
+  lights and the `Sphere` sun-direction visualizer (matching the
+  vehicle harness in `pak/render.py`), bakes `matrix_world` into
+  mesh vertex data, scales uniformly so the rail strand spans one
+  hex through-tile chord (R·√3), applies the hex projection shear,
+  and renders through Cycles.  Today bakes one cell (the `s_n`
+  straight) as a baseline; the per-ribi composition loop — clone
+  the atom per `StraightPath`, `bmesh.ops.bisect_plane`-clip at
+  cap planes, transform onto the chord — is the next layer.
+
+  Naming pitfall worth pinning: in `ns-cssr.blend` the mesh named
+  `Plane` is **not** an upstream ruler — it's the 2048-poly ballast
+  pile (material `Ballast`, z up to 0.28).  Stripping by name
+  generically (e.g. "anything called Plane") loses the ballast
+  silhouette.  Default-strip is `{Sphere}` only; per-blend extras
+  go via `--strip`.
+
+Note on what's intentionally **not** here:
+
+- No numpy rasterizer.  An earlier session ported pak128's
+  `tools/threed/render.py` (Model/SquareCamera/HexCamera) as a
+  parametric-painting fallback, then deleted it after the pivot to
+  blend-as-atom — leaving the rasterizer in tree without a caller
+  would have rotted.  The pak128 sibling keeps it; we re-port if a
+  numpy-only path ever becomes useful here.
+
+- No `CrossSection` class.  The blend is the cross-section; no
+  duplicate Python source-of-truth for "what a rail looks like in
+  cross-section."
+
+- No square-pak calibration loop for ways.  The blend renders
+  through Cycles whose output is treated as the authored truth; we
+  validate by eye + by adjacency tests (do rails meet flush at
+  shared edges?) rather than pixel-diffing against upstream's
+  square `Image[NS]` cells (which were rendered from this same
+  blend through a different camera convention anyway).
+
 ## CI
 
 Two workflows, matching `hextrans-pak128`'s split:
