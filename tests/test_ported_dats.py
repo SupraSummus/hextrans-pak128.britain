@@ -13,28 +13,12 @@ the separate full rebake (see TODO.md -> "Vehicle rebake in CI").
 
 from __future__ import annotations
 
-import importlib
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from tools.threed.bake_units import discover, import_script
 from tools.threed.dat import emit_vehicle
-
-
-_REPO = Path(__file__).resolve().parents[1]
-_BAKE_DIRS = ("air", "trains", "trams")
-
-
-def _ported_bake_scripts() -> list[Path]:
-    """Per-asset bake scripts (`.py` with a sibling `.dat` and `.png`)."""
-    scripts = []
-    for d in _BAKE_DIRS:
-        for py in sorted((_REPO / d).glob("*.py")):
-            if py.stem == "__init__":
-                continue
-            if (py.with_suffix(".dat")).exists() and (py.with_suffix(".png")).exists():
-                scripts.append(py)
-    return scripts
 
 
 class TestPortedDats(unittest.TestCase):
@@ -42,20 +26,19 @@ class TestPortedDats(unittest.TestCase):
     def test_every_port_has_at_least_one(self):
         # Sanity that we're actually exercising something; if all ports
         # get deleted in a refactor, this test would silently pass.
-        self.assertGreater(len(_ported_bake_scripts()), 0)
+        self.assertGreater(len(discover()), 0)
 
     def test_emit_matches_committed_dat(self):
-        for script in _ported_bake_scripts():
-            with self.subTest(script=script.relative_to(_REPO)):
-                mod_name = f"{script.parent.name}.{script.stem}"
-                mod = importlib.import_module(mod_name)
+        for script in discover():
+            with self.subTest(script=script.name):
+                mod = import_script(script)
                 spec = getattr(mod, "SPEC", None)
                 if spec is None:
-                    self.skipTest(f"{mod_name} has no SPEC (multi-object?)")
+                    self.skipTest(f"{mod.__name__} has no SPEC (multi-object?)")
                 with TemporaryDirectory() as d:
                     emitted = emit_vehicle(spec, out_dir=Path(d), basename=script.stem)
                     self.assertEqual(
                         emitted.read_text(),
                         script.with_suffix(".dat").read_text(),
-                        f"{script.stem}.dat drift: re-run `python3 -m {mod_name}`",
+                        f"{script.stem}.dat drift: re-run `python3 -m {mod.__name__}`",
                     )

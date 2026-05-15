@@ -143,6 +143,7 @@ copy:
 #   @mkdir -p $(PAKDIR)/text/citylists 
 	@mkdir -p $(PAKDIR)/sound
 	@cp -p sound/* $(PAKDIR)/sound
+	@python3 -m tools.threed.fetch_wavs $(PAKDIR)/sound
 #	@mkdir -p $(PAKDIR)/scenario
 #	@cp -p scenario/* $(PAKDIR)/scenario
 	@cp -p "$$(python3 -m tools.threed.fetch_pak demo.sve)" $(PAKDIR)/demo.sve
@@ -190,7 +191,7 @@ $(OUTSIDE):
 # self-contained.  Re-run the family with `make bake-grounds`; CI does
 # not regenerate, the committed PNG/dat pairs are what ship.
 GROUND_BAKERS := light_texture back_wall marker borders water \
-                 shore_trans slope_trans sidewalk
+                 shore_trans slope_trans sidewalk climate_texture
 
 .PHONY: bake-grounds $(addprefix bake-,$(GROUND_BAKERS))
 

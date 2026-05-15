@@ -100,19 +100,14 @@ reference cube against the same cube through
 `hextrans-pak128/tools/threed/render.py::HexCamera`; they should
 agree to within renderer noise.  Trigger: any second-asset bake.
 
-**Ground bake gaps: climate_texture, way_ground, fence.**  Eight
-parametric ground families port from pak128 live under `grounds/*.py`
-now (light_texture, back_wall → slopes + basement, marker, borders,
-water, sidewalk, shore_trans, slope_trans).  Three pieces still
-missing.  `climate_texture` is biome art with no tile geometry baked
-in — pak128 reuses upstream's `texture-climate.png` unchanged; the
-hex engine multiplies it against the lightmap at runtime via
-`create_textured_tile`.  Britain doesn't ship one yet, so the
-lightmap atlas composites against nothing.  Concrete next move:
-either author a Britain-flavoured 8-climate biome palette (one tile
-per climate, no tile geometry) and ship as
-`grounds/climate_texture.{png,dat}`, or vendor pak128's
-`texture-climate.png` as a placeholder with a note.  `way_ground` is
+**Ground bake gaps: way_ground, fence.**  Eight parametric ground
+families port from pak128 live under `grounds/*.py` now
+(light_texture, back_wall → slopes + basement, marker, borders,
+water, sidewalk, shore_trans, slope_trans); `climate_texture` is
+vendored from upstream pak128.Britain verbatim (see
+`grounds/climate_texture.{png,dat}`) as biome-art-without-tile-
+geometry — replace with a Britain-flavoured hex-native palette when
+in-game appearance warrants.  Two pieces still missing.  `way_ground` is
 the per-`(axis, slope)` ground lightmap for tiles carrying a way —
 depends on pak128's `tools/threed/render.py` z-buffer rasterizer and
 `way.py`, neither of which is ported into britain's `tools/threed/`.
@@ -192,16 +187,6 @@ Switching to CI-artefact-only saves repo bytes at the cost of
 "see the change in the PR".  Concrete next move: measure committed
 atlas size after the first ~10 asset bakes; if the cumulative is
 under 10 MB this question retires.  Trigger: ten assets baked.
-
-**Wire up runtime `.wav` fetching.**  Sounds were stripped from
-history; the engine still expects to load them.  `pak.lock` and
-`tools/threed/fetch_pak.py` already pin and fetch from the
-upstream pak repo (currently for the calibration diff).  Concrete
-next move when audio first matters in-engine: decide whether the
-engine's sound loader calls `fetch_pak` directly or a pre-launch
-step warms `.cache/pak/<sha>/sound/`.  Either way the SHA bump
-lives in `pak.lock` so PNG and wav consumers stay in lock-step.
-Soft trigger.
 
 **Engine facing count cutover.**  Vehicles currently bake under
 the engine's 4-or-8-direction convention with hex-heading
