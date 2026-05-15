@@ -19,18 +19,20 @@ from pathlib import Path
 
 from pak import REPO_ROOT
 from pak.bake_units import discover, import_script
-from pak.dat import Vehicle, emit_vehicle
+from pak.dat import Vehicle, Way, emit_vehicle, emit_way
 
 
 def _reemit(script: Path) -> Path:
     spec = getattr(import_script(script), "SPEC", None)
-    if not isinstance(spec, Vehicle):
-        rel = script.relative_to(REPO_ROOT)
-        raise RuntimeError(
-            f"{rel} has no `SPEC: Vehicle` — multi-object bake units "
-            f"need their own re-emit hook"
-        )
-    return emit_vehicle(spec, out_dir=script.parent, basename=script.stem)
+    if isinstance(spec, Vehicle):
+        return emit_vehicle(spec, out_dir=script.parent, basename=script.stem)
+    if isinstance(spec, Way):
+        return emit_way(spec, out_dir=script.parent, basename=script.stem)
+    rel = script.relative_to(REPO_ROOT)
+    raise RuntimeError(
+        f"{rel} has no `SPEC: Vehicle | Way` — multi-object bake "
+        f"units need their own re-emit hook"
+    )
 
 
 def main() -> None:

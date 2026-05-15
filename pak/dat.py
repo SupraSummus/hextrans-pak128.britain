@@ -32,6 +32,8 @@ from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from pak.way import HEX_ENTRIES
+
 
 _INDEX_RE = re.compile(r"\[([^\]]*)\]")
 _TERMINATOR_RE = re.compile(r"^-+\s*$")
@@ -43,6 +45,15 @@ _TERMINATOR_RE = re.compile(r"^-+\s*$")
 # row=X, col=Y, so a single-row atlas addresses cells as
 # `.0.<col>` — see "Atlas layout" in CLAUDE.md.
 _HEX_FACINGS: tuple[str, ...] = ("S", "SW", "W", "NW", "N", "NE", "E", "SE")
+
+# Way ribi atlas layout — mirrors `pak/bake_way.py::_stitch_atlas`
+# under `HEX_PROJECTION` (`atlas_cols=8`, leading `-` cell, then the
+# 63 `HEX_ENTRIES` ribis in popcount-then-ribi order).  Cell index `i`
+# in this labels list lands at row `i // 8`, col `i % 8`.  The dat's
+# `image[<label>][season]=./<basename>.<row>.<col>` references must
+# match this layout or the engine renders the wrong sprite per ribi.
+_HEX_WAY_LABELS: tuple[str, ...] = ("-",) + tuple(label for label, _ in HEX_ENTRIES)
+_HEX_WAY_ATLAS_COLS: int = 8
 
 
 def _list_field(*, dat_key: str | None = None) -> Any:
@@ -153,6 +164,63 @@ _VEHICLE_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
 )
 
 
+@dataclass
+class Way:
+    """A `obj=way` definition.  Fields cover the hex-engine schema
+    (`descriptor/writer/way_writer.cc`) plus a few Simutrans-Extended
+    keys the upstream Britain dats carry (`wear_capacity`, `axle_load`).
+    Image refs are derived from the baked hex ribi atlas at emit time —
+    SPECs hold gameplay data only.
+
+    Order of fields = canonical emit order.  Unset scalars (`None`)
+    are skipped on emit, matching upstream's convention of omitting
+    keys that take the engine's default.
+    """
+    # Required
+    name: str
+    waytype: str
+
+    # Identity / metadata
+    copyright: str | None = None
+    system_type: int | None = None
+
+    # Lifecycle
+    intro_year: int | None = None
+    intro_month: int | None = None
+    retire_year: int | None = None
+    retire_month: int | None = None
+
+    # Performance / load
+    topspeed: int | None = None
+    max_weight: int | None = None
+    axle_load: int | None = None
+    wear_capacity: int | None = None
+
+    # Economics
+    cost: int | None = None
+    maintenance: int | None = None
+
+    # Rendering hints
+    draw_as_ding: int | None = None
+    clip_below: int | None = None
+    has_double_slopes: int | None = None
+
+    # Toolbar / placement, read via `cursorskin_writer_t` in
+    # `way_writer.cc`.  `port_way` harvests upstream values (e.g.
+    # `./images/<name>.3.4`), but those PNG paths target the
+    # upstream pak's stripped `images/` dir — makeobj errors out
+    # on the missing file.  Leave unset on a port's SPEC until a
+    # valid hex-atlas cell ref is available (e.g. `./<basename>.X.Y`
+    # pointing at one of the 64 ribi cells, or a dedicated icon
+    # cell once `pak/bake_way.py` learns to bake one — see
+    # TODO.md -> "Bake hex icon + cursor sprites").
+    icon: str | None = None
+    cursor: str | None = None
+
+
+_WAY_FIELDS_SCALAR: tuple[str, ...] = tuple(f.name for f in fields(Way))
+
+
 def parse(path: Path) -> list[list[tuple[str, str]]]:
     """Parse a `.dat` into a list of objects.
 
@@ -196,6 +264,34 @@ def emit_vehicle(vehicle: Vehicle, *, out_dir: Path, basename: str) -> Path:
             lines.append(f"{dat_key}[{i}]={v}")
     for col, facing in enumerate(_HEX_FACINGS):
         lines.append(f"EmptyImage[{facing}]=./{basename}.0.{col}")
+    lines.append("----------")
+
+    out_path = out_dir / f"{basename}.dat"
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
+def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
+    """Write `<out_dir>/<basename>.dat` from a Way.
+
+    Emits every set scalar plus `image[<ribi_label>][0]=./<basename>.<row>.<col>`
+    for each cell of the hex ribi atlas (popcount-then-ribi order, 8
+    cols × 8 rows; see `_HEX_WAY_LABELS`).  The PNG must live at
+    `<out_dir>/<basename>.png` and match that layout exactly — drift
+    surfaces in-engine as the wrong sprite per ribi.
+
+    Slope sprites (`imageup[<slope_key>][N]`), seasons, front layer and
+    cursor/icon are not yet baked, so this writer omits them; revisit
+    when the slope-cell pass lands.  Returns the dat path.
+    """
+    lines: list[str] = ["obj=way"]
+    for name in _WAY_FIELDS_SCALAR:
+        v = getattr(way, name)
+        if v is not None:
+            lines.append(f"{name}={v}")
+    for i, label in enumerate(_HEX_WAY_LABELS):
+        row, col = divmod(i, _HEX_WAY_ATLAS_COLS)
+        lines.append(f"image[{label}][0]=./{basename}.{row}.{col}")
     lines.append("----------")
 
     out_path = out_dir / f"{basename}.dat"
@@ -250,6 +346,30 @@ def port_vehicle(object_entries: list[tuple[str, str]]) -> Vehicle:
     return Vehicle(**kwargs)
 
 
+def port_way(object_entries: list[tuple[str, str]]) -> Way:
+    """Convert one parsed upstream `obj=way` object to a `Way`.
+
+    Seeder for new way bakes — pastes a starter `Way(...)` source into
+    a `ways/<asset>.py` bake script via `seed_python`.  Harvests every
+    scalar `Way` field the upstream dat sets; image refs (Upstream
+    `Image[<square_ribi>]`, `ImageUp[N]`, `Diagonal[<dir>]`, `cursor`,
+    `icon`) are dropped — the hex bake re-emits them from its own
+    atlas under `image[<hex_ribi>][N]=...` keys.
+    """
+    lookup = {k.lower(): v for k, v in object_entries}
+    if lookup.get("obj", "").lower() != "way":
+        raise ValueError(f"not obj=way: {lookup.get('obj')!r}")
+
+    scalars = set(_WAY_FIELDS_SCALAR)
+    kwargs: dict = {}
+    for k, v in object_entries:
+        kl = k.lower()
+        if kl in scalars and not _INDEX_RE.search(k):
+            kwargs[kl] = _coerce(v)
+
+    return Way(**kwargs)
+
+
 def _harvest_indexed(entries: list[tuple[str, str]], base: str) -> list[str]:
     """Gather `base[N]=…` values sorted by N.  Case-insensitive on key."""
     prefix = f"{base.lower()}["
@@ -264,18 +384,19 @@ def _harvest_indexed(entries: list[tuple[str, str]], base: str) -> list[str]:
     return [v for _, v in sorted(indexed)]
 
 
-def seed_python(vehicle: Vehicle, *, indent: str = "    ") -> str:
-    """Render a `Vehicle` as paste-ready `Vehicle(...)` source.
+def seed_python(spec: Any, *, indent: str = "    ") -> str:
+    """Render a SPEC dataclass (`Vehicle` or `Way`) as paste-ready
+    `<ClassName>(...)` source.
 
     Only fields that differ from their defaults are emitted — so a
-    seeded Vehicle pastes cleanly into a bake script without 40
-    lines of `=None` noise — and one field per line for legibility
-    at ~30 fields per asset.  Dataclass `__repr__` would include
-    every field as a single oneliner; this is the human shape.
+    seeded SPEC pastes cleanly into a bake script without 40 lines
+    of `=None` noise — and one field per line for legibility at
+    ~30 fields per asset.  Dataclass `__repr__` would include every
+    field as a single oneliner; this is the human shape.
     """
     parts: list[str] = []
-    for f in fields(vehicle):
-        v = getattr(vehicle, f.name)
+    for f in fields(spec):
+        v = getattr(spec, f.name)
         if f.default is not MISSING:
             default = f.default
         elif f.default_factory is not MISSING:
@@ -284,7 +405,7 @@ def seed_python(vehicle: Vehicle, *, indent: str = "    ") -> str:
             default = object()  # required field, never matches
         if v != default:
             parts.append(f"{indent}{f.name}={v!r},")
-    return "Vehicle(\n" + "\n".join(parts) + "\n)"
+    return f"{type(spec).__name__}(\n" + "\n".join(parts) + "\n)"
 
 
 def _coerce(value: str) -> str | int | float:

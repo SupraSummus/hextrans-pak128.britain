@@ -88,8 +88,8 @@ DIRS128 += trams
 TR_DIRS += trams
 #DIRS128 += trees
 #TR_DIRS += trees
-#DIRS128 += ways
-#TR_DIRS += ways
+DIRS128 += ways
+TR_DIRS += ways
 #DIRS128 += piers
 #TR_DIRS += piers
 

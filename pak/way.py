@@ -14,7 +14,13 @@ from __future__ import annotations
 
 import math
 
-from .hex_synth import HEX_TILE_RADIUS
+
+# World-coords hex circumradius (one entry-edge length).  Bakers express
+# asset dimensions in these units so the camera math doesn't depend on
+# the pixel width.  Source of truth — `pak.hex_synth` re-exports this so
+# both bakers (numpy-pulling) and dat emitters (numpy-free) see the same
+# value without a duplicate definition.
+HEX_TILE_RADIUS = 1.0
 
 
 # ---- Hex ribi -------------------------------------------------------------

@@ -49,7 +49,10 @@ HEIGHT_STEP = 8
 
 # World-coords corner radius (one entry-edge length).  Bakers express
 # asset dimensions in these units so the camera math doesn't depend on W.
-HEX_TILE_RADIUS = 1.0
+# Re-exported from `pak.way` so the constant has a single source of truth
+# and `pak.way` (pure-Python ribi vocab + hex geometry) doesn't have to
+# pull in numpy via this module just to read it.
+from .way import HEX_TILE_RADIUS  # noqa: E402,F401
 
 # Pixel lift per world-z unit, shared with pak128 square dimetric so a
 # given 3D part has comparable on-screen height in both projections.
