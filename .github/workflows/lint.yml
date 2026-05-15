@@ -16,7 +16,19 @@ jobs:
       - run: pip install numpy
       - run: python3 -m unittest discover -s tests -v
 
-  rebake-grounds:
+  rebake:
+    # Re-runs every kind of asset baker — parametric grounds (Python
+    # + numpy/Pillow only) and Blender-driven vehicles/ways (a small
+    # fixed sample) — and asserts no diff against the committed
+    # siblings.  Same principle as `reemit-dats` below, different
+    # backends.  Catches both render-pipeline drift and Cycles
+    # non-determinism across CI runners.  See `Makefile` →
+    # `bake-grounds` and `rebake-determinism-sample` for the asset
+    # lists.  If only the Blender half flakes with byte-different
+    # PNGs (cross-machine Cycles drift), the first pin to try is
+    # `scene.render.threads_mode = 'FIXED'; threads = 1` in
+    # `pak/render.py::_install_camera_and_sun` and
+    # `pak/bake_way.py::_configure_render`.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -24,10 +36,18 @@ jobs:
         with:
           python-version: '3.x'
       - run: pip install numpy Pillow
+      - run: sudo apt-get install -y blender libegl1
       - name: Re-run parametric ground bakers
         run: make bake-grounds
+      - name: Re-render the Blender-driven determinism sample
+        # One vehicle + one way is enough to exercise both
+        # pak/render.py and pak/bake_way.py.  Add an entry when a
+        # third pipeline shape lands, not before.
+        run: |
+          python3 -m trains._4wheel_1850s_first
+          python3 -m ways.cssr
       - name: Verify byte-identical output
-        run: git diff --exit-code -- grounds/
+        run: git diff --exit-code
 
   reemit-dats:
     # Catches drift between a bake script's SPEC and its committed
