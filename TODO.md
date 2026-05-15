@@ -108,13 +108,15 @@ vendored from upstream pak128.Britain verbatim (see
 `grounds/climate_texture.{png,dat}`) as biome-art-without-tile-
 geometry — replace with a Britain-flavoured hex-native palette when
 in-game appearance warrants.  Two pieces still missing.  `way_ground` is
-the per-`(axis, slope)` ground lightmap for tiles carrying a way —
-depends on pak128's `pak/render.py` z-buffer rasterizer and
-`way.py`, neither of which is ported into britain's `pak/`.
-Concrete next move: port both modules (small — ~350 lines + ~130
-lines) or re-express way_ground's three faces directly via
-`fill_polygon` in the engine's screen-space Lambert frame (skipping
-the Model / HexCamera abstraction).  `grounds/fences.dat`
+the per-`(axis, slope)` ground lightmap for tiles carrying a way — a
+parametric per-slope shading bake, not a way render.  Concrete next
+move: port pak128's `landscape/grounds/way_ground/` directly into
+`grounds/way_ground.py`, expressing the three faces via
+`pak.hex_synth.fill_polygon` in the engine's screen-space Lambert
+frame (the same path the existing `grounds/light_texture.py` /
+`grounds/borders.py` bakers use).  Don't re-port a Model / Camera
+mini-rasterizer for this — the engine-space Lambert frame is
+sufficient.  `grounds/fences.dat`
 (`Obj=ground Name=Fence`) is the boundary fence at climate
 transitions; the upstream stub references photographic
 `images/fence-*.png` stripped from history, same un-ported state as
@@ -158,9 +160,62 @@ any < 0.90 IoU regressions surfaced (likely 1-pixel rasterisation
 offsets at corner ramps, or palette-multiplier scale mismatches that
 the harness reports as `ratio ≠ 1.0`).
 
-**One rail way under hex.**  Port `…/rail_060_*` so a carriage has
-somewhere to sit.  Ground is done; this is the second half of the
-"spine visible in-engine" milestone.
+**One rail way under hex — composition not landed yet.**  `pak/bake_way.py`
+loads the upstream `ns-cssr.blend`, scales the rail strand onto a
+hex through-tile chord, and renders one cell through Cycles
+(`ways/cssr_hex_s_n.png`).  The composition step — walking
+`pak/way_topology.py`'s `StraightPath` list per ribi to compose 63
+hex cells via mesh clone / `bmesh.ops.bisect_plane` clip / chord+cap
+transform — is not implemented.  Concrete next move: extend
+`bake_way.py` with a per-ribi loop that duplicates the atoms,
+transforms each duplicate onto a `StraightPath`, bisects at cap
+planes, renders the composed scene, and stitches the per-cell PNGs
+into one atlas.  See PR #15 for the baseline.  Open follow-ups
+flagged alongside:
+
+  * **Validate the hex camera setup.**  `bake_way.py` copies
+    `HEX_VIEWPOINT`'s camera location / rotation / sun + `ortho_scale=2R`
+    + `hex_proj_shear()` extrinsic, but those were tuned for vehicle
+    bakes (with `fit_kind="hex"`).  Whether the same camera + shear
+    produces engine-correct hex pixels for ways is unverified — the
+    current render looks plausible but was not measured.  Concrete
+    next move: render a procedural calibration cube through both
+    `bake_way.py` and the engine's hex projection at known world
+    coordinates, diff.
+
+  * **Validate the tile-chord convention.**  `bake_way.py` scales the
+    blend strand so its +Y extent equals the through-tile chord
+    (R*sqrt(3)).  Whether adjacent tiles' rails meet flush at the
+    shared edge midpoint under this scale is unverified.  Concrete
+    next move: render two adjacent tiles + check edge alignment
+    pixel-by-pixel.  If they don't match, a small tile-overlap
+    fraction is needed (rail strand longer than chord by a
+    cap-mitre-worth of overlap).
+
+  * **Silhouette clipping.**  `ns-cssr.blend`'s ground plane
+    (`Plane.005`) extends past the hex outline at the lozenge
+    corners.  Either bisect the ground plane against the six hex
+    edge planes before rendering, or post-process the rendered PNG
+    against `hex_plan_clip`.
+
+  * **Ground-plane material.**  The blend's `Transparent` material
+    is non-noded and renders as flat grey; the
+    `concrete-paving-small` image is meant to drive it as a ballast
+    texture.  Either re-attach the image via a node tree at bake
+    time or replace the ground plane with a procedural ballast.
+
+  * **Cycles non-determinism.**  Re-running `bake_way.py` produces
+    a byte-different PNG each time (Cycles sampling).  Pinning the
+    Cycles seed + sample count + denoiser is needed before the
+    bake can land in CI as a `git diff --exit-code` check.
+
+  * **Per-blend strip lists belong in a per-asset bake script.**
+    `bake_way.py` default-strips `Sphere` only; other Britain way
+    blends may carry their own noise meshes (e.g. ruler / silhouette
+    debug objects).  Move the strip declaration into a future
+    `ways/<asset>.py` Blender-driver wrapper once the asset count
+    grows past 1.  Don't extrapolate the default strip-list from
+    one blend.
 
 **Bulk-strip remaining unported upstream dats?**  Each upstream
 dat is deleted once its bake script's SPEC verifies (CLAUDE.md →
