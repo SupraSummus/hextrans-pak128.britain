@@ -24,6 +24,7 @@ and isn't importable outside `blender -b -P`.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 import tempfile
@@ -86,18 +87,79 @@ def _parse(args: list[str]) -> argparse.Namespace:
                    help="directory for per-cell debug PNGs.  Default: a "
                         "temp dir cleaned up on exit (only the stitched "
                         "atlas lands in --out).")
+    p.add_argument("--materials", default="",
+                   help="JSON dict mapping material-name -> [r, g, b] 0..255. "
+                        "Applied to the blend's materials by name after open, "
+                        "before render.  Lets one blend (e.g. ns-cssr.blend) "
+                        "serve the entire rail-grade catalog by recolouring "
+                        "four materials per variant.  The per-rail bake "
+                        "script `ways/<rail>.py` holds the calibrated values "
+                        "inline as `MATERIALS = {...}` and passes them "
+                        "through `bake_way_main(..., materials=MATERIALS)`.")
     return p.parse_args(args)
 
 
+def _apply_material_overrides(
+    overrides: dict[str, list[int]],
+) -> None:
+    """Set `mat.diffuse_color` for every named material that exists in the
+    open blend.  Unknown names raise — a silent typo would render with
+    the blend's stock colour and look fine in isolation, only diverging
+    from sibling variants by the wrong fixed offset.
+
+    `overrides` arrives via `json.loads` from `--materials`, so JSON
+    rules apply: the inner sequences come through as `list[int]` (the
+    parent driver passes tuples but JSON has no tuple type).  Anything
+    three-element-and-iterable works because the loop body just
+    unpacks `(r, g, b)`.
+
+    Old-style (`use_nodes=False`) materials render via `diffuse_color`
+    directly under Cycles' auto-conversion; `ns-cssr.blend`'s materials
+    are all `use_nodes=False`.  If a future blend ships node-graph
+    materials, this would need to find and update a Principled BSDF
+    Base Color input instead.
+    """
+    available = {m.name for m in bpy.data.materials}
+    missing = set(overrides) - available
+    if missing:
+        raise RuntimeError(
+            f"--materials targets unknown blend materials: {sorted(missing)}; "
+            f"have {sorted(available)}"
+        )
+    for name, (r, g, b) in overrides.items():
+        bpy.data.materials[name].diffuse_color = (
+            r / 255.0, g / 255.0, b / 255.0, 1.0,
+        )
+
+
+# Materials whose carrier meshes are dropped on every bake regardless
+# of caller intent.  Upstream way blends ship a `Transparent` material
+# on a flat ground plane (`ns-cssr.blend`'s `Plane.005`) that was meant
+# to be invisible — diffuse 0.8 grey, no texture wired up.  Cycles
+# renders it as opaque mid-grey, contaminating ~50 % of the bake's lit
+# pixels with a fake ground that upstream's atlases don't show.  Strip
+# by material name rather than mesh name: `Plane.005` is an incidental
+# Blender autosuffix that can shift on re-save, but `Transparent`
+# names the artist's intent.
+_STRIP_MATERIALS: frozenset[str] = frozenset({"Transparent"})
+
+
 def _strip_scene(strip_meshes: set[str]) -> None:
-    """Strip every camera/light + any mesh whose name is in
-    `strip_meshes`.  Cameras + lights always go — we install our own
-    from the way-bake recipe."""
+    """Strip every camera/light, any mesh whose name is in
+    `strip_meshes`, and any mesh carrying a material in
+    `_STRIP_MATERIALS`.  Cameras + lights always go — we install our
+    own from the way-bake recipe."""
     for obj in list(bpy.context.scene.objects):
         if obj.type in ("CAMERA", "LIGHT"):
             bpy.data.objects.remove(obj, do_unlink=True)
             continue
-        if obj.type == "MESH" and obj.name in strip_meshes:
+        if obj.type != "MESH":
+            continue
+        if obj.name in strip_meshes:
+            bpy.data.objects.remove(obj, do_unlink=True)
+            continue
+        if any(s.material and s.material.name in _STRIP_MATERIALS
+               for s in obj.material_slots):
             bpy.data.objects.remove(obj, do_unlink=True)
 
 
@@ -417,6 +479,13 @@ def main() -> None:
     blend_path = fetch_blend(args.blend)
     print(f"loading blend: {blend_path}  projection={projection.name}")
     bpy.ops.wm.open_mainfile(filepath=str(blend_path))
+
+    # 0. Apply per-variant material colour overrides (rail-grade
+    # recolour catalog).  Done before scene stripping so it errors out
+    # on a typo even when the override targets a material whose only
+    # carrier mesh would otherwise be stripped.
+    if args.materials:
+        _apply_material_overrides(json.loads(args.materials))
 
     # 1. Strip authored cameras + lights, plus caller-named meshes.
     _strip_scene({n for n in args.strip.split(",") if n})

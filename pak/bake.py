@@ -17,6 +17,7 @@ per call.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -91,6 +92,7 @@ def bake_way(
     out_dir: Path,
     strip: str = "Sphere",
     samples: int = 32,
+    materials: dict[str, tuple[int, int, int]] | None = None,
 ) -> Path:
     """Drive `pak/bake_way.py` to render `<out_dir>/<basename>.png`,
     then emit `<out_dir>/<basename>.dat` from `spec`.
@@ -101,7 +103,13 @@ def bake_way(
     (the upstream sun-direction visualizer); per-blend overrides go
     here when a blend ships extra debug meshes that don't belong in
     the bake (see `CLAUDE.md` -> "Way-bake architecture" -> Naming
-    pitfall).  Returns the dat path.
+    pitfall).  `materials` (if supplied) recolours the blend's named
+    materials in-place — the rail-grade catalog renders the same
+    blend with per-variant `MATERIALS` dicts colocated in each
+    `ways/<rail>.py`; this driver serialises the dict to JSON on
+    the `--materials` CLI arg, the Blender subprocess parses it
+    back (tuples come through as lists; the override applier
+    just unpacks three-element sequences).  Returns the dat path.
     """
     cmd = [
         "blender", "-b", "-P", str(_BAKE_WAY_SCRIPT),
@@ -112,6 +120,8 @@ def bake_way(
         "--strip", strip,
         "--samples", str(samples),
     ]
+    if materials:
+        cmd += ["--materials", json.dumps(materials)]
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
 
@@ -124,7 +134,9 @@ def bake_way(
 
 
 def bake_way_main(
-    spec: Way, blend: str, file: str, *, strip: str = "Sphere",
+    spec: Way, blend: str, file: str, *,
+    strip: str = "Sphere",
+    materials: dict[str, tuple[int, int, int]] | None = None,
 ) -> Path:
     """Convenience for single-way bake scripts.
 
@@ -132,10 +144,10 @@ def bake_way_main(
     `__file__`, so each bake script's bottom collapses to:
 
         if __name__ == "__main__":
-            bake_way_main(SPEC, BLEND, __file__)
+            bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)
     """
     path = Path(file).resolve()
     return bake_way(
         spec, blend=blend, basename=path.stem, out_dir=path.parent,
-        strip=strip,
+        strip=strip, materials=materials,
     )

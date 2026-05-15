@@ -243,31 +243,105 @@ pixel-by-pixel.  If rails don't meet flush, a small tile-overlap
 fraction is needed (strand longer than chord by a cap-mitre-
 worth).
 
-**Ground-plane material renders flat grey.**  A way blend's
-`Transparent` ground-plane material is non-noded — the
-`concrete-paving-small` image meant to drive it as a ballast
-texture isn't wired up.  Concrete next move: either re-attach the
-image via a node tree at bake time, or replace the ground plane
-with a procedural ballast.  Trigger: surfaces in any way atlas
-that visibly reads flat grey under the strand.
+**No procedural ground / wide ballast under the strand.**
+`ns-cssr.blend` ships a `Plane.005` mesh carrying a `Transparent`
+material — diffuse 0.8 grey, no `concrete-paving-small` texture
+wired up — meant to be the wide ground under the rail strand.
+Cycles renders it as opaque mid-grey, contaminating ~50 % of the
+bake's lit pixels; `pak/bake_way.py::_STRIP_MATERIALS` now drops
+any mesh carrying the `Transparent` material so the strand stands
+on its own.  Downstream, our cells show only the strand atom's
+extent (400 lit px in the NS cell), while upstream's `image[NS]`
+shows full ballast across the cell (2372 lit px in the chord cell)
+— roughly 5x our coverage.  Concrete next move when in-game ground
+continuity matters: either author the missing `concrete-paving-
+small` texture into a node tree and re-enable the plane, or render
+a procedural ballast region around the strand (Lambert pass like
+`pak/lightmap.py`, masked to the strand-adjacent strip).  Soft
+trigger.
+
+**Cast-iron / fishbelly geometry mismatch.**  `ways/cast_iron.py`,
+`fishbelly.py`, `fishbelly_heavy.py` render through `ns-cssr.blend`
+(crushed-stone ballast + sleepers) tinted by their per-variant
+`MATERIALS` dict — but real cast-iron rail (1789-1830s) and early
+wrought-iron fishbelly were iron strips fastened to stone setts,
+no ballast, no transverse wooden sleepers.  The blend-share is a
+category error for the pre-ballast era.  Each affected per-rail
+.py carries a "Geometry caveat" docstring flagging this.  Concrete
+next move when in-game readability of early-era track matters:
+author a `ways/cast_iron.blend` strand atom (iron strip on stone
+setts), repoint the three early-era .pys at it, drop their
+`MATERIALS` (the new blend authors its own colours).  Until then,
+the dats are correct (intro dates, costs, wear); only visual
+fidelity for the 1789-1845 window suffers.
+
+**RailTop specular dominates the MATERIALS diffuse override.**
+`ns-cssr.blend`'s `RailTop` material reads as bright bluish-white in
+our bake (sampled (181, 200, 200) on cssr `s` cell) regardless of
+the per-rail `MATERIALS["RailTop"]` value — under Cycles auto-
+conversion of the `use_nodes=False` material, the specular
+reflection from sky ambient dominates the diffuse contribution.
+The calibrated `RailTop` values in each `ways/<rail>.py` are
+therefore partly fictional (committed, but only weakly visible).
+Concrete next move: try `mat.specular_intensity = 0.0` for
+`RailTop` (and probably the other materials too — none of
+`ns-cssr.blend`'s slots want real specular) in
+`pak/bake_way.py::_apply_material_overrides`, rerun
+`python3 -m ways.cssr`, check that the rail head reads grey not
+sky-blue.  Trigger: bake any rail variant where the cross-family
+RailTop difference looks washed-out — wrought-iron (olive RailTop
+(110, 108, 107)) vs cssr (pure-grey RailTop (183, 183, 183))
+should be a noticeable side-by-side contrast and currently isn't.
+
+**Whole-pakset shading-gain compensation.**  The committed per-rail
+`MATERIALS` colours are upstream rendered-RGB (sampled by hand from
+upstream PNGs' NS-chord cell), not diffuse-base.  Our hex sun
+shading attenuates ~30 %: setting Ballast diffuse to (87, 87, 87)
+for cssr renders as (64, 71, 71).  Result is honest (no per-material
+fudge) but the whole pakset reads a notch darker than upstream's
+published atlases.  Concrete next move when more than the existing
+two ways have baked atlases: pick cssr as the anchor (upstream
+chord-cell target is pure grey 87 / 118 / 133 / 183), bump
+`pak/viewpoints.py` sun energy until our render's K-clustered cssr
+lands within ±5 of those values, rebake everything that's
+downstream.  Done as one constant for the whole pakset, not
+per-asset.  Soft trigger.
+
+**Rail variant bake validation.**  19 ports of the catalog
+(cast_iron through cssri) have `MATERIALS` colocated but only
+cssr + cast_iron are baked.  Concrete next move: bake the remaining
+17 variants and eyeball that the per-family colour differentiation
+reads as expected.  Address the `RailTop` specular issue first
+(separate TODO) so family differences (e.g. wrought-iron olive vs
+cssr pure grey) aren't washed out by sky reflection on the rail
+head.
+
+**Waggonway and plateway have no upstream blend.**  `ways/waggonway.dat`
+(10 kph, wooden) and `ways/plateway.dat` (12 kph, iron-plated
+wooden) reference per-direction atlases (`waggonway-wood_<dir>.png`)
+not present in the blends repo's `ways/` directory and visibly
+distinct from `ns-cssr.blend`'s rail-on-ballast cross-section.
+They're not in the 19 ported rail grades.  Concrete next move when
+the first-era rail look matters in-game: either author a
+`ways/waggonway.blend` (single wooden rail, no ballast) and a
+`ways/plateway.blend` (wooden with iron plate on top), or render
+them parametrically without a blend.  Soft trigger.
 
 **Bake hex icon + cursor sprites for ways.**  Upstream way dats
 reference dedicated icon + cursor cells in the per-asset PNG —
 typical 5×6 atlas layout puts them at `.3.4` (icon) and `.3.5`
 (cursor).  Our hex atlas is 8×8 ribi cells, no dedicated icon /
-cursor cells baked.  The `Way.icon` / `Way.cursor` fields exist
-on the dataclass and `port_way` harvests upstream values, but
-the current bake scripts leave them `None` because the upstream
-strings (`./images/<name>.3.X`) target the upstream pak's
-stripped `images/` dir — makeobj errors out on the missing
-file.  Two ways forward: (a) point each bake script's `icon` /
-`cursor` at an existing ribi cell (e.g. the through-tile straight
-`./<basename>.1.6` for icon, the no-way `./<basename>.0.0` for
-cursor — pragmatic stopgap, no extra rendering), or (b) extend
-`pak/bake_way.py` with a dedicated icon/cursor render mode that
-appends two cells to the atlas (e.g. at (8,0) and (8,1)) at a
-canonical camera angle.  Trigger: first time blank toolbar
-icons surface in-game.
+cursor cells baked.  The `Way.icon` / `Way.cursor` fields exist on
+the dataclass; `port_way` drops the upstream refs (which point at
+the stripped `images/` dir and would error makeobj out), and bake
+scripts leave them `None`.  Two ways forward: (a) point each bake
+script's `icon` / `cursor` at an existing ribi cell (e.g. the
+through-tile straight `./<basename>.1.6` for icon, the no-way
+`./<basename>.0.0` for cursor — pragmatic stopgap, no extra
+rendering), or (b) extend `pak/bake_way.py` with a dedicated
+icon/cursor render mode that appends two cells to the atlas (e.g.
+at (8,0) and (8,1)) at a canonical camera angle.  Trigger: first
+time blank toolbar icons surface in-game.
 
 **Road-blend generalization.**  `bake_way.py` was tuned against
 the rail strand atom in `ns-cssr.blend` (one straight cross-section
