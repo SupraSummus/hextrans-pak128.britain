@@ -28,7 +28,7 @@ field-name-is-dat-key convention.
 from __future__ import annotations
 
 import re
-from dataclasses import MISSING, dataclass, field, fields
+from dataclasses import MISSING, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -206,14 +206,12 @@ class Way:
     has_double_slopes: int | None = None
 
     # Toolbar / placement, read via `cursorskin_writer_t` in
-    # `way_writer.cc`.  `port_way` harvests upstream values (e.g.
-    # `./images/<name>.3.4`), but those PNG paths target the
-    # upstream pak's stripped `images/` dir — makeobj errors out
-    # on the missing file.  Leave unset on a port's SPEC until a
-    # valid hex-atlas cell ref is available (e.g. `./<basename>.X.Y`
-    # pointing at one of the 64 ribi cells, or a dedicated icon
-    # cell once `pak/bake_way.py` learns to bake one — see
-    # TODO.md -> "Bake hex icon + cursor sprites").
+    # `way_writer.cc`.  `port_way` drops upstream's `./images/...`
+    # refs (their PNGs were stripped from history); `emit_way`
+    # defaults unset values to existing ribi-atlas cells so
+    # `way_builder_t::weg_search` picks the way up as a buildable
+    # default (TODO.md → "Bake hex icon + cursor sprites for ways").
+    # SPECs that want bespoke artwork set their own ref.
     icon: str | None = None
     cursor: str | None = None
 
@@ -280,10 +278,19 @@ def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
     `<out_dir>/<basename>.png` and match that layout exactly — drift
     surfaces in-engine as the wrong sprite per ribi.
 
-    Slope sprites (`imageup[<slope_key>][N]`), seasons, front layer and
-    cursor/icon are not yet baked, so this writer omits them; revisit
-    when the slope-cell pass lands.  Returns the dat path.
+    Slope sprites (`imageup[<slope_key>][N]`), seasons and front layer
+    are not yet baked, so this writer omits them; revisit when the
+    slope-cell pass lands.  `cursor` / `icon` default to existing ribi
+    cells (TODO.md → "Bake hex icon + cursor sprites for ways") so the
+    engine's `way_builder_t::weg_search` picks the way up as a
+    buildable default; SPECs override by setting their own.  Returns
+    the dat path.
     """
+    way = replace(
+        way,
+        cursor=way.cursor or f"./{basename}.0.0",
+        icon=way.icon or f"./{basename}.1.6",
+    )
     lines: list[str] = ["obj=way"]
     for name in _WAY_FIELDS_SCALAR:
         v = getattr(way, name)

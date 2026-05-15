@@ -34,6 +34,28 @@ OUTSIDE :=
 OUTSIDE += pak1file/128
 #TR_DIRS += pak1file/128
 
+# `goods/` ships engine-wide good descriptors (Passagiere, Post, coal,
+# …) referenced by every vehicle's `freight=` field — without it the
+# engine fatals at load with "Cannot resolve 'GOOD-Passagiere'".  The
+# dats carry no sprites, so `ported_dats` (sibling-PNG filter) doesn't
+# apply; build via its own rule below.
+GOODS_DIR := goods
+
+# Dats whose sibling PNGs were stripped from history (CLAUDE.md →
+# "Repo size strategy") and have no hex re-bake yet.  Engine-required
+# all of them — without them load fatals at
+# `skinverwaltung_t::successfully_loaded` (GUI cursor / symbol / skin
+# objects) or `ground_desc_t::successfully_loaded` (Fence).  GUI
+# elements don't carry the world's hex-projection burden so the
+# upstream 64/128-px bitmaps render verbatim under hex; fence is the
+# soft fallback until a parametric hex bake lands (see TODO.md).
+# `pak.stage_upstream_pngs` copies each dat + fetches its referenced
+# PNGs into `$(UPSTREAM_STAGED)/`; per-pak rules then run makeobj
+# against the staged copy.
+UPSTREAM_STAGED_DATS := gui/gui64/*.dat gui/gui128/*.dat grounds/fences.dat
+UPSTREAM_STAGED := $(DESTDIR)/upstream-staged
+GUI_DIRS := gui/gui64 gui/gui128
+
 DIRS32 :=
 #DIRS32 += boats/holds
 #TR_DIRS += boats/holds
@@ -103,7 +125,7 @@ DIRS224 :=
 DIRS256 :=
 #DIRS256 += air/air256
 
-DIRS := $(OUTSIDE) $(DIRS32) $(DIRS64) $(DIRS128) $(DIRS192) $(DIRS224) $(DIRS256)
+DIRS := $(OUTSIDE) $(GOODS_DIR) $(GUI_DIRS) fences $(DIRS32) $(DIRS64) $(DIRS128) $(DIRS192) $(DIRS224) $(DIRS256)
 
 #generating filenames
 #with this function the filenames are assembled, by removing the dir
@@ -165,6 +187,31 @@ $(DIRS128):
 	@echo "===> PAK128 $@"
 	@mkdir -p $(PAKDIR)
 	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/$(call make_name,$@) $(call ported_dats,$@) > /dev/null
+
+$(GOODS_DIR):
+	@echo "===> PAK128 $@ (no sprites)"
+	@mkdir -p $(PAKDIR)
+	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/$(call make_name,$@) $(wildcard $@/*.dat) > /dev/null
+
+# Stage every upstream-PNG-dependent dat in one pass; per-pak rules
+# below run makeobj against the staged copy.  `make_name` collapses
+# `gui/gui128/` -> the `gui.gui128.pak` filename so the relative-path
+# image refs resolve.
+$(UPSTREAM_STAGED)/.staged:
+	@echo "===> STAGE upstream-PNG dats"
+	@python3 -m pak.stage_upstream_pngs $(UPSTREAM_STAGED) $(wildcard $(UPSTREAM_STAGED_DATS))
+	@touch $@
+
+$(GUI_DIRS): $(UPSTREAM_STAGED)/.staged
+	@echo "===> PAK $@ (gui, upstream sprites)"
+	@mkdir -p $(PAKDIR)
+	@SIZE=$(if $(findstring 128,$@),PAK128,PAK); \
+		$(MAKEOBJ) quiet $$SIZE $(PAKDIR)/$(call make_name,$@) $(wildcard $(UPSTREAM_STAGED)/$@/*.dat) > /dev/null
+
+fences: $(UPSTREAM_STAGED)/.staged
+	@echo "===> PAK128 fences (upstream sprites)"
+	@mkdir -p $(PAKDIR)
+	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/fences.pak $(UPSTREAM_STAGED)/grounds/fences.dat > /dev/null
 
 $(DIRS192):
 	@echo "===> PAK192 $@"
