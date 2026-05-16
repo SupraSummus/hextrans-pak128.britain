@@ -48,8 +48,16 @@ from pak.render import Facing, Viewpoint
 # Upstream sun lamp energy, from Lamp.001 in the Britain blends.  Matching
 # this keeps the calibration diff's mean|dRGB| meaningful -- a different
 # energy would shift every rendered pixel and inflate the residual without
-# implying real drift.
+# implying real drift.  This value was authored for Blender Internal where
+# 0.028 was a reasonable directional contribution on top of ambient ~0.3;
+# Cycles + EEVEE interpret "energy" in W/m^2-ish units where 0.028 ≈ zero.
 _SUN_ENERGY = 0.028
+
+# Sun energy for the EEVEE buildings path; paired with world ambient
+# (0.30 in `pak.render`).  See CLAUDE.md → "Building-bake architecture"
+# for the calibration.  Vehicles keep `_SUN_ENERGY` so their Cycles
+# calibration target isn't disturbed.
+_BUILDING_SUN_ENERGY = 2.0
 
 
 # === Square-dimetric (upstream) ===========================================
@@ -110,12 +118,16 @@ SQUARE_VIEWPOINT = Viewpoint(
 # 4-layout buildings; the 8-view normal cameras for road vehicles
 # follow the same convention with the diagonal positions added.
 
-# (label, cam_rot_z_deg, location_normal_alignment, sun_rot_z_deg)
+# (label, cam_rot_z_deg, location_normal_alignment).  Sun rotation is
+# derived from cam_z by `sun_rotation_for_camera` — single source of
+# truth shared with the hex building viewpoint, so the same
+# upstream-calibrated "front-left lit at 60° elev" convention applies
+# to both the apples-to-apples diff and the shipped atlas.
 _UPSTREAM_NORMAL_CARDINAL = [
-    ("S",   45, ( 10.0, -10.0, 11.6),  90),
-    ("W",  135, ( 10.0,  10.0, 11.6), 180),
-    ("N",  225, (-10.0,  10.0, 11.6), 270),
-    ("E",  315, (-10.0, -10.0, 11.6),   0),
+    ("S",   45, ( 10.0, -10.0, 11.6)),
+    ("W",  135, ( 10.0,  10.0, 11.6)),
+    ("N",  225, (-10.0,  10.0, 11.6)),
+    ("E",  315, (-10.0, -10.0, 11.6)),
 ]
 
 
@@ -132,7 +144,32 @@ _UPSTREAM_NORMAL_CARDINAL = [
 
 _HEX_CAM_LOC = (0.0, -10.0, 0.5)
 _HEX_CAM_ROT = (radians(90), 0.0, 0.0)
+# Vehicles & ways: sun south at 60° elevation, matching `pak.hex_synth`'s
+# pak-wide `SUN_DIR`.  Buildings use `sun_rotation_for_camera` instead.
 _HEX_SUN_ROT = (radians(30), 0.0, 0.0)
+
+
+def sun_rotation_for_camera(
+    cam_z_deg: float,
+    sun_elev_deg: float = 30.0,
+    sun_az_offset_deg: float = -90.0,
+) -> tuple[float, float, float]:
+    """Sun rotation_euler that puts the sun at `sun_az_offset_deg` from
+    the camera's screen-direction at `sun_elev_deg` elevation.
+
+    Blender's SUN lamp emits in its local -Z axis: rotation_x=0 means
+    straight-down (90° elev), rotation_x=90° means horizontal (0° elev).
+    Sun_z = cam_z + az_offset places the sun screen-relative.
+
+    Defaults calibrated against `1600-detatched-house-2f`; see
+    CLAUDE.md → "Building-bake architecture" for the calibration story."""
+    return (radians(90.0 - sun_elev_deg), 0.0,
+            radians(cam_z_deg + sun_az_offset_deg))
+
+
+# Hex camera doesn't rotate per facing (the model rotates under it), so
+# cam_z=0 across every hex Facing.
+_HEX_BUILDING_SUN_ROT = sun_rotation_for_camera(cam_z_deg=0.0)
 
 
 # Same direction labels as the square viewpoint so .dat keys port
@@ -250,12 +287,12 @@ def building_square_viewpoint(
         )
     facings: list[Facing] = []
     for l in range(layouts):
-        label, cam_z, loc, sun_z = _UPSTREAM_NORMAL_CARDINAL[l]
+        label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
         facings.append(Facing(
             label=f"L{l}_Y0_X0_H0",
             camera_location=loc,
             camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
-            sun_rotation_euler=(radians(90), 0.0, radians(sun_z)),
+            sun_rotation_euler=sun_rotation_for_camera(cam_z),
             model_rot_z_deg=0.0,
         ))
     return Viewpoint(
@@ -266,10 +303,11 @@ def building_square_viewpoint(
         # 24); honouring that is what makes the diff align with
         # upstream's actually-published per-blend renders.
         ortho_scale=None,
-        sun_energy=_SUN_ENERGY,
+        sun_energy=_BUILDING_SUN_ENERGY,
         fit_kind="none",
         extrinsic=None,
         facings=facings,
+        engine="BLENDER_EEVEE",
     )
 
 
@@ -319,7 +357,7 @@ def building_hex_viewpoint(
                         label=f"L{l}_Y{y}_X{x}_H{h}",
                         camera_location=_HEX_CAM_LOC,
                         camera_rotation_euler=_HEX_CAM_ROT,
-                        sun_rotation_euler=_HEX_SUN_ROT,
+                        sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
                         model_rot_z_deg=step * l,
                         model_translation=(-wx, -wy,
                                            -h * HEX_HEIGHT_LEVEL_WORLD_Z),
@@ -328,8 +366,9 @@ def building_hex_viewpoint(
         name="hex_building",
         image_width=DEFAULT_W,
         ortho_scale=2.0 * HEX_TILE_RADIUS,
-        sun_energy=_SUN_ENERGY,
+        sun_energy=_BUILDING_SUN_ENERGY,
         fit_kind="hex",
         extrinsic=hex_proj_shear(),
         facings=facings,
+        engine="BLENDER_EEVEE",
     )
