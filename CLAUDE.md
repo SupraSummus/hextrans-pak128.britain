@@ -1097,32 +1097,38 @@ Two layers, kept honestly split:
     in blend coords, **not** our intra-tile system — comparing it
     against `HEX_TILE_RADIUS = 1` would be a category error.
 
-**Rail-grade material recolour** (per-rail `MATERIALS` dicts).
+**Per-way material recolour** (per-way `MATERIALS` dicts).
 Upstream ships ~20 rail-grade dats (cast_iron through cssri) that
 render from one underlying geometry — within-family silhouette IoU
 is 1.000, cross-family ≥ 0.96.  The visual differentiation is
 material recolour: four blend slots (`Rail`, `RailTop`, `Wood`,
 `Ballast`) shift hue and value per variant.  We mirror that:
-each `ways/<rail>.py` declares its own `MATERIALS = {…}` inline
+each `ways/<way>.py` declares its own `MATERIALS = {…}` inline
 (colocated with the SPEC, no central catalog), passes it through
 `bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)`,
 `pak/bake.py::bake_way` serialises to JSON on the `--materials`
 arg, and `pak/bake_way.py` parses it back with `json.loads` and
-applies via `mat.diffuse_color` before render.  Old-style
-(`use_nodes=False`) materials in `ns-cssr.blend` render via the
-diffuse colour directly under Cycles' auto-conversion; node-graph
+applies via `mat.diffuse_color` before render.  tarmac and tgv use
+their own blends with their own slot sets (`Dirt` / `MainColour1`
+for tarmac, the rail family plus `Tarmac` for tgv); the schema
+generalises naturally.  Old-style (`use_nodes=False`) materials
+render via the diffuse colour directly under both Cycles auto-
+conversion and Workbench `MATERIAL` color mode; node-graph
 materials would need a different override path.
 
-The current `MATERIALS` values were seeded by K-means-clustering
-the lit pixels of upstream's NS-chord cell (the typical straight-
-rail cross-section view) and luminance-ranking the centroids into
-Ballast / Wood / Rail / RailTop.  Output is rendered RGB as it
-appears upstream — no shading-attenuation compensation, so first
-bakes land ~30 % darker.  The sampler isn't committed; it was a
-one-off investigation step.  Adding new variants from upstream is
-re-implement-as-needed: read the upstream PNG, mask the
-transparency key, K-means cluster, paste the four colours into a
-new `ways/<rail>.py`.
+Under Workbench `light = "FLAT"`, rendered pixel == material's
+`diffuse_color` directly -- no shading attenuation.  `MATERIALS`
+values are K-means centroids over the upstream PNG's lit pixels
+(magic pink keyed out at `(231, 255, 255)`), luminance-ranked
+into Ballast / Wood / Rail / RailTop (k=4 for rail-family, k=2
+for tarmac).  The sampler isn't committed -- it's a one-off
+inline numpy + Pillow script, ~20 lines.  Adding a new variant
+is re-implement-as-needed: fetch upstream's PNG via
+`pak.fetch_pak`, mask `(231, 255, 255)`, k-means cluster, paste
+into a new `ways/<name>.py`.  The four committed-PNG ways (cssr,
+cast_iron, tarmac_road, tgv) are calibrated this way; the 15
+unbaked rail-grade scripts still hold Cycles-era MATERIALS that
+will need re-sampling when they're actually baked.
 
 The Transparent ground plane in `ns-cssr.blend` (Plane.005,
 material `Transparent`) is dropped via `_STRIP_MATERIALS` in the
@@ -1180,13 +1186,33 @@ bake-grounds`, plus a tiny fixed Blender-driven vehicle + way
 sample inlined in the workflow — and asserts
 `git diff --exit-code`.  Same principle as `reemit-dats`,
 different backends; covers render-pipeline drift in
-`grounds/<asset>.py` and Cycles non-determinism across CI
+`grounds/<asset>.py` and renderer non-determinism across CI
 runners.  See the workflow's "Re-render the Blender-driven
-determinism sample" step for the sample's asset list.  If only the Blender half flakes with byte-different
-PNGs (cross-machine Cycles drift), the first pin to try is
-`scene.render.threads_mode = 'FIXED'; threads = 1` in
-`pak/render.py::_install_camera_and_sun` and
-`pak/bake_way.py::_configure_render`.  `reemit-dats` runs
+determinism sample" step for the sample's asset list.
+
+Two renderer backends, two determinism strategies.  Ways bake
+through Workbench (`pak/bake_way.py::_configure_render`,
+`light = "FLAT"`, `color_type = "MATERIAL"`) -- single-pass
+rasterizer, no path tracing, no embree, no SIMD-sensitive
+reductions; byte-stable across heterogeneous CI runners in
+practice.  Vehicles + buildings bake through Cycles
+(`pak/render.py::_install_camera_and_sun`) and pin
+`threads_mode = "FIXED"; threads = 1`, `use_denoising = False`,
+`use_adaptive_sampling = False`, `seed = 0` -- defends every
+same-CPU-class non-determinism source we know about, but Intel
+vs AMD running the AVX2 kernel still diverge on transcendentals
+/ embree (max per-channel delta ~185 on the cssr atlas when we
+tried Cycles for ways).  Cycles for vehicles is the calibration-
+diff requirement -- `pak/diff_upstream.py` scores us against
+upstream's Cycles renders -- not a determinism guarantee.  If a
+vehicle flakes cross-CPU in CI, switching it to Workbench would
+re-anchor its IoU calibration; cross that bridge when it bites.
+
+If a flake appears, `pak/diag_png_drift.py` runs as a
+post-failure step and reports whether the drift is in the pixel
+data or only in the PNG encoding (zlib / chunk layout) -- the
+latter would be a libpng / image_settings issue, not the
+renderer.  `reemit-dats` runs
 `python3 -m pak.reemit_dats` (imports every vehicle bake
 script, re-runs `emit_vehicle` from its `SPEC` — no Blender, no
 render) and asserts `git diff --exit-code -- '*.dat'`; catches dat
@@ -1241,6 +1267,35 @@ wrong shape.
 This applies hardest to the design questions the port keeps
 producing: scale calibration, sun convention, dat-key triage,
 multi-tile asset slicing.
+
+## Test value rules
+
+A test earns its keep by catching a class of bug the rest of the
+system wouldn't catch faster or more clearly.  Before adding one,
+ask:
+
+- Does runtime already fail loudly on this?  If the bake driver
+  already raises `RuntimeError: --materials targets unknown blend
+  materials: [...]` on a typo'd material name, a test that walks
+  every script and matches keys against a hardcoded slot table
+  isn't catching a missed case -- it's just trading bake-time
+  signal for push-time signal on a bug class that runtime already
+  reports clearly.
+- Does the test mirror a source of truth that lives elsewhere?
+  If the blend file is the authority on what materials exist, a
+  test that hardcodes the slot set per blend forces every new
+  blend to update the test in lockstep.  Two places to keep in
+  sync is worse than one place that fails loud.
+- How often does the bug class actually occur?  A test that
+  catches RGB-out-of-range and 2-tuples-instead-of-3-tuples earns
+  its keep at near-zero cost; a test that forces a slot-table
+  update on every new blend port doesn't.
+
+Structural shape checks (a thing is the type / arity / range you
+declare) are cheap and worth it.  Cross-checks against an
+authoritative source elsewhere in the system are expensive and
+usually aren't.  When in doubt, prefer fewer tests with smaller
+maintenance surface; lean on runtime errors with clear messages.
 
 ## TODO.md rules
 

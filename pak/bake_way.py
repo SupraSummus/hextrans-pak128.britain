@@ -6,7 +6,8 @@ through-tile chord, then for each of the 63 hex ribis composes the
 atom along the path segments emitted by `pak/way_topology.py` (stubs,
 chords, V-bend legs, junctions = pairwise chords), bisects each clone
 at its cap planes + the hex outline, applies the engine's hex
-projection shear, and renders one PNG per ribi through Cycles.  The
+projection shear, and renders one PNG per ribi through Workbench
+(FLAT shading; see `_configure_render` for why not Cycles).  The
 per-ribi PNGs are stitched into a single atlas in the same popcount-
 then-ribi order as `pak.way.HEX_ENTRIES`.
 
@@ -75,8 +76,6 @@ def _parse(args: list[str]) -> argparse.Namespace:
                    help="comma-separated mesh object names to strip "
                         "(default: 'Sphere'). All cameras + lights "
                         "are always stripped.")
-    p.add_argument("--samples", type=int, default=32,
-                   help="Cycles samples per cell (default 32).")
     p.add_argument("--only", default="",
                    help="comma-separated ribi labels to bake; the rest "
                         "are zero-filled.  Default: all entries.")
@@ -135,12 +134,12 @@ def _apply_material_overrides(
 # Materials whose carrier meshes are dropped on every bake regardless
 # of caller intent.  Upstream way blends ship a `Transparent` material
 # on a flat ground plane (`ns-cssr.blend`'s `Plane.005`) that was meant
-# to be invisible — diffuse 0.8 grey, no texture wired up.  Cycles
-# renders it as opaque mid-grey, contaminating ~50 % of the bake's lit
-# pixels with a fake ground that upstream's atlases don't show.  Strip
-# by material name rather than mesh name: `Plane.005` is an incidental
-# Blender autosuffix that can shift on re-save, but `Transparent`
-# names the artist's intent.
+# to be invisible — diffuse 0.8 grey, no texture wired up.  The
+# renderer (Cycles originally, Workbench now) shows it as opaque
+# mid-grey, contaminating ~50 % of the bake's lit pixels with a fake
+# ground that upstream's atlases don't show.  Strip by material name
+# rather than mesh name: `Plane.005` is an incidental Blender autosuffix
+# that can shift on re-save, but `Transparent` names the artist's intent.
 _STRIP_MATERIALS: frozenset[str] = frozenset({"Transparent"})
 
 
@@ -165,8 +164,7 @@ def _strip_scene(strip_meshes: set[str]) -> None:
 
 def _atoms() -> list:
     """Return every MESH object remaining in the scene, sorted by name.
-    Stable ordering for readability of the per-bake stdout — Cycles
-    sampling still randomises pixel output run-to-run."""
+    Stable ordering for readability of the per-bake stdout."""
     return sorted(
         (obj for obj in bpy.context.scene.objects if obj.type == "MESH"),
         key=lambda o: o.name,
@@ -242,10 +240,18 @@ def _install_camera_and_sun(projection: Projection) -> None:
     sun_obj.rotation_euler = projection.sun_rotation_euler
 
 
-def _configure_render(*, image_width: int, samples: int) -> None:
-    """Force RGBA + transparent film, fixed resolution, Cycles backend.
+def _configure_render(*, image_width: int) -> None:
+    """Force RGBA + transparent film, fixed resolution, Workbench backend.
     Overrides whatever the blend saved (some Britain blends ship with
-    RGB + solid world background)."""
+    RGB + solid world background).
+
+    Workbench (not Cycles) because Cycles isn't byte-deterministic across
+    heterogeneous CI runners: even with threads / denoise / adaptive /
+    seed pinned, AMD and Intel hosts running the same AVX2 kernel diverge
+    on transcendentals / embree code paths (max per-channel delta ~185
+    on the cssr atlas; see CLAUDE.md → CI).  Workbench is a single-pass
+    rasterizer with no path tracing, no embree, no SIMD-sensitive
+    reductions -- byte-stable across CPUs in practice."""
     scene = bpy.context.scene
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.image_settings.file_format = "PNG"
@@ -254,8 +260,17 @@ def _configure_render(*, image_width: int, samples: int) -> None:
     # Match the hex cell shape: W wide × W tall (2u + top_pad = 4u = W
     # at the standard W=128 / u=32 / top_pad=4*lift=4*16=64 settings).
     scene.render.resolution_y = image_width
-    scene.render.engine = "CYCLES"
-    scene.cycles.samples = samples
+    scene.render.engine = "BLENDER_WORKBENCH"
+    shading = scene.display.shading
+    # FLAT (not STUDIO) lighting: rendered pixel == material's diffuse
+    # colour directly, no studio-light attenuation.  Lets MATERIALS in
+    # each ways/<rail>.py be sampled K-means clusters from the upstream
+    # cssr cell and have the bake reproduce those colours pixel-exact.
+    shading.light = "FLAT"
+    shading.color_type = "MATERIAL"
+    shading.show_shadows = False
+    shading.show_cavity = False
+    shading.show_specular_highlight = False
 
 
 def _clone_atom(template, *, name_suffix: str):
@@ -517,7 +532,7 @@ def main() -> None:
 
     # 4. Camera + sun + render config from the projection.
     _install_camera_and_sun(projection)
-    _configure_render(image_width=DEFAULT_W, samples=args.samples)
+    _configure_render(image_width=DEFAULT_W)
 
     # 5. Per-ribi composition + render.  Each cell writes one PNG to
     # `cell_dir`; `_stitch_atlas` reads them back to compose the

@@ -36,7 +36,11 @@ jobs:
         with:
           python-version: '3.x'
       - run: pip install numpy Pillow
-      - run: sudo apt-get install -y blender libegl1
+      # `python3-numpy` lands numpy where apt-installed blender's
+      # bundled Python looks for it (CLAUDE.md → "Running the bake
+      # in a fresh sandbox").  The setup-python pip install above
+      # is invisible to blender.
+      - run: sudo apt-get install -y blender libegl1 python3-numpy
       - name: Re-run parametric ground bakers
         run: make bake-grounds
       - name: Re-render the Blender-driven determinism sample
@@ -48,6 +52,31 @@ jobs:
           python3 -m ways.cssr
       - name: Verify byte-identical output
         run: git diff --exit-code
+      - name: Diagnose PNG drift (only on failure)
+        # Cross-CI-runner Cycles non-determinism would surface here.
+        # Prints CPU / blender / numpy / zlib info plus a per-PNG
+        # pixel-or-encoding-only verdict via `pak/diag_png_drift.py`.
+        if: failure()
+        run: |
+          echo "--- CPU ---"
+          grep -m1 "^model name" /proc/cpuinfo
+          grep -m1 "^flags" /proc/cpuinfo | tr ' ' '\n' | grep -E "^(sse|avx|amx)" | sort -u | tr '\n' ' '; echo
+          echo "--- OS ---"
+          grep -E "^(NAME|VERSION)=" /etc/os-release
+          uname -a
+          echo "--- Blender ---"
+          blender --version 2>&1 | head -5
+          echo "--- Python / numpy ---"
+          python3 --version
+          python3 -c "import numpy; print('numpy', numpy.__version__, numpy.__file__)"
+          python3 -c "import zlib; print('zlib', zlib.ZLIB_VERSION, zlib.ZLIB_RUNTIME_VERSION)"
+          echo "--- PNG diff ---"
+          changed=$(git diff --name-only -- '*.png')
+          if [ -z "$changed" ]; then
+            echo "(no PNG drift -- failure is non-PNG)"
+          else
+            python3 -m pak.diag_png_drift $changed
+          fi
 
   reemit-dats:
     # Catches drift between a bake script's SPEC and its committed
