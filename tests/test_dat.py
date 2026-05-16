@@ -339,6 +339,24 @@ class TestBuildingFootprint(unittest.TestCase):
         self.assertEqual(layouts_default(1, 3), 2)
         self.assertEqual(layouts_default(4, 5), 2)
 
+    def test_hex_layouts_default_pins_pak_policy(self):
+        # Pak-side bake policy distinct from the engine read-side
+        # default — single-tile gets 8 (matches HEX_VIEWPOINT's
+        # 8-facing convention), rectangular falls back to the engine
+        # default until a multi-tile asset pins a different choice.
+        from pak.bake import hex_layouts_default
+        self.assertEqual(hex_layouts_default(1, 1), 8)
+        self.assertEqual(hex_layouts_default(2, 1), 2)
+        self.assertEqual(hex_layouts_default(2, 2), 1)
+
+    def test_resolve_building_layouts_fills_in_none(self):
+        from pak.bake import _resolve_building_layouts
+        # None → hex default; an explicit value passes through.
+        none = Building(name="X", type="res", dims_x=1, dims_y=1)
+        self.assertEqual(_resolve_building_layouts(none).layouts, 8)
+        pinned = Building(name="X", type="res", dims_x=1, dims_y=1, layouts=4)
+        self.assertEqual(_resolve_building_layouts(pinned).layouts, 4)
+
     def test_iter_cells_square_footprint(self):
         # 2x2 with default layouts=1, heights=1: 4 cells, (y, x) row-major.
         b = Building(name="X", type="mon", dims_x=2, dims_y=2)

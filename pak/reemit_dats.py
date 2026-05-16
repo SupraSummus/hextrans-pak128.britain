@@ -20,25 +20,40 @@ from __future__ import annotations
 from pathlib import Path
 
 from pak import REPO_ROOT
+from pak.bake import _resolve_building_layouts
 from pak.bake_units import discover, import_script, specs_of
 from pak.dat import (
     Building, Vehicle, Way, emit_building, emit_vehicles, emit_way,
 )
 
 
-def _reemit(script: Path) -> Path:
-    specs = specs_of(import_script(script))
-    out_dir, basename = script.parent, script.stem
+def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
+    """Run the matching emitter for a normalised spec list, returning
+    the written dat path.  Building specs route through
+    `_resolve_building_layouts` so the dat's `dims=X,Y,Z` matches what
+    `bake_building` would render -- the hex bake's atlas-size policy
+    is one resolver, applied at every emit site (reemit lint, ported-
+    dat test, future cross-pak tooling).  Raises on a mixed or
+    unsupported spec list."""
     if specs and all(isinstance(s, Vehicle) for s in specs):
         return emit_vehicles(specs, out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Way):
         return emit_way(specs[0], out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Building):
-        return emit_building(specs[0], out_dir=out_dir, basename=basename)
-    rel = script.relative_to(REPO_ROOT)
+        spec = _resolve_building_layouts(specs[0])
+        return emit_building(spec, out_dir=out_dir, basename=basename)
     raise RuntimeError(
-        f"{rel} has no usable `SPEC` / `SPECS` for reemit"
+        f"unsupported spec list (got {[type(s).__name__ for s in specs]})"
     )
+
+
+def _reemit(script: Path) -> Path:
+    specs = specs_of(import_script(script))
+    try:
+        return emit_for_specs(specs, script.parent, script.stem)
+    except RuntimeError as exc:
+        rel = script.relative_to(REPO_ROOT)
+        raise RuntimeError(f"{rel}: {exc}") from exc
 
 
 def main() -> None:

@@ -157,9 +157,41 @@ disambiguate the engine's layout-to-rotation convention from this
 asset.  Concrete next move: pick an asymmetric upstream building
 (distinctive chimney, off-centre door — e.g. a townhall or stop)
 with a matching blend, port it, and re-run the diff; the
-permutation either lands on identity (current `+90·l` CCW is
-right) or on an off-diagonal that survives the symmetry test
-(then flip to `-90·l` in `building_hex_viewpoint`).
+permutation either lands on identity (current `+(360°/layouts)·l`
+CCW is right) or on an off-diagonal that survives the symmetry
+test (then flip the sign in `building_hex_viewpoint`).
+
+**Hex z coefficient: engine spec or pak compensation?**  Upstream
+Britain blends are authored against pak128 square dimetric, where
+z lifts on screen by `sin(60°)` per blend unit.  Our hex shear
+(`pak.hex_synth.hex_proj_shear`) uses `√2` — by spec in
+`display/hex_proj.h`'s `PIXELS_PER_UNIT = W/√2` — so an
+uncompensated hex render is 1.63× too tall in z.
+`building_hex_viewpoint` pre-scales the blend's z by
+`HEX_BUILDING_Z_FIT_SCALE = sin(60°)/√2 ≈ 0.612` to match
+dimetric proportions on screen, but vehicles and ways don't (and
+visually inherit the same 1.63× over-emphasis vs upstream's
+silhouette; nobody's compared yet because the calibration loop
+diffs square-vs-square, not hex-vs-upstream).  Concrete next move:
+change `PIXELS_PER_UNIT` to `W · sin(60°)` in both the engine
+(`display/hex_proj.h`) and the pak (`pak/hex_synth.py`),
+re-bake every asset, verify hex tiles still render as the right
+on-screen hexagon and elevation steps land on `(W · sin(60°)/W)
+* HEIGHT_STEP = sin(60°) * 8 ≈ 6.93 px` per step (vs today's
+`√2 * 8 ≈ 11.3 px`).  If that lands cleanly, drop
+`HEX_BUILDING_Z_FIT_SCALE` and the `Viewpoint.fit_z_scale` path.
+
+**Building hex layout count is arbitrary at 8.**
+`res_1600_kg_01` ships with `layouts=8` to match
+`HEX_VIEWPOINT`'s 8-facing vehicle convention, but the hex world
+has 6-fold rotational symmetry, so `layouts=6` (60° steps) maps
+more naturally to actual map rotations.  The engine's painting
+rule for `world_rot % layouts` mapping under hex is unverified
+here.  Concrete next move: read `obj/gebaeude.cc` (or the hex
+equivalent) for the world-rotation-to-layout lookup, then pick
+the number that drops the most off-axis rotations on a multi-
+asset visual sweep.  If `6` wins, also adjust the docstring in
+`building_hex_viewpoint` (currently mentions both `=8` and `=6`).
 
 **Building square-projection diff: multi-tile + heights coverage.**
 `building_square_viewpoint` errors on `dims_x*dims_y > 1` or
