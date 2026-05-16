@@ -39,25 +39,42 @@ from typing import Optional
 
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+# Put the repo root on sys.path so `pak.<module>` imports resolve.
+# `hex_synth` uses `from .way import …`, so we need the package form,
+# not a flat sys.path on the `pak/` dir.  Mirrors `pak/bake_way.py`.
+sys.path.insert(0, str(HERE.parent))
 
 
 @dataclass
 class Facing:
-    """One sprite direction within a Viewpoint."""
+    """One sprite direction within a Viewpoint.
+
+    `model_translation` shifts the rotated mesh in world XY before the
+    extrinsic shear — used by multi-tile building bakes to bring one
+    footprint cell to world origin per facing so the standard hex
+    camera renders that single cell's content."""
     label: str
     camera_location: tuple[float, float, float]
     camera_rotation_euler: tuple[float, float, float]  # radians
     sun_rotation_euler: tuple[float, float, float]  # radians
     model_rot_z_deg: float = 0.0  # rotation applied to the mesh after fit
+    model_translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
 
 @dataclass
 class Viewpoint:
-    """Self-contained recipe for rendering one asset N ways."""
+    """Self-contained recipe for rendering one asset N ways.
+
+    `ortho_scale=None` means "use the blend's authored ortho_scale" —
+    used by `square_building` to match upstream's rendering exactly
+    (which honours each blend's own camera, e.g. 12 for buildings vs
+    24 for vehicles).  A float pins the camera to that value
+    regardless of what the blend declared (used by SQUARE_VIEWPOINT at
+    24 and HEX_VIEWPOINT at 2R, both of which want a fixed pak-side
+    scale)."""
     name: str
     image_width: int
-    ortho_scale: float
+    ortho_scale: Optional[float]
     sun_energy: float
     # "hex": centre + z_floor + INTRA_TILE_PER_BLEND_UNIT scale.
     # "none": identity (used by SQUARE_VIEWPOINT — operates in blend
@@ -67,21 +84,47 @@ class Viewpoint:
     facings: list[Facing]
 
 
-def _strip_scene(bpy) -> None:
+def _strip_scene(bpy) -> Optional[float]:
     """Remove any pre-existing cameras, lights, and the upstream
-    `Sphere` sun visualisation.  The blend is treated as model data;
-    every render-time prop is created fresh from the Viewpoint."""
+    `Sphere` sun visualisation, and return the first camera's
+    `ortho_scale` (or `None` if no camera).  The blend is treated as
+    model data; every render-time prop is created fresh from the
+    Viewpoint, but the blend's authored ortho_scale is the artist's
+    declaration of "this is how my model fits in one tile" — vehicle
+    blends ship with 24 (the pak128.Britain contributing-graphics
+    convention), buildings often with 12 (twice the per-cell zoom).
+    `_compute_fit` consumes this to compute the per-asset
+    `INTRA_TILE_PER_BLEND_UNIT = 2 * HEX_TILE_RADIUS / blend_ortho`
+    so each blend renders at the scale its author intended."""
+    blend_ortho: Optional[float] = None
     for obj in list(bpy.context.scene.objects):
-        if obj.type in ("CAMERA", "LIGHT") or obj.name == "Sphere":
+        if obj.type == "CAMERA":
+            if blend_ortho is None and obj.data.type == "ORTHO":
+                blend_ortho = float(obj.data.ortho_scale)
             bpy.data.objects.remove(obj, do_unlink=True)
+        elif obj.type == "LIGHT" or obj.name == "Sphere":
+            bpy.data.objects.remove(obj, do_unlink=True)
+    return blend_ortho
 
 
-def _install_camera_and_sun(bpy, viewpoint: Viewpoint):
+def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
+                            blend_ortho: Optional[float] = None):
     """Create one camera and one SUN light, configured per the Viewpoint.
-    Per-facing pose changes (location, rotation) happen in the render loop."""
+    Per-facing pose changes (location, rotation) happen in the render loop.
+
+    Camera ortho_scale comes from the Viewpoint when set, else falls
+    back to `blend_ortho` (the value `_strip_scene` read from the blend's
+    own camera).  `square_building` passes `ortho_scale=None` so the
+    diff renders at the blend's authored scale -- matching upstream's
+    own per-blend camera -- rather than the pakset-wide 24."""
+    ortho = viewpoint.ortho_scale if viewpoint.ortho_scale is not None else blend_ortho
+    if ortho is None:
+        raise SystemExit(
+            "Viewpoint declared ortho_scale=None and blend has no ortho camera"
+        )
     cam_data = bpy.data.cameras.new("_render_camera")
     cam_data.type = "ORTHO"
-    cam_data.ortho_scale = viewpoint.ortho_scale
+    cam_data.ortho_scale = ortho
     cam = bpy.data.objects.new("_render_camera", cam_data)
     bpy.context.scene.collection.objects.link(cam)
     bpy.context.scene.camera = cam
@@ -187,19 +230,27 @@ def _bake_world_into_meshes(bpy, mathutils):
     return records
 
 
-def _compute_fit(mathutils, records, fit_kind: str):
+def _compute_fit(mathutils, records, fit_kind: str,
+                 blend_ortho: Optional[float] = None):
     """Build the world->fitted-frame 4x4 the per-facing transform composes
     over.  `fit_kind="none"` is identity (model renders at its native
     blend-coord scale).  `fit_kind="hex"` centres the XY bounding box
     on origin, drops the lowest visible vertex to z=0, and scales by
-    `INTRA_TILE_PER_BLEND_UNIT` to convert from blend coords into the
-    pakset's intra-tile coord system (see `pak.hex_synth` → "Coord
-    systems")."""
+    `2 * HEX_TILE_RADIUS / blend_ortho` to convert from blend coords into
+    the pakset's intra-tile coord system.  `blend_ortho` is the blend's
+    authored ortho_scale read by `_strip_scene` — falls back to the
+    pakset-default `UPSTREAM_ORTHO_SCALE` (24, vehicle-blend convention)
+    when the blend has no camera.  Buildings tend to ship at
+    ortho_scale=12 (twice the per-cell zoom) and honouring that per-
+    asset is what makes them render at upstream's per-pixel scale
+    instead of half-size."""
     M = mathutils.Matrix
     if fit_kind == "none":
         return M.Identity(4)
     if fit_kind == "hex":
-        from hex_synth import INTRA_TILE_PER_BLEND_UNIT  # noqa: E402
+        from pak.hex_synth import HEX_TILE_RADIUS, UPSTREAM_ORTHO_SCALE  # noqa: E402
+        ortho = blend_ortho if blend_ortho is not None else UPSTREAM_ORTHO_SCALE
+        scale = 2.0 * HEX_TILE_RADIUS / ortho
         xs = []; ys = []; zs = []
         for _, orig in records:
             for c in orig:
@@ -209,8 +260,7 @@ def _compute_fit(mathutils, records, fit_kind: str):
         cx = (min(xs) + max(xs)) / 2.0
         cy = (min(ys) + max(ys)) / 2.0
         z_floor = min(zs)
-        return (M.Scale(INTRA_TILE_PER_BLEND_UNIT, 4)
-                @ M.Translation((-cx, -cy, -z_floor)))
+        return M.Scale(scale, 4) @ M.Translation((-cx, -cy, -z_floor))
     raise SystemExit(f"unknown fit_kind: {fit_kind!r}")
 
 
@@ -281,10 +331,10 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     calibration diff against the upstream pak."""
     import numpy as np
 
-    _strip_scene(bpy)
-    cam, sun = _install_camera_and_sun(bpy, viewpoint)
+    blend_ortho = _strip_scene(bpy)
+    cam, sun = _install_camera_and_sun(bpy, viewpoint, blend_ortho)
     records = _bake_world_into_meshes(bpy, mathutils)
-    fit = _compute_fit(mathutils, records, viewpoint.fit_kind)
+    fit = _compute_fit(mathutils, records, viewpoint.fit_kind, blend_ortho)
     extrinsic = (mathutils.Matrix(viewpoint.extrinsic) if viewpoint.extrinsic
                  else mathutils.Matrix.Identity(4))
 
@@ -301,6 +351,7 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
             cam.rotation_euler = facing.camera_rotation_euler
             sun.rotation_euler = facing.sun_rotation_euler
             M_target = (extrinsic
+                        @ mathutils.Matrix.Translation(facing.model_translation)
                         @ mathutils.Matrix.Rotation(radians(facing.model_rot_z_deg), 4, "Z")
                         @ fit)
             _apply_facing(records, M_target)
@@ -329,20 +380,45 @@ def _parse_args(argv):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", required=True)
     ap.add_argument("--name", required=True)
-    ap.add_argument("--viewpoint", required=True, choices=["hex", "square"])
+    ap.add_argument("--viewpoint", required=True,
+                    choices=["hex", "square", "hex_building", "square_building"])
     ap.add_argument("--keep-per-facing", action="store_true",
                     help="write per-facing PNGs alongside the atlas (used by diff)")
     ap.add_argument("--cols-per-row", type=int, default=None)
+    ap.add_argument("--building-footprint", default=None,
+                    help="X,Y,L,H — footprint (dims_x, dims_y, layouts, "
+                         "heights) for viewpoint=hex_building or "
+                         "square_building; required for those modes")
     return ap.parse_args(argv)
 
 
 def main(argv):
     import bpy
     import mathutils
-    from viewpoints import HEX_VIEWPOINT, SQUARE_VIEWPOINT
+    from pak.viewpoints import (
+        HEX_VIEWPOINT, SQUARE_VIEWPOINT,
+        building_hex_viewpoint, building_square_viewpoint,
+    )
 
     args = _parse_args(argv)
-    vp = HEX_VIEWPOINT if args.viewpoint == "hex" else SQUARE_VIEWPOINT
+    if args.viewpoint == "hex":
+        vp = HEX_VIEWPOINT
+    elif args.viewpoint == "square":
+        vp = SQUARE_VIEWPOINT
+    elif args.viewpoint in ("hex_building", "square_building"):
+        if not args.building_footprint:
+            raise SystemExit(
+                f"--viewpoint {args.viewpoint} requires --building-footprint X,Y,L,H"
+            )
+        parts = [int(s) for s in args.building_footprint.split(",")]
+        if len(parts) == 3:
+            parts.append(1)  # heights=1 default for back-compat
+        dx, dy, l, h = parts
+        factory = (building_hex_viewpoint if args.viewpoint == "hex_building"
+                   else building_square_viewpoint)
+        vp = factory(layouts=l, dims_x=dx, dims_y=dy, heights=h)
+    else:
+        raise SystemExit(f"unknown viewpoint: {args.viewpoint!r}")
     render_atlas(bpy, mathutils, vp, args.out, args.name,
                  cols_per_row=args.cols_per_row,
                  keep_per_facing=args.keep_per_facing)

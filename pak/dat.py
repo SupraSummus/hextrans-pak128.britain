@@ -23,6 +23,19 @@ tool if one's ever wanted.  Some Vehicle fields use a custom
 dat-key (e.g. `payload_by_class` -> `payload[N]`); those carry
 `metadata["dat_key"]` to override the default
 field-name-is-dat-key convention.
+
+`Building` is the obj=building counterpart — covers attractions,
+monuments, city buildings (res/com/ind), townhalls, HQs, and the
+stop/extension overlay objects.  Footprint is `(dims_x, dims_y)`
+tiles with `layouts` rotation variants (default per engine rule:
+1 if square, 2 if rectangular).  Image refs follow the engine's
+`backimage[layout][y][x][height][phase][season]` six-bracket
+shape parsed in `descriptor/writer/building_writer.cc`; each
+layout's per-tile cells land on one atlas row, with
+`size.x*size.y` cells per row (y/x bounds swap on odd layouts
+per the engine's `h = (l&1) ? size.x : size.y` rule).  Factories
+(`Obj=factory`, with input/output goods + productivity) carry a
+fatter schema and are not modelled by `Building` yet.
 """
 
 from __future__ import annotations
@@ -221,6 +234,155 @@ class Way:
 _WAY_FIELDS_SCALAR: tuple[str, ...] = tuple(f.name for f in fields(Way))
 
 
+@dataclass
+class Building:
+    """A `obj=building` definition.  Fields cover the hex-engine schema
+    (`descriptor/writer/building_writer.cc`) plus the Simutrans-Extended
+    demand / employment / class-proportion keys upstream Britain dats
+    carry.  Image refs are derived from the baked atlas at emit time;
+    SPECs hold gameplay data only.
+
+    Footprint is `(dims_x, dims_y)` tiles with `layouts` rotation
+    variants.  `layouts=None` (the default) means "let the engine pick" —
+    1 for a square footprint, 2 for rectangular — and `emit_building`
+    fills the implied value in `dims=X,Y,Z` so a round-tripped dat
+    carries the same shape regardless of how the source dat wrote it.
+
+    Order of fields = canonical emit order.  Unset scalars (`None`) and
+    empty lists are skipped on emit.  Factory-only keys (InputGood,
+    OutputGood, Productivity, …) are not modelled here; a future
+    `Factory` dataclass covers `Obj=factory`.
+    """
+    # Required
+    name: str
+    type: str  # res/com/ind/cur/mon/tow/hq/dock/harbour/fac/stop/extension/...
+
+    # Identity / metadata
+    copyright: str | None = None
+
+    # Footprint — emitted together as `dims=X,Y,Z`.
+    dims_x: int = 1
+    dims_y: int = 1
+    layouts: int | None = None  # None → engine default per layouts_default()
+
+    # Vertical stack — number of `backimage[…][height][…]` levels the
+    # engine paints, each shifted up by `raster_width` px (one full
+    # cell).  Single-cell buildings keep `heights=1`; a 2-storey
+    # detached house typically needs 2 since its model is too tall to
+    # fit one hex cell at the pakset calibration.  See CLAUDE.md ->
+    # "Building-bake architecture" for the world-z per height-level.
+    heights: int = 1
+
+    # Type-specific
+    level: int | None = None
+    chance: int | None = None
+
+    # Lifecycle
+    intro_year: int | None = None
+    intro_month: int | None = None
+    retire_year: int | None = None
+    retire_month: int | None = None
+
+    # Siting / placement
+    needs_ground: int | None = None
+    noinfo: int | None = None
+    noconstruction: int | None = None
+    allow_underground: int | None = None
+    climates: str | None = None
+    regions: str | None = None
+
+    # Build (mon/tow/cur)
+    build_time: int | None = None
+
+    # Demand / employment (Simutrans-Extended)
+    population_and_visitor_demand_capacity: int | None = None
+    employment_capacity: int | None = None
+    mail_demand: int | None = None
+    passengers: int | None = None  # cur/mon/tow/hq alias for level
+
+    # HQ
+    hq_level: int | None = None
+
+    # Stops / extensions
+    waytype: str | None = None
+    capacity: int | None = None
+    maintenance: int | None = None
+    cost: int | None = None
+
+    # Animation
+    animation_time: int | None = None
+
+    # Effects
+    smoke: str | None = None
+
+    # Indexed lists
+    class_proportion: list[int] = field(default_factory=list)
+    class_proportion_jobs: list[int] = field(default_factory=list)
+    upgrade: list[str] = field(default_factory=list)
+
+
+def layouts_default(dims_x: int, dims_y: int) -> int:
+    """Engine default for `layouts` when `dims=` carries only `X,Y`.
+
+    Mirrors `building_writer.cc::write_obj`: `layouts = (size.x == size.y)
+    ? 1 : 2`.  Square footprints have no asymmetric rotation, so the
+    engine keys all four map rotations to the one layout; rectangular
+    footprints need two variants (one per orientation) and the engine
+    keys map rotations pairwise."""
+    return 1 if dims_x == dims_y else 2
+
+
+# `[layout][y][x][height][phase][season]` bracket order — fixed by
+# `building_writer.cc::write_obj` (the hex engine reads only this
+# order).  Phase and season default to 0 for an asset bake without
+# animation and single-season; revisit when a bake script first needs
+# either of those.  Height varies per (l,y,x,h) cell.
+_BUILDING_IMAGE_PHASE = 0
+_BUILDING_IMAGE_SEASON = 0
+
+
+# dims_x / dims_y / layouts emit together as a single `dims=X,Y,Z`
+# line, not as plain `name=value` per field.  `heights` is implicit
+# in the per-(l,y,x,h) backimage refs — the engine reads height
+# levels until the next index returns no key — so it doesn't get a
+# scalar key either.  All four filtered out of the generic emit.
+_BUILDING_FIELDS_SCALAR: tuple[str, ...] = tuple(
+    f.name for f in fields(Building)
+    if f.default_factory is MISSING
+    and f.name not in ("dims_x", "dims_y", "layouts", "heights")
+)
+_BUILDING_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
+    (f.name, f.metadata.get("dat_key", f.name))
+    for f in fields(Building)
+    if f.default_factory is not MISSING
+)
+
+
+def iter_building_cells(b: Building):
+    """Yield `(layout, y, x, height)` quadruples in canonical emit order.
+
+    For each layout in `[0, layouts)`, iterate `(y, x)` matching the
+    engine's loops in `building_writer.cc`: even layouts iterate
+    `y in [0, size.y), x in [0, size.x)`; odd layouts swap to
+    `y in [0, size.x), x in [0, size.y)`.  Then inner-most, iterate
+    `height in [0, heights)` — height stacking, painted by the engine
+    at `ypos -= raster_width` per level (see `obj/gebaeude.cc`).
+    The engine reads height levels by incrementing until the key
+    returns empty, so heights is implicit in the emitted refs (no
+    `heights=N` scalar).  Bake scripts use this to drive per-cell
+    renders; emit_building uses it to wire image refs."""
+    layouts = b.layouts if b.layouts is not None else layouts_default(b.dims_x, b.dims_y)
+    for l in range(layouts):
+        if l & 1:
+            yh, xw = b.dims_x, b.dims_y
+        else:
+            yh, xw = b.dims_y, b.dims_x
+        for y in range(yh):
+            for x in range(xw):
+                for h in range(b.heights):
+                    yield l, y, x, h
+
+
 def parse(path: Path) -> list[list[tuple[str, str]]]:
     """Parse a `.dat` into a list of objects.
 
@@ -299,12 +461,61 @@ def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
     return out_path
 
 
+def emit_building(b: Building, *, out_dir: Path, basename: str) -> Path:
+    """Write `<out_dir>/<basename>.dat` from a Building.
+
+    Emits set scalars, then `dims=X,Y,Z` (with layouts filled in from
+    `layouts_default` when the SPEC left it `None`), then indexed
+    lists, then `backimage[l][y][x][h][0][0]=./<basename>.<row>.<col>`
+    per cell — `row = l*heights + h` (layout-major, height inner),
+    `col = y*w + x` within the layout's engine-determined bounds
+    (see `iter_building_cells`).  The PNG must live at
+    `<out_dir>/<basename>.png` and match that layout exactly — drift
+    surfaces in-engine as the wrong sprite per tile/level.
+
+    FrontImage, animation phase and season variants are not yet
+    emitted; revisit when a bake script needs any of them (occlusion-
+    correct foreground, animated effects, snowed-over winters).
+    Returns the dat path.
+    """
+    lines: list[str] = ["obj=building"]
+    for name in _BUILDING_FIELDS_SCALAR:
+        v = getattr(b, name)
+        if v is not None:
+            lines.append(f"{name}={v}")
+    layouts = b.layouts if b.layouts is not None else layouts_default(b.dims_x, b.dims_y)
+    lines.append(f"dims={b.dims_x},{b.dims_y},{layouts}")
+    for attr, dat_key in _BUILDING_FIELDS_LIST:
+        for i, v in enumerate(getattr(b, attr)):
+            lines.append(f"{dat_key}[{i}]={v}")
+
+    for l, y, x, h in iter_building_cells(b):
+        w = b.dims_y if l & 1 else b.dims_x
+        col = y * w + x
+        row = l * b.heights + h
+        lines.append(
+            f"backimage[{l}][{y}][{x}][{h}]"
+            f"[{_BUILDING_IMAGE_PHASE}]"
+            f"[{_BUILDING_IMAGE_SEASON}]"
+            f"=./{basename}.{row}.{col}"
+        )
+    lines.append("----------")
+
+    out_path = out_dir / f"{basename}.dat"
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
 # Dat-key (lowercased) -> Vehicle list-field name, derived from
 # `metadata["dat_key"]` on list fields.  Handles flat keys like
 # `comfort[N]` and nested-bracket keys like `Constraint[Prev][N]`
 # uniformly — `_harvest_indexed` keys on the prefix string only.
 _INDEXED_HARVEST_TO_FIELD: dict[str, str] = {
     dat_key.lower(): attr for attr, dat_key in _VEHICLE_FIELDS_LIST
+}
+
+_BUILDING_INDEXED_HARVEST_TO_FIELD: dict[str, str] = {
+    dat_key.lower(): attr for attr, dat_key in _BUILDING_FIELDS_LIST
 }
 
 
@@ -344,6 +555,76 @@ def port_vehicle(object_entries: list[tuple[str, str]]) -> Vehicle:
             kwargs["payload"] = max(nums)
 
     return Vehicle(**kwargs)
+
+
+_BUILDING_PORT_DROP: frozenset[str] = frozenset({
+    # Upstream image keys live under `images/<type>/<name>.X.Y` paths
+    # whose PNGs were stripped from history.  The hex bake re-emits
+    # them from its own atlas under `backimage[l][y][x][...]=./<basename>.<r>.<c>`;
+    # carrying the upstream refs would make makeobj error out at build
+    # time (mirrors `Way.icon` / `Way.cursor` handling in `port_way`).
+    "backimage", "frontimage",
+})
+
+
+def port_building(object_entries: list[tuple[str, str]]) -> Building:
+    """Convert one parsed upstream `obj=building` object to a `Building`.
+
+    Seeder for new building bakes — produces a paste-ready
+    `Building(...)` source for a `<dir>/<asset>.py` bake script via
+    `seed_python`.  Harvests every scalar `Building` field upstream
+    sets plus the engine's `dims=X,Y[,Z]` triple (split out to
+    `dims_x`, `dims_y`, `layouts`).  Scans `backimage[…][height][…]`
+    refs to set `heights = max(height) + 1` so a seeded SPEC carries
+    the upstream's vertical-stack count.  Image-ref strings (`backimage[…]
+    `=…`, `frontimage[…]=…`) are dropped — see `_BUILDING_PORT_DROP`.
+
+    Dat keys are matched case-insensitively (`Type=` and `type=` both
+    land on `Building.type`); values are preserved verbatim, which
+    matches the engine's STRICMP lookup on type names.
+    """
+    lookup = {k.lower(): v for k, v in object_entries}
+    if lookup.get("obj", "").lower() != "building":
+        raise ValueError(f"not obj=building: {lookup.get('obj')!r}")
+
+    scalars = set(_BUILDING_FIELDS_SCALAR)
+    kwargs: dict = {}
+    max_height = 0
+    for k, v in object_entries:
+        kl = k.lower()
+        # Image refs: parse out the height index before dropping the
+        # value, so we can set `heights` from the upstream stack depth.
+        prefix = kl.split("[", 1)[0]
+        if prefix in _BUILDING_PORT_DROP:
+            # backimage[L][Y][X][H][P][S] — height is index 3
+            indices = [s.rstrip("]") for s in kl.split("[")[1:]]
+            if len(indices) >= 4:
+                try:
+                    max_height = max(max_height, int(indices[3]))
+                except ValueError:
+                    pass
+            continue
+        if kl == "dims":
+            ints = [int(s.strip()) for s in v.split(",")]
+            if len(ints) >= 1:
+                kwargs["dims_x"] = ints[0]
+            if len(ints) >= 2:
+                kwargs["dims_y"] = ints[1]
+            if len(ints) >= 3:
+                kwargs["layouts"] = ints[2]
+            continue
+        if kl in scalars and not _INDEX_RE.search(k):
+            kwargs[kl] = _coerce(v)
+
+    for base, dest_field in _BUILDING_INDEXED_HARVEST_TO_FIELD.items():
+        values = _harvest_indexed(object_entries, base)
+        if values:
+            kwargs[dest_field] = [_coerce(v) for v in values]
+
+    if max_height > 0:
+        kwargs["heights"] = max_height + 1
+
+    return Building(**kwargs)
 
 
 _WAY_PORT_DROP: frozenset[str] = frozenset({"icon", "cursor"})

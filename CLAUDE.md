@@ -208,15 +208,21 @@ pak128.Britain" sticky on the Simutrans forum (jamespetts' April
 none of the values below should be guessed from a single model's
 bounding box.
 
-**Camera scale.**  Upstream's
-`render_SimutransRender_pak128Britain-65.py` uses a fixed ortho
-camera with `ortho_scale = 24` rendering to 128 × 128 px.  That
-ratio (the hex `fit_kind` in `pak/render.py` builds
-`2R / 24`) is the single pakset-wide scale
-constant — it corresponds to the artist-side 15 m ruler (46 m for
-aircraft, log-scaled for large ships) used to calibrate geometry in
-Blender.  Width and height for land vehicles are authored at 1.25×
-the length scale by convention; bakers do not undo this.
+**Camera scale.**  The contributing-graphics spec says
+`ortho_scale = 24` rendering to 128 × 128 px — the 15 m ruler
+(46 m for aircraft, log-scaled for large ships) the artist
+calibrates Blender's units against.  In practice, each `.blend`
+ships its own Camera object with the artist's chosen
+ortho_scale: vehicle blends sit at 24, but several building
+blends (e.g. `citybuildings/1600-detatched-house-2f.blend`) are
+authored at 12 — half the per-cell zoom, building roughly fills
+the cell instead of overflowing it.  `pak/render.py::_strip_scene`
+reads the camera's ortho_scale before stripping it; `_compute_fit`
+then builds the per-asset scale `2R / blend_ortho_scale` (defaults
+to `2R / UPSTREAM_ORTHO_SCALE = 1/12` when the blend has no
+camera).  Each blend renders at the per-pixel scale its author
+intended.  Width and height for land vehicles are authored at
+1.25× the length scale by convention; bakers do not undo this.
 
 **Long axis along Y.**  All upstream Britain blends with a
 longitudinal axis (carriages, locos, road vehicles, ships, planes)
@@ -623,6 +629,20 @@ would hit recursing over both upstream and ported dats, and
 keeps `trains/` showing exactly two states per asset:
 unported-flat or ported-triple, never both.
 
+**Preserve upstream dat comments.**  Upstream `.dat` files
+carry inline `#` comments that the seeder discards — provenance
+notes (`# Artisan's cottage, perhaps`), derivation chains for
+the surrounding numeric fields (`# 12 per house x 5 = 75, /16
+hours * 6.4 = 30, half when meters/tile → 15`), authorial
+context.  These explain *why* a value is what it is, which the
+SPEC's bare number can't.  Carry them across to the bake script
+as Python comments next to the relevant SPEC field (or above
+SPEC when they describe the asset as a whole), before `git rm`-ing
+the upstream.  Verbatim text is fine; trim only to fit the
+80-col width.  Once the upstream is deleted, git history is the
+only other place the comments survive, so the bake script is
+the durable home.
+
 ### Atlas layout
 
 Each per-asset PNG is a single row of N facing renders, sliced by
@@ -681,10 +701,25 @@ Present:
   count, and intersection-restricted mean abs(RGB-delta)).  Returns
   non-zero if any facing is below 0.90 IoU.
 - `pak/check.py` — convenience driver around
-  `diff_upstream.py`.  Takes a bake-script path (or `--all`),
-  imports it, reads `BLEND` and `UPSTREAM_STEM` from the module,
-  runs the diff, and prints a per-asset worst-IoU + sum-XOR-pixel
-  summary.  See "Calibration validation loop" above.
+  `diff_upstream.py` / `diff_buildings.py`.  Takes a bake-script
+  path (or `--all`), imports it, reads `BLEND` and `UPSTREAM_STEM`
+  from the module, dispatches by `SPEC` type (Vehicle vs Building)
+  to the matching diff harness, prints metrics.  Vehicle SPECs go
+  through the worst-IoU + sum-XOR-pixel summary; Building SPECs
+  produce the N×N permutation matrix described below.
+- `pak/diff_buildings.py` — square-projection diff harness for
+  ported buildings.  Renders the blend through
+  `building_square_viewpoint` (upstream's normal-alignment cardinal
+  cameras, blend's authored ortho_scale) and slices the upstream
+  atlas PNG into per-layout cells.  Reports an N_layouts ×
+  N_layouts IoU matrix `M[our_L][upstream_C]` plus the best-
+  matching permutation -- when ours ≠ identity, our layout
+  rotation convention permutes vs upstream's dat-declared mapping,
+  which is the diagnostic for landmine (a) in "Building-bake
+  architecture" above.  Handles upstream's RGB + magic-pink
+  transparency (vs our renders' proper RGBA) via
+  `_silhouette_mask`.  Single-tile (`dims = 1×1`, heights=1) only;
+  multi-tile per-cell diffs need a square tile lattice -- deferred.
 - `pak/square_synth.py` — `SquareGeom`, a sibling to
   `HexGeom` implementing pak128.Britain's square-dimetric tile
   layout (4 corners, base-3 slope encoding, 128×128 cells with the
@@ -805,6 +840,105 @@ suggest no display needed.
 
 No GPU required; Cycles falls back to CPU.  ~4 s per facing on
 a small carriage.
+
+## Building-bake architecture
+
+Buildings (`Obj=building` — attractions, monuments, city
+buildings, townhalls, HQs, stops, extensions) port via the same
+shape as vehicles: a typed `Building` SPEC in a per-asset bake
+script, a `BLEND` path, and `bake_building_main(SPEC, BLEND,
+__file__)` at the bottom.  The rendering side multiplies out into
+per-cell renders driven by the SPEC's footprint.
+
+**Engine schema** (`descriptor/writer/building_writer.cc`).
+Image keys are six-bracket
+`backimage[layout][y][x][height][phase][season]` (and `frontimage`
+likewise; the engine errors on frontimage with `height > 1`).
+`dims=X,Y,Z` parses as `(size.x, size.y, layouts)` — Z is the
+number of rotation variants, **not** vertical levels.  Engine
+default when Z is omitted: `layouts = (size.x == size.y) ? 1
+: 2`.  For odd layouts the y/x loop bounds swap:
+`h = (l & 1) ? size.x : size.y`.  `pak.dat.layouts_default` and
+`pak.dat.iter_building_cells` mirror this.
+
+**Atlas layout.**  `emit_building` writes one atlas row per
+layout with `dims_x * dims_y` cells per row.  Cell `(l, y, x)`
+lands at `./<basename>.<l>.<col>` where `col = y * w + x` and
+`w = (l & 1) ? dims_y : dims_x` (the layout's *width* under the
+engine's swap rule).  The `iter_building_cells` order is
+canonical for both the dat-side emit and the renderer-side
+facing list — keep them in sync or the wrong sprite paints per
+tile.
+
+**Per-cell rendering.**  `viewpoints.building_hex_viewpoint
+(layouts, dims_x, dims_y)` returns a Viewpoint with one Facing
+per cell.  The Facing's `model_rot_z_deg = 90° * l` rotates the
+model into the layout's orientation; its `model_translation` is
+`-hex_tile_world_offset(qx=x, ry=y)`, the negative of the cell's
+world centre computed from the hex tile lattice
+(`HEX_KOORD_Q_WORLD` heads SE, `HEX_KOORD_R_WORLD` heads S;
+pinned to `display/hex_proj.h::hex_screen_dx/dy` at
+`ortho_scale = 2R`, `W = 128`).  The standard hex camera looking
++Y at world origin then renders just that cell's content per
+pass.  No image-space slicing — each cell is its own 128 × 128
+Cycles render, the way vehicles already work.
+
+Three landmines the first real building port surfaces:
+
+* **Layout rotation sign.**  `building_hex_viewpoint` uses
+  `90° * l` CCW.  The square-projection diff against
+  `res_1600_kg_01` lands at mean IoU 0.94 with no clear winner
+  between identity and off-diagonal permutation (matrix
+  dominated by the building's near-mirror symmetry).  Triggers
+  on the first asymmetric building port; see TODO.md → "Building-
+  bake layout rotation sign needs asymmetric asset" for the
+  concrete probe.
+* **Multi-tile centring.**  `fit_kind="hex"` centres on the
+  model's XY bounding box, which is right for single-tile
+  assets.  For a multi-tile blend whose authored frame puts tile
+  (0,0) at world origin (or the footprint centre at origin, or
+  somewhere else entirely — unknown upstream convention), the
+  per-cell translations may need to compose with a per-asset
+  offset.  Surfaces as "every cell renders the same part of the
+  model".  Fix: a `fit_kind="hex_building"` variant in
+  `render.py::_compute_fit` that anchors on a known footprint
+  reference instead.
+* **Alignment mode.**  `HEX_VIEWPOINT`'s camera is the
+  "vehicles"-alignment Britain blends are authored against;
+  upstream's "normal alignment" (`op_list "1"` for stops/
+  buildings/road vehicles, `"0"` for 4-view buildings) sits at
+  a different camera Z/Y.  The single fixed hex camera the bake
+  uses doesn't distinguish; the practical effect is the
+  building's ground line lands a few px off.  Diagnose via the
+  square-projection diff harness (`pak/diff_buildings.py`), which
+  uses the upstream-correct normal-alignment cameras and so its
+  residual IoU gap (currently ~6 % for `res_1600_kg_01`) lower-
+  bounds the hex render's alignment-mode error.
+
+A fourth landmine the calibration diff exposed:
+
+* **Per-blend ortho_scale must reach the diff camera.**  Vehicles
+  are all authored at ortho_scale=24 (the contributing-graphics
+  convention) so `SQUARE_VIEWPOINT`'s hardcoded 24 happens to
+  match.  Buildings author at 12 (twice the per-cell zoom).  With
+  a hardcoded camera ortho_scale, the diff renders the building
+  at half-size in the cell (IoU drops to 0.26).
+  `Viewpoint.ortho_scale=None` means "use the blend's authored
+  value"; `_install_camera_and_sun` falls back to `blend_ortho`
+  (returned by `_strip_scene`).  `building_square_viewpoint` uses
+  this so the diff renders at the upstream blend's per-pixel
+  scale.  `building_hex_viewpoint` and the hex production bake
+  intentionally don't -- they target the pak's intra-tile coord
+  system, with `_compute_fit("hex")` doing the
+  `INTRA_TILE_PER_BLEND_UNIT = 2R / blend_ortho` scale conversion.
+
+The dat side (Building dataclass, `emit_building`, `port_building`,
+`bake_building`) is in tree and tested round-trip against
+upstream `attractions/nelson-column.dat` (2×2×1, `type=mon` —
+the canonical first-port candidate).  The render side compiles
+but is unverified end-to-end; the first port (an actual
+`attractions/<name>.py` script with SPEC + BLEND + a real Cycles
+bake) is the trigger to pin the landmines above.
 
 ## Way-bake architecture
 

@@ -25,7 +25,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from pak import REPO_ROOT, diff_upstream
+from pak import REPO_ROOT, diff_buildings, diff_upstream
+from pak.dat import Building
 
 
 _SKIP_DIRS = {"pak", "tests", "out", ".cache", ".git"}
@@ -54,24 +55,37 @@ def _discover() -> list[Path]:
     return out
 
 
-def _run_one(script: Path, views: int) -> tuple[float, int] | None:
+def _run_one(script: Path, views: int) -> tuple[float, int | None, float] | None:
+    """Returns `(worst_iou, xor_px_or_None, fail_floor)` -- `xor_px`
+    is None for buildings since the harness doesn't compute it yet."""
     mod = _load(script)
     blend = getattr(mod, "BLEND", None)
     stem = getattr(mod, "UPSTREAM_STEM", None)
+    spec = getattr(mod, "SPEC", None)
     if blend is None or stem is None:
         missing = "BLEND" if blend is None else "UPSTREAM_STEM"
         print(f"{script.name}: no {missing}, skipping (add one to enable diff)")
         return None
 
     out_dir = REPO_ROOT / "out" / "diff" / script.stem
-    metrics = diff_upstream.run(blend, stem, views=views, out_dir=out_dir)
+    if isinstance(spec, Building):
+        layouts = spec.layouts or 1
+        mat, perm = diff_buildings.run(
+            blend, stem, layouts=layouts, out_dir=out_dir,
+        )
+        worst, best, diag = diff_buildings.summarise(mat, perm)
+        print(diff_buildings.format_matrix(mat, perm))
+        print(f"mean IoU identity: {diag:.3f}  best perm: {best:.3f}  "
+              f"worst-of-best: {worst:.3f}  perm={perm}")
+        return worst, None, diff_buildings.FAIL_IOU
 
+    metrics = diff_upstream.run(blend, stem, views=views, out_dir=out_dir)
     print(f"wrote {out_dir / 'grid.png'}")
     print(diff_upstream.format_table(metrics))
     worst = min(m.iou for m in metrics)
     xor_tot = sum(m.xor_px for m in metrics)
     print(f"worst IoU: {worst:.3f}  sum XOR: {xor_tot} px")
-    return worst, xor_tot
+    return worst, xor_tot, diff_upstream.FAIL_IOU
 
 
 def main(argv: list[str]) -> int:
@@ -84,16 +98,16 @@ def main(argv: list[str]) -> int:
 
     scripts = _discover() if args.all else [Path(args.script).resolve()]
 
-    summary: list[tuple[str, float, int]] = []
+    summary: list[tuple[str, float, int | None]] = []
     rc = 0
     for s in scripts:
         print(f"=== {s.relative_to(REPO_ROOT)} ===")
         result = _run_one(s, args.views)
         if result is None:
             continue
-        worst, xor_tot = result
+        worst, xor_tot, fail_floor = result
         summary.append((s.stem, worst, xor_tot))
-        if worst < diff_upstream.FAIL_IOU:
+        if worst < fail_floor:
             rc = 1
         print()
 
@@ -101,7 +115,8 @@ def main(argv: list[str]) -> int:
         print("=== summary ===")
         print(f"{'asset':<28}  {'worst IoU':>9}  {'sum XOR_px':>10}")
         for name, worst, xor_tot in summary:
-            print(f"{name:<28}  {worst:>9.3f}  {xor_tot:>10d}")
+            xor_cell = f"{xor_tot:>10d}" if xor_tot is not None else f"{'—':>10}"
+            print(f"{name:<28}  {worst:>9.3f}  {xor_cell}")
 
     return rc
 

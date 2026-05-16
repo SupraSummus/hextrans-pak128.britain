@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - run: pip install numpy
+      - run: pip install numpy Pillow
       - run: python3 -m unittest discover -s tests -v
 
   rebake:
