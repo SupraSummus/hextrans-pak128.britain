@@ -955,7 +955,8 @@ heads S; pinned to `display/hex_proj.h::hex_screen_dx/dy` at
 `ortho_scale = 2R`, `W = 128`).  The standard hex camera looking
 +Y at world origin then renders just that cell's content per
 pass.  No image-space slicing — each cell is its own 128 × 128
-Cycles render, the way vehicles already work.
+EEVEE render (vs vehicles' Cycles; see "Lighting calibration"
+below).
 
 **Z coefficient.**  `hex_proj_shear`'s z-row coefficient is
 `2·sin(60°) = √3` (and `PIXELS_PER_UNIT = W·sin(60°)`), pinned to
@@ -1023,6 +1024,51 @@ res_1600_kg_01.py` (1×1×8, `type=res`); the four landmines above
 are exercised on a single-tile near-symmetric residential, so
 multi-tile centring and layout-rotation-sign disambiguation still
 wait on a multi-tile asymmetric port.
+
+**Lighting calibration.**  Buildings render through `BLENDER_EEVEE`
+(not Cycles): Britain blends ship pre-2.80-style `use_nodes=False`
+materials whose authoring assumed Blender Internal's flat-Lambert
++ ambient model, which Cycles' physical BSDF reproduces poorly
+(washed-out, hue-shifted, sun_energy 0.028 lands as near-zero).
+EEVEE respects `diffuse_color` + the SUN lamp's direction in a way
+that approximates the original BI look once the ambient and sun
+strength are calibrated against an upstream PNG.  Vehicles & ways
+stay on Cycles because the upstream calibration target for those
+classes was rendered in Cycles.
+
+`pak.viewpoints.sun_rotation_for_camera(cam_z, elev=30°, az=-90°)`
+is the single source of truth for the building sun direction —
+used by both the `building_square_viewpoint` (apples-to-apples
+diff against upstream's per-cardinal cells, cam_z varies per
+facing) and `building_hex_viewpoint` (shipped atlas, cam_z=0).
+Defaults plus `_BUILDING_SUN_ENERGY = 2.0` and `pak.render`'s
+EEVEE world ambient `0.30` give `res_1600_kg_01` mean |dRGB| 26.6
+vs upstream — calibrated by grid+line search over (elev, az_offset,
+sun_energy, ambient).  All four knobs are single-asset-calibrated;
+see TODO → "Building lighting is calibrated to one asset" for the
+trigger to revisit.
+
+**Texture rebinding.**  Blender 2.80 dropped BI's `material.
+texture_slots[i]` data, but `bpy.data.textures` and
+`bpy.data.images` survive.  `pak.render._bind_textures_via_nodes`
+reconstructs the binding by name-matching material to texture
+(case-insensitive prefix), with an `explicit_map` for cases the
+prefix misses (`Pavement` material → `Pavings` texture; `Roof` /
+`RoofSide` → `Brick` because upstream JP's authoring used the
+same flemish-bond brick for walls and roof tiles).  Each match
+gets a Principled BSDF whose Base Color is the texture sampled
+at `Generated` coordinates (BI's default projection) scaled by
+`_TEX_TILE[mat_name]` (calibrated by eye against upstream's brick
+frequency, since BI's per-slot scale is lost).  Materials in
+`procedural_noise_mats = {"hedge"}` get a `Noise → ColorRamp`
+node graph instead, substituting BI's lost CLOUDS texture.
+External texture filepaths (`//../../../textures/...`) are
+remapped via `_reload_external_textures` to the blends-repo cache
+before binding.  All three tables are calibrated to
+`res_1600_kg_01`'s material names — the second building port will
+need either parallel extensions or migration into a per-asset
+SPEC field (see TODO → "Per-asset material binding for buildings
+is hand-coded for one blend").
 
 ## Way-bake architecture
 

@@ -58,9 +58,16 @@ def _silhouette_mask(rgba):
     Both arrive after `.convert('RGBA')` (so the shape is always (h, w,
     4)), but PIL fills alpha=255 across the board when converting from
     RGB -- so for upstream the magic-pink check is what actually
-    discriminates silhouette from background."""
+    discriminates silhouette from background.
+
+    Alpha threshold is `> 0` (not the previous `> 16`) so EEVEE-rendered
+    edges with soft anti-aliasing don't get dropped while upstream's
+    matching AA pixels (non-magic-pink RGB) stay in.  The previous
+    cutoff lost ~6% of our silhouette to its own edge AA and dragged
+    measured IoU from 0.94 down to 0.92 even though bboxes match
+    upstream within ±1 px."""
     import numpy as np
-    a = rgba[..., 3] > 16
+    a = rgba[..., 3] > 0
     r, g, b = rgba[..., 0], rgba[..., 1], rgba[..., 2]
     pink = ((r == _TRANSPARENT_RGB[0])
             & (g == _TRANSPARENT_RGB[1])

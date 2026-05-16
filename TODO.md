@@ -128,6 +128,47 @@ port the material-swap code from the upstream `-65` script into
 a `--mask` mode on render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
+**Per-asset material binding for buildings is hand-coded for one
+blend.**  `pak.render._bind_textures_via_nodes` reconstructs BI's
+lost material→texture binding by name match (Brick→Brick) plus
+a small `explicit_map` (Pavement→Pavings, Roof/RoofSide→Brick) and
+`procedural_noise_mats = {"hedge"}` for materials BI bound to CLOUDS
+procedurals.  `_TEX_TILE` is a parallel name-keyed table picking
+how many cycles per object bbox each texture tiles at.  All three
+are calibrated to `res_1600_kg_01`'s material names; the second
+building port will silently render flat for any material that
+doesn't match those exact strings.  Concrete next move when a
+second building ports: extend the three tables in lockstep, OR
+(better) move the per-asset binding into `Building` SPEC as a
+`materials={"Brick": {...}}` dict declared in each bake script
+mirroring the way ways already declare `MATERIALS = {...}`.
+
+**Building lighting is calibrated to one asset.**  All the EEVEE
+knobs (sun_energy=2.0, ambient=0.30, elev=30°, az_offset=-90°)
+came out of grid+line search against `res_1600_kg_01` only,
+landing at mean |dRGB| 26.6 (started at 55.7).  The second
+building port may want different settings, especially for
+warehouses / industrial buildings (different material palette,
+larger flat walls).  Concrete next move when the second
+building lands at noticeably-higher dRGB: re-run
+`pak/diff_buildings.py` for it, and either find shared values
+that work for both or move the knobs into `Building` SPEC.
+
+**Pixel-perfect building match needs UVs (or new materials).**
+The 26.6 dRGB floor on `res_1600_kg_01` is set by BI's lost
+per-slot texture scale/offset/projection-mode + lost UVs.  Three
+ways to close it if it becomes a goal: (1) re-author every
+Britain blend with proper UVs + node-based image textures
+(~500 blends, content work); (2) sidecar Blender 2.79b with BI
+in the bake sandbox (breaks cross-renderer determinism); (3)
+ship new hex-native materials authored from scratch (artistic
+divergence from upstream).  Today's `_bind_textures_via_nodes`
+gets the per-region mean right via `Generated` coords +
+material-name binding + per-material tile-count, and per-asset
+material color via `MixRGB(MULTIPLY, diffuse_color)` — the
+remaining gap is spatial frequency on each wall.  No concrete
+next move unless one of the three is chosen.
+
 **Multi-tile vehicle overflow.**  `HEX_VIEWPOINT`'s `fit_kind="hex"`
 applies a single pakset-wide scale (`2R / upstream_ortho_scale = 2R/24`)
 under the calibration contract documented in CLAUDE.md, so a long loco

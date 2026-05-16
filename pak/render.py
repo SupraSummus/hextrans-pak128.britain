@@ -82,6 +82,167 @@ class Viewpoint:
     fit_kind: str
     extrinsic: Optional[tuple]  # 4x4 row-major tuple, or None for identity
     facings: list[Facing]
+    # Vehicles & ways: "CYCLES" (matches upstream's calibration target).
+    # Buildings: "BLENDER_EEVEE" (BI texture data is partially recoverable;
+    # see CLAUDE.md → "Building-bake architecture").  "BLENDER_WORKBENCH"
+    # available for flat-shading paths.
+    engine: str = "CYCLES"
+
+
+# Per-material texture-tile frequency on Generated coords.  Default 8.0
+# (8 cycles per object-bbox axis) reads as small bricks on a typical
+# wall.  Pavement is a single ground plane that wants finer aggregate
+# detail (more cycles); roof tiles read smaller than wall bricks.
+_TEX_TILE: dict[str, float] = {
+    "brick": 8.0,
+    "roof": 12.0,
+    "roofside": 12.0,
+    "pavement": 6.0,
+}
+
+
+def _reload_external_textures(bpy) -> None:
+    """Britain blends reference textures via relative filepaths like
+    `//../../../textures/flemish-bond-improved.png` that don't resolve
+    from the blend's location in `.cache/blends/<sha>/`.  For every
+    image data block whose file failed to load (size 0), look up its
+    basename in the blends repo's `textures/` directory via fetch_blend
+    and rewrite the filepath.  No-op for images that loaded fine."""
+    from pak.fetch_blend import fetch as fetch_blend
+    for img in bpy.data.images:
+        if img.size[0] != 0:
+            continue
+        base = img.filepath.rsplit("/", 1)[-1] if img.filepath else img.name
+        if not base:
+            continue
+        try:
+            local = fetch_blend(f"textures/{base}")
+        except SystemExit:
+            continue
+        img.filepath = str(local)
+        try:
+            img.reload()
+        except RuntimeError:
+            pass
+
+
+def _bind_textures_via_nodes(bpy) -> None:
+    """Reconstruct the BI `material.texture_slots[i] -> texture` binding
+    that Blender 2.80 stripped, via name-match heuristic against
+    `bpy.data.textures` (which survives).  Builds a Principled BSDF
+    node graph per matched material: Generated coords -> Mapping
+    (scale `tile_n`) -> ImageTexture -> Multiply by fallback diffuse
+    -> Base Color.  Materials with no image-texture match but a name
+    in `procedural_noise_mats` (Hedge) get a Noise->ColorRamp node
+    graph instead — substitutes BI's lost CLOUDS texture.  Everything
+    else keeps its flat `diffuse_color`.
+
+    See CLAUDE.md → "Building-bake architecture" for what this
+    approximation does and does not recover from upstream's BI render."""
+
+    tex_by_name: dict[str, "bpy.types.Texture"] = {}
+    for t in bpy.data.textures:
+        if t.type == "IMAGE" and t.image and t.image.size[0] > 0:
+            tex_by_name[t.name.lower()] = t
+
+    # Hand-encoded overrides for material/texture name pairs the prefix
+    # matcher misses.  Extend per blend as new buildings port.
+    explicit_map = {
+        "pavement": "pavings",
+        "roof": "brick",
+        "roofside": "brick",
+    }
+
+    def match_texture(mat_name: str):
+        key = mat_name.lower()
+        if key in explicit_map and explicit_map[key] in tex_by_name:
+            return tex_by_name[explicit_map[key]]
+        for tname, tex in tex_by_name.items():
+            if key == tname or key.startswith(tname) or tname.startswith(key):
+                return tex
+        return None
+
+    # Materials BI bound to procedural CLOUDS textures (now unreachable).
+    procedural_noise_mats = {"hedge"}
+
+    def build_image_material(m, tex):
+        fallback_diffuse = tuple(m.diffuse_color)
+        m.use_nodes = True
+        nt = m.node_tree
+        nt.nodes.clear()
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.inputs["Roughness"].default_value = 1.0
+        try:
+            bsdf.inputs["Specular IOR Level"].default_value = 0.0
+        except KeyError:
+            bsdf.inputs["Specular"].default_value = 0.0
+        tex_img = nt.nodes.new("ShaderNodeTexImage")
+        tex_img.image = tex.image
+        coord = nt.nodes.new("ShaderNodeTexCoord")
+        mapping = nt.nodes.new("ShaderNodeMapping")
+        mapping.vector_type = "POINT"
+        tile_n = _TEX_TILE.get(m.name.lower(), 8.0)
+        mapping.inputs["Scale"].default_value = (tile_n, tile_n, tile_n)
+        mul = nt.nodes.new("ShaderNodeMixRGB")
+        mul.blend_type = "MULTIPLY"
+        mul.inputs["Fac"].default_value = 1.0
+        mul.inputs["Color2"].default_value = (*fallback_diffuse[:3], 1.0)
+        nt.links.new(coord.outputs["Generated"], mapping.inputs["Vector"])
+        nt.links.new(mapping.outputs["Vector"], tex_img.inputs["Vector"])
+        nt.links.new(tex_img.outputs["Color"], mul.inputs["Color1"])
+        nt.links.new(mul.outputs["Color"], bsdf.inputs["Base Color"])
+        nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+        m.diffuse_color = fallback_diffuse
+
+    def build_noise_material(m):
+        fallback_diffuse = tuple(m.diffuse_color)
+        m.use_nodes = True
+        nt = m.node_tree
+        nt.nodes.clear()
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.inputs["Roughness"].default_value = 1.0
+        try:
+            bsdf.inputs["Specular IOR Level"].default_value = 0.0
+        except KeyError:
+            bsdf.inputs["Specular"].default_value = 0.0
+        noise = nt.nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 50.0
+        noise.inputs["Detail"].default_value = 2.0
+        ramp = nt.nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.elements[0].position = 0.4
+        ramp.color_ramp.elements[0].color = (
+            fallback_diffuse[0] * 0.6,
+            fallback_diffuse[1] * 0.6,
+            fallback_diffuse[2] * 0.6,
+            1.0,
+        )
+        ramp.color_ramp.elements[1].position = 0.6
+        ramp.color_ramp.elements[1].color = (
+            min(1.0, fallback_diffuse[0] * 1.2),
+            min(1.0, fallback_diffuse[1] * 1.2),
+            min(1.0, fallback_diffuse[2] * 1.2),
+            1.0,
+        )
+        coord = nt.nodes.new("ShaderNodeTexCoord")
+        nt.links.new(coord.outputs["Generated"], noise.inputs["Vector"])
+        nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+        nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+        nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+        m.diffuse_color = fallback_diffuse
+
+    for m in bpy.data.materials:
+        if m.use_nodes:
+            continue
+        key = m.name.lower()
+        if key in procedural_noise_mats:
+            build_noise_material(m)
+            continue
+        tex = match_texture(m.name)
+        if tex is None:
+            continue
+        build_image_material(m, tex)
 
 
 def _strip_scene(bpy) -> Optional[float]:
@@ -142,6 +303,15 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     scn.render.resolution_percentage = 100
     scn.render.film_transparent = True
     scn.render.image_settings.color_mode = "RGBA"
+    # Match upstream's saved colour-management: Raw view transform,
+    # sRGB display, gamma 1.0, no exposure.  Britain blends ship these
+    # values; some get clobbered if the blend was re-saved under a
+    # newer Blender with Filmic defaulting on.
+    scn.view_settings.view_transform = "Raw"
+    scn.view_settings.look = "None"
+    scn.view_settings.exposure = 0.0
+    scn.view_settings.gamma = 1.0
+    scn.display_settings.display_device = "sRGB"
     # Pin Cycles knobs that are otherwise non-deterministic across CI
     # runs even on identical hardware: threads (multi-threaded reduction
     # order), adaptive sampling (per-pixel termination on a noise
@@ -152,6 +322,30 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     scn.cycles.use_denoising = False
     scn.cycles.use_adaptive_sampling = False
     scn.cycles.seed = 0
+
+    scn.render.engine = viewpoint.engine
+    if viewpoint.engine == "BLENDER_WORKBENCH":
+        scn.display.shading.light = "FLAT"
+        scn.display.shading.color_type = "MATERIAL"
+        scn.display.shading.show_specular_highlight = False
+    elif viewpoint.engine == "BLENDER_EEVEE":
+        # taa_render_samples=8 gives proper edge alpha-AA (1 writes
+        # 0-or-255 only and drops the edge ring).  GTAO/bloom/SSR off
+        # for determinism across CI runners.
+        scn.eevee.taa_render_samples = 8
+        scn.eevee.use_gtao = False
+        scn.eevee.use_bloom = False
+        scn.eevee.use_ssr = False
+        scn.eevee.use_volumetric_lights = False
+        scn.eevee.use_soft_shadows = False
+        scn.eevee.use_shadow_high_bitdepth = True
+        # Diffuse fill calibrated against `res_1600_kg_01` upstream.
+        if scn.world is not None:
+            scn.world.use_nodes = False
+            try:
+                scn.world.color = (0.30, 0.30, 0.30)
+            except AttributeError:
+                pass
 
     return cam, sun
 
@@ -343,6 +537,9 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     import numpy as np
 
     blend_ortho = _strip_scene(bpy)
+    if viewpoint.engine == "BLENDER_EEVEE":
+        _reload_external_textures(bpy)
+        _bind_textures_via_nodes(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, blend_ortho)
     records = _bake_world_into_meshes(bpy, mathutils)
     fit = _compute_fit(mathutils, records, viewpoint.fit_kind, blend_ortho)
