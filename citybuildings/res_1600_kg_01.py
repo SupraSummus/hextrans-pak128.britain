@@ -14,10 +14,6 @@ SPEC = Building(
     name="RES_KG_1600_00_01",
     type="res",
     copyright="Kieron",
-    layouts=4,
-    # heights=1 is correct here: the hex projection + shear render
-    # this 2-storey detached as a ~54 px-tall silhouette that fits
-    # one cell, even though the blend's z extent is 2.64 intra-tile.
     level=1,
     chance=50,
     intro_year=1600,

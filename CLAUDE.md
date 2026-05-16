@@ -692,11 +692,10 @@ first.
 What does go in an asset script: the upstream `#` comments
 preserved as described above, SPEC-value rationale ("60 lb/yard
 fits better — axle loading too low at Ahrons' 55"), genuine
-calibration notes (the `heights=1` paragraph in
-`citybuildings/res_1600_kg_01.py` explains why a 2.64-intra-tile
-blend renders into one cell).  Domain caveats that span multiple
-assets (e.g. cast-iron / fishbelly sprite-vs-era mismatch) belong
-in TODO.md once, not in N asset-script docstrings.
+calibration notes that don't generalise.  Domain caveats that
+span multiple assets (e.g. cast-iron / fishbelly sprite-vs-era
+mismatch, hex z compensation for buildings) belong in TODO.md or
+CLAUDE.md once, not in N asset-script docstrings.
 
 ### Atlas layout
 
@@ -945,21 +944,37 @@ tile.
 
 **Per-cell rendering.**  `viewpoints.building_hex_viewpoint
 (layouts, dims_x, dims_y)` returns a Viewpoint with one Facing
-per cell.  The Facing's `model_rot_z_deg = 90° * l` rotates the
-model into the layout's orientation; its `model_translation` is
-`-hex_tile_world_offset(qx=x, ry=y)`, the negative of the cell's
-world centre computed from the hex tile lattice
-(`HEX_KOORD_Q_WORLD` heads SE, `HEX_KOORD_R_WORLD` heads S;
-pinned to `display/hex_proj.h::hex_screen_dx/dy` at
+per cell.  The Facing's `model_rot_z_deg = (360°/layouts) * l`
+rotates the model into the layout's orientation — `layouts=8`
+spaces facings at 45° (the same set `HEX_VIEWPOINT` uses for
+vehicles), `layouts=4` lands face-on at each cardinal.  Its
+`model_translation` is `-hex_tile_world_offset(qx=x, ry=y)`,
+the negative of the cell's world centre computed from the hex
+tile lattice (`HEX_KOORD_Q_WORLD` heads SE, `HEX_KOORD_R_WORLD`
+heads S; pinned to `display/hex_proj.h::hex_screen_dx/dy` at
 `ortho_scale = 2R`, `W = 128`).  The standard hex camera looking
 +Y at world origin then renders just that cell's content per
 pass.  No image-space slicing — each cell is its own 128 × 128
 Cycles render, the way vehicles already work.
 
+**Z compensation.**  `building_hex_viewpoint` sets
+`fit_z_scale = HEX_BUILDING_Z_FIT_SCALE` (= `sin(60°)/√2 ≈
+0.612`), pre-scaling the blend's z before the hex shear's √2 lift
+so the screen z extent matches pak128 square dimetric's `sin(60°)`
+lift.  Upstream Britain blends are authored against dimetric, so
+uncompensated they read 1.63× too tall in hex (e.g. `res_1600_
+kg_01`'s corner-on layouts at 121 px tall instead of upstream's
+91 px).  Vehicles don't carry this because their calibration
+diff (`SQUARE_VIEWPOINT`) uses the same per-blend-unit z lift as
+`HEX_VIEWPOINT` — the proportions match by construction.  Whether
+the engine's `hex_proj_shear` z coefficient itself should be
+`sin(60°)` instead of `√2` (eliminating the need for any pak-side
+compensation) is the open question in TODO.md.
+
 Three landmines the first real building port surfaces:
 
 * **Layout rotation sign.**  `building_hex_viewpoint` uses
-  `90° * l` CCW.  The square-projection diff against
+  `(360°/layouts) * l` CCW.  The square-projection diff against
   `res_1600_kg_01` lands at mean IoU 0.94 with no clear winner
   between identity and off-diagonal permutation (matrix
   dominated by the building's near-mirror symmetry).  Triggers
@@ -1007,11 +1022,12 @@ A fourth landmine the calibration diff exposed:
 
 The dat side (Building dataclass, `emit_building`, `port_building`,
 `bake_building`) is in tree and tested round-trip against
-upstream `attractions/nelson-column.dat` (2×2×1, `type=mon` —
-the canonical first-port candidate).  The render side compiles
-but is unverified end-to-end; the first port (an actual
-`attractions/<name>.py` script with SPEC + BLEND + a real Cycles
-bake) is the trigger to pin the landmines above.
+upstream `attractions/nelson-column.dat` (2×2×1, `type=mon`).
+The render side ships end-to-end via `citybuildings/
+res_1600_kg_01.py` (1×1×8, `type=res`); the four landmines above
+are exercised on a single-tile near-symmetric residential, so
+multi-tile centring and layout-rotation-sign disambiguation still
+wait on a multi-tile asymmetric port.
 
 ## Way-bake architecture
 

@@ -241,10 +241,15 @@ class Building:
     SPECs hold gameplay data only.
 
     Footprint is `(dims_x, dims_y)` tiles with `layouts` rotation
-    variants.  `layouts=None` (the default) means "let the engine pick" —
-    1 for a square footprint, 2 for rectangular — and `emit_building`
-    fills the implied value in `dims=X,Y,Z` so a round-tripped dat
-    carries the same shape regardless of how the source dat wrote it.
+    variants.  `layouts=None` (the default) defers the atlas size to
+    the bake driver: `pak.bake._resolve_building_layouts` fills it in
+    via `hex_layouts_default` (8 for single-tile, engine default for
+    rectangular) before the dat is emitted, so SPECs stay
+    projection-agnostic.  `emit_building` falls back to
+    `layouts_default` (the engine's read-side default) for any
+    Building it sees still carrying `layouts=None` — the schema-
+    correct fallback for code paths that don't go through the bake
+    driver.
 
     Order of fields = canonical emit order.  Unset scalars (`None`) and
     empty lists are skipped on emit.  Factory-only keys (InputGood,

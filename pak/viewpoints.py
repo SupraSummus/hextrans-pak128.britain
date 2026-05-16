@@ -183,6 +183,17 @@ HEX_KOORD_R_WORLD: tuple[float, float] = (0.0,
                                           -_SQRT3 * HEX_TILE_RADIUS)
 
 
+# Pre-scale applied to a hex-building blend's z before the hex shear's
+# √2 lift, so on-screen z extent matches pak128 square dimetric's
+# sin(60°) lift.  Upstream Britain blends are authored against the
+# dimetric projection; uncompensated, the same blend renders 1.63×
+# taller under hex than under square (= √2 / sin 60°).  Whether the
+# engine's `hex_proj_shear` z coefficient should itself be sin(60°)
+# instead of √2 — eliminating the need for any compensation — is the
+# open question logged in TODO.md.
+HEX_BUILDING_Z_FIT_SCALE: float = math.sin(radians(60.0)) / _SQRT2
+
+
 # World-z (intra-tile) shift per `backimage[…][height][…]` level.
 # The engine paints level h at `ypos -= h * raster_width` screen px
 # (`obj/gebaeude.cc::display`); at the standard `raster_width = W`
@@ -285,11 +296,23 @@ def building_hex_viewpoint(
     fit-scale so the camera at origin renders that tile's content)
     plus a Z shift of `-height * HEX_HEIGHT_LEVEL_WORLD_Z` — drops
     the model down so the height-h slice falls into the hex camera's
-    visible window.  Layout `l` rotates the model by `90° * l` CCW
-    around Z — the engine's layout-to-map-rotation convention is
-    unverified here; if a port shows wrong rotations, flip the sign
-    or shift the modulus.
+    visible window.
+
+    Layout rotation is `(360/layouts) * l` CCW around Z — each layout
+    spaces evenly around the circle, so a building with `layouts=8`
+    renders the same 8 headings as `HEX_VIEWPOINT`'s vehicle facings
+    (S, SW, W, NW, N, NE, E, SE) and `layouts=4` lands face-on at
+    each cardinal.  Authored Britain blends sit with façades along
+    world X/Y, so face-on (0, 90, 180, 270) views show one wall
+    flat to the hex camera — visually a flat elevation, not the
+    two-walls-visible silhouette upstream's dimetric corners give.
+    Prefer `layouts=8` (or `=6` for hex-native 60° steps) on
+    buildings so at least the off-axis layouts show the corner.
+    The engine's layout-to-map-rotation convention is unverified;
+    if a port shows wrong rotations, flip the sign or shift the
+    modulus.
     """
+    step = 360.0 / layouts
     facings: list[Facing] = []
     for l in range(layouts):
         if l & 1:
@@ -305,7 +328,7 @@ def building_hex_viewpoint(
                         camera_location=_HEX_CAM_LOC,
                         camera_rotation_euler=_HEX_CAM_ROT,
                         sun_rotation_euler=_HEX_SUN_ROT,
-                        model_rot_z_deg=90.0 * l,
+                        model_rot_z_deg=step * l,
                         model_translation=(-wx, -wy,
                                            -h * HEX_HEIGHT_LEVEL_WORLD_Z),
                     ))
@@ -317,4 +340,5 @@ def building_hex_viewpoint(
         fit_kind="hex",
         extrinsic=hex_proj_shear(),
         facings=facings,
+        fit_z_scale=HEX_BUILDING_Z_FIT_SCALE,
     )

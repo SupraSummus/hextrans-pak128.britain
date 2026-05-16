@@ -24,13 +24,40 @@ from pathlib import Path
 from pak import REPO_ROOT
 from pak.dat import (
     Building, Vehicle, Way, emit_building, emit_vehicles, emit_way,
-    layouts_default,
 )
 from pak.fetch_blend import fetch
 
 
 _RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
 _BAKE_WAY_SCRIPT = Path(__file__).resolve().parent / "bake_way.py"
+
+
+def hex_layouts_default(dims_x: int, dims_y: int) -> int:
+    """Layout count this hex pak bakes when a Building SPEC leaves
+    `layouts=None`.  Pak-side policy, not engine schema — atlas size
+    is a render-time choice, distinct from `pak.dat.layouts_default`
+    which mirrors the engine's read-side default for `dims=X,Y` (no
+    Z).  Single-tile assets get 8 to match `HEX_VIEWPOINT`'s 8-facing
+    convention (half cardinal, half 45° corner views).  Rectangular
+    tiles fall back to the engine default (2 — one per orientation)
+    until a multi-tile asset ports and pins the right hex count;
+    see TODO.md → "Building hex layout count is arbitrary at 8".
+    """
+    if dims_x == 1 and dims_y == 1:
+        return 8
+    from pak.dat import layouts_default
+    return layouts_default(dims_x, dims_y)
+
+
+def _resolve_building_layouts(spec: Building) -> Building:
+    """Return `spec` with `layouts` filled in from `hex_layouts_default`
+    when it was left None.  Both `bake_building` and `pak.reemit_dats`
+    funnel through this so the atlas size declared in the rendered
+    PNG and the `dims=X,Y,Z` line in the emitted dat agree."""
+    if spec.layouts is not None:
+        return spec
+    from dataclasses import replace
+    return replace(spec, layouts=hex_layouts_default(spec.dims_x, spec.dims_y))
 
 
 def bake_vehicle(
@@ -186,8 +213,7 @@ def bake_building(
     centring may need a multi-tile variant that anchors on the
     building's koord origin rather than the model's XY bbox).
     """
-    layouts = spec.layouts if spec.layouts is not None else layouts_default(
-        spec.dims_x, spec.dims_y)
+    spec = _resolve_building_layouts(spec)
     blend_path = fetch(blend)
     cells_per_row = spec.dims_x * spec.dims_y
     cmd = [
@@ -199,7 +225,7 @@ def bake_building(
         "--name", basename,
         "--viewpoint", "hex_building",
         "--building-footprint",
-        f"{spec.dims_x},{spec.dims_y},{layouts},{spec.heights}",
+        f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
         "--cols-per-row", str(cells_per_row),
     ]
     print("$", " ".join(cmd), flush=True)

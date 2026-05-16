@@ -18,10 +18,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from pak.bake_units import discover, import_script, specs_of
-from pak.dat import (
-    Building, Vehicle, Way,
-    emit_building, emit_vehicles, emit_way,
-)
+from pak.reemit_dats import emit_for_specs
 
 
 class TestPortedDats(unittest.TestCase):
@@ -38,15 +35,7 @@ class TestPortedDats(unittest.TestCase):
                 specs = specs_of(mod)
                 self.assertTrue(specs, f"{mod.__name__} has no SPEC or SPECS")
                 with TemporaryDirectory() as d:
-                    out_dir, basename = Path(d), script.stem
-                    if all(isinstance(s, Vehicle) for s in specs):
-                        emitted = emit_vehicles(specs, out_dir=out_dir, basename=basename)
-                    elif len(specs) == 1 and isinstance(specs[0], Way):
-                        emitted = emit_way(specs[0], out_dir=out_dir, basename=basename)
-                    elif len(specs) == 1 and isinstance(specs[0], Building):
-                        emitted = emit_building(specs[0], out_dir=out_dir, basename=basename)
-                    else:
-                        self.fail(f"{mod.__name__} has unsupported SPEC/SPECS shape")
+                    emitted = emit_for_specs(specs, Path(d), script.stem)
                     self.assertEqual(
                         emitted.read_text(),
                         script.with_suffix(".dat").read_text(),
