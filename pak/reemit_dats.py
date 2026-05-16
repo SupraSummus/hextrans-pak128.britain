@@ -19,7 +19,9 @@ from pathlib import Path
 
 from pak import REPO_ROOT
 from pak.bake_units import discover, import_script
-from pak.dat import Vehicle, Way, emit_vehicle, emit_way
+from pak.dat import (
+    Building, Vehicle, Way, emit_building, emit_vehicle, emit_way,
+)
 
 
 def _reemit(script: Path) -> Path:
@@ -28,10 +30,12 @@ def _reemit(script: Path) -> Path:
         return emit_vehicle(spec, out_dir=script.parent, basename=script.stem)
     if isinstance(spec, Way):
         return emit_way(spec, out_dir=script.parent, basename=script.stem)
+    if isinstance(spec, Building):
+        return emit_building(spec, out_dir=script.parent, basename=script.stem)
     rel = script.relative_to(REPO_ROOT)
     raise RuntimeError(
-        f"{rel} has no `SPEC: Vehicle | Way` — multi-object bake "
-        f"units need their own re-emit hook"
+        f"{rel} has no `SPEC: Vehicle | Way | Building` — multi-object "
+        f"bake units need their own re-emit hook"
     )
 
 

@@ -18,7 +18,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from pak.bake_units import discover, import_script
-from pak.dat import Vehicle, Way, emit_vehicle, emit_way
+from pak.dat import (
+    Building, Vehicle, Way, emit_building, emit_vehicle, emit_way,
+)
 
 
 class TestPortedDats(unittest.TestCase):
@@ -39,6 +41,8 @@ class TestPortedDats(unittest.TestCase):
                     emit = emit_vehicle
                 elif isinstance(spec, Way):
                     emit = emit_way
+                elif isinstance(spec, Building):
+                    emit = emit_building
                 else:
                     self.fail(f"{mod.__name__}.SPEC has unsupported type {type(spec).__name__}")
                 with TemporaryDirectory() as d:

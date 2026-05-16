@@ -129,17 +129,90 @@ port the material-swap code from the upstream `-65` script into
 a `--mask` mode on render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
-**Multi-tile asset overflow.**  `HEX_VIEWPOINT`'s `fit_kind="hex"`
+**Multi-tile vehicle overflow.**  `HEX_VIEWPOINT`'s `fit_kind="hex"`
 applies a single pakset-wide scale (`2R / upstream_ortho_scale = 2R/24`)
 under the calibration contract documented in CLAUDE.md, so a long loco
-at its real upstream size will render larger than one cell.  The atlas
-is currently one row of W×W cells; a mainline loco needs to be
-sliced across multiple cells with a known per-cell offset, matching
-the engine's multi-tile vehicle convention.  Concrete next move
-when the first mainline-loco-length asset is ported: extend
-`render.py` to emit multi-cell atlases driven by the model's
-post-scale extent, and wire the resulting cell layout into the
-`.dat`.  Soft trigger.
+at its real upstream size renders larger than one cell.  The vehicle
+atlas is one row of W×W cells; a mainline loco needs to be sliced
+across multiple cells with a known per-cell offset, matching the
+engine's multi-tile vehicle convention.  The per-cell-translation
+scaffolding now exists for buildings
+(`viewpoints.building_hex_viewpoint`, `Facing.model_translation`,
+`pak.dat.iter_building_cells`); a vehicle version follows the same
+pattern but the multi-cell convention for `vehicle_writer.cc` is a
+different schema than `building_writer.cc`'s `[layout][y][x]` grid.
+Concrete next move when the first mainline-loco-length asset is
+ported: read the engine's multi-tile-vehicle convention out of
+`vehicle_writer.cc` (it's a per-image-slot offset list, not a
+footprint), add a `vehicle_hex_viewpoint(n_cells)` factory beside
+the building one, and wire the resulting cell layout into the dat.
+Soft trigger.
+
+**Building-bake layout rotation sign needs asymmetric asset.**
+Square-projection diff against `res_1600_kg_01` lands at mean IoU
+0.94 best perm / 0.90 identity perm — small gap, dominated by
+near-mirror symmetry of a generic 2-storey detached house (every
+our-cardinal scores marginally higher against the opposite-
+cardinal upstream cell than against the matching one).  Can't
+disambiguate the engine's layout-to-rotation convention from this
+asset.  Concrete next move: pick an asymmetric upstream building
+(distinctive chimney, off-centre door — e.g. a townhall or stop)
+with a matching blend, port it, and re-run the diff; the
+permutation either lands on identity (current `+90·l` CCW is
+right) or on an off-diagonal that survives the symmetry test
+(then flip to `-90·l` in `building_hex_viewpoint`).
+
+**Building square-projection diff: multi-tile + heights coverage.**
+`building_square_viewpoint` errors on `dims_x*dims_y > 1` or
+`heights > 1`; only layout permutation diffing works today.  Adding
+multi-tile diff needs a square tile lattice mirroring
+`HEX_KOORD_Q_WORLD` / `HEX_KOORD_R_WORLD` — pak128's
+square-dimetric tile spans 128 px on screen, so the world-space
+inter-tile offset is `(±SQUARE_TILE_HALF, ±SQUARE_TILE_HALF)`
+along the screen diagonal.  Trigger: first 2x1+ building port.
+Heights coverage triggers on the first port with rendered
+silhouette overflowing one cell vertically.
+
+**Building hex render residual ~6 % gap.**  After ortho_scale fix
+the diff lands at IoU 0.94 mean / 0.90 worst, which is below the
+0.93+ band calibrated vehicles hit.  Plausible causes ranked by
+suspicion: (a) Cycles vs upstream's Blender-internal renderer
+shading differences (older blends predate Cycles entirely);
+(b) sun energy mismatch -- `_SUN_ENERGY = 0.028` is lifted from
+Lamp.001 in the Britain vehicle blends, building blends may ship
+a different value; (c) anti-alias edge-pixel handling.  Concrete
+next move: dump `Lamp.001.energy` from the building blend (read
+the blend with `blender -b ... -P` script), compare to 0.028,
+adjust `_SUN_ENERGY` per asset-class if it differs.
+
+**Multi-tile centring** — `fit_kind="hex"` centres on the model's
+XY bbox, which may not match upstream's per-tile-anchor convention
+for multi-tile blends; first 2x1+ building port surfaces this.
+
+**Multi-tile building bake.**  `res_1600_kg_01` is 1×1×4 — the
+multi-tile axis (`dims_x>1` or `dims_y>1`) of `building_hex_viewpoint`
+is unit-tested via `iter_building_cells` but unverified end-to-end.
+Concrete next move: pick a 1×2 or 2×1 upstream building with a
+matching blend (`town-house`, `terrace-row-house-2f`, or similar
+in `citybuildings/`), port it, observe whether the two cells'
+content correctly stitches at the shared tile edge in-engine.
+
+**Building schema gaps.**  `pak.dat.Building` covers attractions,
+monuments, city buildings (res/com/ind), townhalls, HQs, stops,
+extensions — the dat shapes around the engine's `obj=building`
+type field.  Two known gaps: (a) **Factory schema** —
+`Obj=factory` (industries like brewery, bakery, fishing-ground)
+carries `Productivity`, `Range`, `InputGood[N]`, `OutputGood[N]`,
+`distributionweight`, `passenger_boost`, smoke fields etc., much
+fatter than Building; add a `Factory` dataclass once the first
+industry ports.  (b) **Animation phase, seasons** — `emit_building`
+hardcodes phase=0 and season=0.  Animated assets (phase > 0) and
+snowed-over winters (season > 0) need their own axes in
+`iter_building_cells` and the viewpoint factory.  Concrete next
+move when the first port needs either: extend the cell iterator
+to yield `(l, y, x, h, p, s)` and the viewpoint to multiply
+facings accordingly.  Height-stacking (the `h` axis) is already
+plumbed end-to-end and tested.
 
 **Ground bake gaps: way_ground, fence.**  Eight parametric ground
 families port from pak128 live under `grounds/*.py` now
