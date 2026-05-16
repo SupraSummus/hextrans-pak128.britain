@@ -23,7 +23,7 @@ from pathlib import Path
 
 from pak import REPO_ROOT
 from pak.dat import (
-    Building, Vehicle, Way, emit_building, emit_vehicle, emit_way,
+    Building, Vehicle, Way, emit_building, emit_vehicles, emit_way,
     layouts_default,
 )
 from pak.fetch_blend import fetch
@@ -34,7 +34,7 @@ _BAKE_WAY_SCRIPT = Path(__file__).resolve().parent / "bake_way.py"
 
 
 def bake_vehicle(
-    spec: Vehicle,
+    spec: Vehicle | list[Vehicle],
     *,
     blend: str,
     basename: str,
@@ -44,12 +44,20 @@ def bake_vehicle(
     """Fetch the blend, render `<out_dir>/<basename>.png`, emit
     `<out_dir>/<basename>.dat` from `spec`.
 
+    `spec` may be a single `Vehicle` or a list — multi-object bake
+    units that share one sprite (upstream `dragon-rapide` +
+    `dragon-rapide-mail`) pass a list, and every block's image refs
+    point at the same atlas.  Bake units whose objects need distinct
+    sprites (e.g. loco + tender) call `bake_vehicle` once per output
+    with distinct `basename` instead.
+
     `blend` is the path inside the upstream blends repo (resolved
     via `fetch_blend.fetch` against the global `blends.lock` SHA).
-    `basename` is the shared filesystem stem for both atlas and
-    dat — typically the bake script's `Path(__file__).stem`.
-    Returns the dat path.
+    `basename` is the shared filesystem stem for atlas and dat —
+    typically the bake script's `Path(__file__).stem`.  Returns the
+    dat path.
     """
+    specs = [spec] if isinstance(spec, Vehicle) else list(spec)
     blend_path = fetch(blend)
     cmd = [
         "blender", "-b", str(blend_path),
@@ -63,7 +71,7 @@ def bake_vehicle(
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
 
-    out_dat = emit_vehicle(spec, out_dir=out_dir, basename=basename)
+    out_dat = emit_vehicles(specs, out_dir=out_dir, basename=basename)
     try:
         print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
     except ValueError:
@@ -71,17 +79,12 @@ def bake_vehicle(
     return out_dat
 
 
-def bake_main(spec: Vehicle, blend: str, file: str) -> Path:
-    """Convenience for single-vehicle bake scripts.
+def bake_main(spec: Vehicle | list[Vehicle], blend: str, file: str) -> Path:
+    """Convenience for bake scripts that render one blend per script.
 
     Derives `out_dir` and `basename` from the calling script's
-    `__file__`, so each bake script's bottom collapses to:
-
-        if __name__ == "__main__":
-            bake_main(SPEC, BLEND, __file__)
-
-    Multi-object bake units call `bake_vehicle` directly per
-    output instead.
+    `__file__`.  Accepts either a single `Vehicle` (`SPEC`) or a
+    list (`SPECS` for shared-sprite variants).
     """
     path = Path(file).resolve()
     return bake_vehicle(

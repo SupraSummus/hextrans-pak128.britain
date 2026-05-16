@@ -10,12 +10,12 @@ them.
 
 A "bake unit" is one bake script.  It owns one or more `Vehicle`
 instances (typed dataclass, fields cover the full upstream
-schema) and calls `emit_vehicle` per output.  `Vehicle.__init__`
-catches typos at construction; `emit_vehicle` writes the dat
+schema) and calls `emit_vehicles` per output.  `Vehicle.__init__`
+catches typos at construction; `emit_vehicles` writes the dat
 with image refs pointing at the atlas baked alongside.
 
 `Vehicle` fields cover both hex-engine and Simutrans-Extended
-schema.  `emit_vehicle` writes all set fields — the hex engine
+schema.  `emit_vehicles` writes all set fields — the hex engine
 ignores keys it doesn't recognise, so extended-only keys are
 harmless cruft from its perspective, and shipping the full
 schema makes the dat round-trip-capable with an Extended-aware
@@ -83,7 +83,7 @@ def _list_field(*, dat_key: str | None = None) -> Any:
 @dataclass
 class Vehicle:
     """A `obj=vehicle` definition.  Fields cover both hex-engine
-    and Simutrans-Extended schema; `emit_vehicle` writes all set
+    and Simutrans-Extended schema; `emit_vehicles` writes all set
     fields and the hex engine ignores keys it doesn't recognise.
 
     Order of fields = canonical emit order.  Unset scalars
@@ -406,15 +406,8 @@ def parse(path: Path) -> list[list[tuple[str, str]]]:
     return objects
 
 
-def emit_vehicle(vehicle: Vehicle, *, out_dir: Path, basename: str) -> Path:
-    """Write `<out_dir>/<basename>.dat` from a Vehicle.
-
-    Emits every set field on the Vehicle.  Image refs point at
-    `./<basename>.0.<col>` for col in 0..7, matching the single-row
-    hex atlas baked alongside (PNG must live at
-    `<out_dir>/<basename>.png`).  Returns the dat path.
-    """
-    lines: list[str] = ["obj=vehicle"]
+def _vehicle_block(vehicle: Vehicle, basename: str) -> list[str]:
+    lines = ["obj=vehicle"]
     for name in _VEHICLE_FIELDS_SCALAR:
         v = getattr(vehicle, name)
         if v is not None:
@@ -424,8 +417,26 @@ def emit_vehicle(vehicle: Vehicle, *, out_dir: Path, basename: str) -> Path:
             lines.append(f"{dat_key}[{i}]={v}")
     for col, facing in enumerate(_HEX_FACINGS):
         lines.append(f"EmptyImage[{facing}]=./{basename}.0.{col}")
-    lines.append("----------")
+    return lines
 
+
+def emit_vehicles(vehicles: list[Vehicle], *, out_dir: Path, basename: str) -> Path:
+    """Write `<out_dir>/<basename>.dat` from one or more Vehicles.
+
+    Each Vehicle becomes an `obj=vehicle` block separated by a row
+    of dashes; every block's image refs point at the same shared
+    atlas `./<basename>.0.<col>`.  Multi-Vehicle calls (e.g.
+    upstream's `dragon-rapide` + `dragon-rapide-mail`, same plane
+    in different gameplay roles) pack into one combined dat; when
+    variants want distinct sprites, give each its own bake unit
+    instead.  Returns the dat path.
+    """
+    if not vehicles:
+        raise ValueError("emit_vehicles requires at least one Vehicle")
+    lines: list[str] = []
+    for v in vehicles:
+        lines.extend(_vehicle_block(v, basename))
+        lines.append("----------")
     out_path = out_dir / f"{basename}.dat"
     out_path.write_text("\n".join(lines) + "\n")
     return out_path

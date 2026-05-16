@@ -17,9 +17,10 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from pak.bake_units import discover, import_script
+from pak.bake_units import discover, import_script, specs_of
 from pak.dat import (
-    Building, Vehicle, Way, emit_building, emit_vehicle, emit_way,
+    Building, Vehicle, Way,
+    emit_building, emit_vehicles, emit_way,
 )
 
 
@@ -34,19 +35,18 @@ class TestPortedDats(unittest.TestCase):
         for script in discover():
             with self.subTest(script=script.name):
                 mod = import_script(script)
-                spec = getattr(mod, "SPEC", None)
-                if spec is None:
-                    self.skipTest(f"{mod.__name__} has no SPEC (multi-object?)")
-                if isinstance(spec, Vehicle):
-                    emit = emit_vehicle
-                elif isinstance(spec, Way):
-                    emit = emit_way
-                elif isinstance(spec, Building):
-                    emit = emit_building
-                else:
-                    self.fail(f"{mod.__name__}.SPEC has unsupported type {type(spec).__name__}")
+                specs = specs_of(mod)
+                self.assertTrue(specs, f"{mod.__name__} has no SPEC or SPECS")
                 with TemporaryDirectory() as d:
-                    emitted = emit(spec, out_dir=Path(d), basename=script.stem)
+                    out_dir, basename = Path(d), script.stem
+                    if all(isinstance(s, Vehicle) for s in specs):
+                        emitted = emit_vehicles(specs, out_dir=out_dir, basename=basename)
+                    elif len(specs) == 1 and isinstance(specs[0], Way):
+                        emitted = emit_way(specs[0], out_dir=out_dir, basename=basename)
+                    elif len(specs) == 1 and isinstance(specs[0], Building):
+                        emitted = emit_building(specs[0], out_dir=out_dir, basename=basename)
+                    else:
+                        self.fail(f"{mod.__name__} has unsupported SPEC/SPECS shape")
                     self.assertEqual(
                         emitted.read_text(),
                         script.with_suffix(".dat").read_text(),

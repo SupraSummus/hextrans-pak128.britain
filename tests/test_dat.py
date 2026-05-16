@@ -20,7 +20,7 @@ from pak.dat import (
     Vehicle,
     Way,
     emit_building,
-    emit_vehicle,
+    emit_vehicles,
     emit_way,
     iter_building_cells,
     layouts_default,
@@ -81,52 +81,70 @@ class TestVehicleConstruction(unittest.TestCase):
             Vehicle(name="x")  # missing waytype  # type: ignore[call-arg]
 
 
-class TestEmitVehicle(unittest.TestCase):
-    def _emit(self, v: Vehicle) -> str:
+class TestEmitVehicles(unittest.TestCase):
+    def _text(self, *vehicles: Vehicle) -> str:
         with TemporaryDirectory() as d:
-            emit_vehicle(v, out_dir=Path(d), basename="x")
-            return (Path(d) / "x.dat").read_text()
+            return emit_vehicles(list(vehicles), out_dir=Path(d), basename="x").read_text()
+
+    # ---- single-Vehicle structure ----
 
     def test_minimal_skips_none(self):
-        text = self._emit(Vehicle(name="A", waytype="track"))
+        text = self._text(Vehicle(name="A", waytype="track"))
         lines = text.splitlines()
-        self.assertEqual(lines[0], "obj=vehicle")
-        self.assertEqual(lines[1], "name=A")
-        self.assertEqual(lines[2], "waytype=track")
-        # No copyright / freight / etc. lines.
-        body = lines[3:lines.index("EmptyImage[S]=./x.0.0")]  # row=0, col=0
+        self.assertEqual(lines[:3], ["obj=vehicle", "name=A", "waytype=track"])
+        body = lines[3:lines.index("EmptyImage[S]=./x.0.0")]
         self.assertEqual(body, [])
 
     def test_emits_extended_fields(self):
-        v = Vehicle(name="A", waytype="track", axles=4, comfort_by_class=[10, 20])
-        text = self._emit(v)
+        text = self._text(Vehicle(name="A", waytype="track", axles=4,
+                                  comfort_by_class=[10, 20]))
         self.assertIn("axles=4\n", text)
         self.assertIn("comfort[0]=10\n", text)
         self.assertIn("comfort[1]=20\n", text)
 
     def test_scalar_comfort_emits_unindexed(self):
-        text = self._emit(Vehicle(name="A", waytype="track", comfort=49))
+        text = self._text(Vehicle(name="A", waytype="track", comfort=49))
         self.assertIn("comfort=49\n", text)
         self.assertNotIn("comfort[", text)
 
     def test_payload_by_class_uses_remapped_dat_key(self):
-        v = Vehicle(name="A", waytype="track", payload_by_class=[0, 0, 0, 18])
-        text = self._emit(v)
+        text = self._text(Vehicle(name="A", waytype="track",
+                                  payload_by_class=[0, 0, 0, 18]))
         self.assertIn("payload[3]=18\n", text)
         self.assertNotIn("payload_by_class", text)
 
     def test_constraint_uses_capitalised_form(self):
-        v = Vehicle(name="A", waytype="track", constraint_next=["B", "C"])
-        text = self._emit(v)
+        text = self._text(Vehicle(name="A", waytype="track", constraint_next=["B", "C"]))
         self.assertIn("Constraint[Next][0]=B\n", text)
         self.assertIn("Constraint[Next][1]=C\n", text)
 
     def test_emits_eight_facing_image_refs(self):
         # makeobj parses `<file>.X.Y` as row=X, col=Y, so the single-row
         # hex atlas's 8 facings address as `.0.0` .. `.0.7`.
-        text = self._emit(Vehicle(name="A", waytype="track"))
+        text = self._text(Vehicle(name="A", waytype="track"))
         for col, facing in enumerate(("S", "SW", "W", "NW", "N", "NE", "E", "SE")):
             self.assertIn(f"EmptyImage[{facing}]=./x.0.{col}\n", text)
+
+    # ---- multi-Vehicle structure ----
+
+    def test_multi_round_trips_to_n_objects_in_order(self):
+        a = Vehicle(name="A", waytype="track", speed=80)
+        b = Vehicle(name="B", waytype="track", speed=60)
+        with TemporaryDirectory() as d:
+            out = emit_vehicles([a, b], out_dir=Path(d), basename="x")
+            self.assertEqual([dict(o)["name"] for o in parse(out)], ["A", "B"])
+
+    def test_multi_shares_atlas_refs(self):
+        # Shared-sprite variants (dragon-rapide + dragon-rapide-mail) —
+        # every block's image refs point at the same atlas.
+        text = self._text(Vehicle(name="A", waytype="track"),
+                          Vehicle(name="B", waytype="track"))
+        self.assertEqual(text.count("EmptyImage[S]=./x.0.0\n"), 2)
+
+    def test_empty_list_rejected(self):
+        with TemporaryDirectory() as d:
+            with self.assertRaises(ValueError):
+                emit_vehicles([], out_dir=Path(d), basename="x")
 
 
 class TestPortVehicle(unittest.TestCase):

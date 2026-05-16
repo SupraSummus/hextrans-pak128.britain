@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from pak import REPO_ROOT
 
@@ -39,3 +40,17 @@ def import_script(script: Path) -> ModuleType:
     """Import a bake-unit script by its repo-relative dotted path."""
     rel = script.relative_to(REPO_ROOT).with_suffix("")
     return importlib.import_module(".".join(rel.parts))
+
+
+def specs_of(mod: ModuleType) -> list[Any]:
+    """Bake unit's specs as a list — `SPECS` (multi-object shared
+    sprite) takes precedence over `SPEC` (single-object).  Returns
+    `[]` when a script declares neither (distinct-sprite multi-
+    object units that don't fit either shape — see TODO.md →
+    "Distinct-sprite reemit hook").
+    """
+    specs = getattr(mod, "SPECS", None)
+    if specs is not None:
+        return list(specs)
+    spec = getattr(mod, "SPEC", None)
+    return [spec] if spec is not None else []

@@ -9,20 +9,18 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**Port a multi-object vehicle.**  Six single-object ports
-exist now (1850s-first, open-third, br-cl15, br-9f,
-blackpool-brush, dragon-rapide), so the seeder workflow + the
-`bake_main` single-vehicle convenience are validated.  The
-multi-object path — one bake script emitting N dat+png pairs —
-is still on-paper-only.  Concrete next move: pick a multi-object
-upstream like `gwr-king` (loco + tender) or extend
-`air/dragon_rapide.py` to bake the paired `dragon-rapide-mail`
-variant (upstream's dat carries both in one file), and run a
-bake script that calls `bake_vehicle` twice with distinct
-`basename` (and typically distinct `blend`) per output.  Will
-surface how blends map to objects (one blend per object? one
-blend with multiple collections? unknown until we look at one)
-and whether `bake_main` should sprout a multi-spec variant.
+**Port a distinct-sprite multi-object vehicle.**  Shared-sprite
+multi-object is exercised by `air/dragon_rapide.py` (`SPECS = [
+PASSENGER, MAIL]` → one combined dat sharing one atlas).
+Distinct-sprite (loco + tender, EMU set, carriage family — N
+separate `<basename>.{dat,png}` triples driven by per-output
+`bake_vehicle` calls in one script) is still on paper.  Concrete
+next move: port `gwr-king` (loco + tender) — open the upstream
+blends, see whether loco and tender ship as one .blend with
+collections or two separate .blends, then write the bake script
+calling `bake_vehicle` twice with distinct `basename` (and likely
+distinct `blend`) per output.  Drops the 6 livery refs (extended-
+only).  Will also force the reemit hook (see next entry).
 
 **Expand build scope as categories bake.**  `make all` compiles
 `grounds/`, `air/`, `trains/`, `trams/`, `ways/` today — the
@@ -51,18 +49,17 @@ installing Blender once and only rebaking the touched assets.
 committed vehicle atlases is first observed (or when ~10
 vehicles are baked, whichever comes first).
 
-**Multi-object reemit hook.**  `pak/reemit_dats.py`
-introspects each bake script's `SPEC: Vehicle` attribute and
-re-emits one `.dat` per script.  Multi-object bake units (one
-script emits N dat+png pairs — designed but not yet exercised,
-see "Bake units and per-asset layout" in `CLAUDE.md`) have no
-single `SPEC` and won't fit this shape; the worst case is a
-script with `SPEC` *plus* an additional tender output that gets
-silently missed.  Concrete next move when the first multi-object
-bake unit lands: replace the `SPEC` introspection with a
-per-script `reemit_dats(out_dir)` hook (or a `SPECS` list +
-basename map convention), and update the existing single-object
-scripts to expose the hook.  Trigger: first multi-object port.
+**Distinct-sprite reemit hook.**  `pak/reemit_dats.py` now handles
+`SPEC` (single) and `SPECS: list[Vehicle]` (shared-sprite multi-
+object, one combined dat).  Distinct-sprite multi-object scripts
+(one script emitting N `<basename>.{dat,png}` triples — designed
+but not yet exercised) still don't fit: the worst case is a
+script with `SPEC` plus an additional tender output that gets
+silently missed.  Concrete next move when the first distinct-
+sprite bake unit lands (`gwr-king` is the canonical candidate):
+add a per-script `reemit_dats(out_dir)` hook convention and have
+`_reemit` prefer it over `SPEC` / `SPECS` introspection.  Trigger:
+distinct-sprite multi-object port.
 
 **Freight-image subsystem unmodelled.**  Hex `vehicle_writer.cc`
 reads `freightimage[<dir>]` (single-freight visual variant),
