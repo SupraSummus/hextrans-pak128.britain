@@ -175,18 +175,6 @@ along the screen diagonal.  Trigger: first 2x1+ building port.
 Heights coverage triggers on the first port with rendered
 silhouette overflowing one cell vertically.
 
-**Building hex render residual ~6 % gap.**  After ortho_scale fix
-the diff lands at IoU 0.94 mean / 0.90 worst, which is below the
-0.93+ band calibrated vehicles hit.  Plausible causes ranked by
-suspicion: (a) Cycles vs upstream's Blender-internal renderer
-shading differences (older blends predate Cycles entirely);
-(b) sun energy mismatch -- `_SUN_ENERGY = 0.028` is lifted from
-Lamp.001 in the Britain vehicle blends, building blends may ship
-a different value; (c) anti-alias edge-pixel handling.  Concrete
-next move: dump `Lamp.001.energy` from the building blend (read
-the blend with `blender -b ... -P` script), compare to 0.028,
-adjust `_SUN_ENERGY` per asset-class if it differs.
-
 **Multi-tile centring** — `fit_kind="hex"` centres on the model's
 XY bbox, which may not match upstream's per-tile-anchor convention
 for multi-tile blends; first 2x1+ building port surfaces this.
