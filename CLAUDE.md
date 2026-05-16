@@ -865,6 +865,12 @@ Ubuntu 24.04 (and the CCW image it derives from) ships nothing
 apt-get install -y blender python3-numpy python3-pil libegl1
 ```
 
+This is a normal, expected step — go ahead and run it without
+asking when the bake / diff tooling needs it.  Agents have been
+hesitant to install system packages in the CCW container; don't
+be.  The container is ephemeral, the apt install is reversible
+on the next session.
+
 `blender` (4.0.2 on noble) provides the `blender -b -P` harness;
 its bundled Python is the system `python3.12`, so `python3-numpy`
 lands `numpy` where `render.py`'s `import numpy as np` will
@@ -874,6 +880,12 @@ the Blender harnesses themselves.  `libegl1` is the runtime
 Blender's GL backend dlopens — without it Cycles aborts with
 SIGABRT before the first render even though `--background` would
 suggest no display needed.
+
+The CCW base image's `/usr/local/bin/python3` is Python 3.11 and
+has its own broken numpy; the apt packages target the system
+3.12, so invoke the bake / diff tooling explicitly as
+`python3.12 -m …`, not `python3 -m …`, or the import chain blows
+up before the bake starts.
 
 No GPU required; Cycles falls back to CPU.  ~4 s per facing on
 a small carriage.

@@ -42,11 +42,12 @@ from pak import REPO_ROOT
 
 
 HERE = Path(__file__).resolve().parent
-# Buildings haven't been calibrated yet, so the IoU floor at which
-# `main` (and the `check.py` driver) trip CI is a guess -- raise it
-# after the first calibrated building bake lands at a measured
-# steady state.
-FAIL_IOU = 0.80
+# Worst-of-best across `res_1600_kg_01`'s four layouts measures 0.905;
+# the residual is a Cycles-vs-Blender-internal renderer interior shading
+# difference that won't move without a renderer swap (see git log for
+# the investigation).  Floor at 0.88 gives a ~0.025-IoU margin matching
+# `diff_upstream.FAIL_IOU = 0.90`'s relation to the 0.93 vehicle band.
+FAIL_IOU = 0.88
 _TRANSPARENT_RGB = (231, 255, 255)
 
 
