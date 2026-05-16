@@ -1,13 +1,4 @@
-"""Bake the lightweight steel rail on wooden sleepers.
-
-`SPEC` mirrors the upstream `wssr-light.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.wooden_sleeper_steel_rail_light
-"""
+"""Lightweight steel rail on wooden sleepers."""
 
 from __future__ import annotations
 
@@ -15,6 +6,7 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 70 lb/yard branch-line track.
 SPEC = Way(
     name='wssr_light',
     waytype='track',
@@ -26,6 +18,7 @@ SPEC = Way(
     max_weight=15,
     wear_capacity=1008000000,
     cost=32000,
+    # Lower than otherwise allowed because of the lower speed limit.
     maintenance=375,
 )
 BLEND = "ways/ns-cssr.blend"

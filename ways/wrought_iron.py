@@ -1,13 +1,4 @@
-"""Bake the 60lb/yard wrought-iron rail.
-
-`SPEC` mirrors the upstream `wrought_iron.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.wrought_iron
-"""
+"""60 lb/yard wrought-iron rail."""
 
 from __future__ import annotations
 
@@ -15,6 +6,8 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# Ahrons p. 95 suggests 55 lb/yard, but axle loading is too low at
+# that figure -- 60 lb/yard fits better.
 SPEC = Way(
     name='wrought_iron_track',
     waytype='track',

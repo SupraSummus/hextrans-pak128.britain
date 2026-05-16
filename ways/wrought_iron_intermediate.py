@@ -1,13 +1,4 @@
-"""Bake the wrought-iron rail, intermediate weight.
-
-`SPEC` mirrors the upstream `wrought_iron_intermediate.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.wrought_iron_intermediate
-"""
+"""Wrought-iron rail, intermediate weight."""
 
 from __future__ import annotations
 
@@ -15,6 +6,7 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 50 lb/yard.
 SPEC = Way(
     name='wrought_iron_intermediate_track',
     waytype='track',

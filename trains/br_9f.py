@@ -1,17 +1,4 @@
-"""Bake the BR Standard Class 9F steam locomotive.
-
-The 9F's published power figures (>800 kW) imply >12 % thermal
-efficiency, which is unrealistic; values here extrapolate on a
-7 % thermal-efficiency basis instead.  See
-http://www.traintesting.com/bulletin_13.htm for context.
-
-The way_wear_factor reflects the reduced hammer blow from the
-better-balanced motion.
-
-Reference: https://en.wikipedia.org/wiki/BR_Standard_Class_9F
-
-See `_4wheel_1850s_first.py` for the bake-unit pattern.
-"""
+"""BR Standard Class 9F steam locomotive."""
 
 from __future__ import annotations
 
@@ -19,6 +6,7 @@ from pak.bake import bake_main
 from pak.dat import Vehicle
 
 
+# https://en.wikipedia.org/wiki/BR_Standard_Class_9F
 SPEC = Vehicle(
     name="BR-9F",
     waytype="track",
@@ -30,9 +18,14 @@ SPEC = Vehicle(
     speed=110,
     weight=85,
     axle_load=16,
+    # Published power figures of >800 kW imply >12 % thermal
+    # efficiency, which is unrealistic; extrapolated on a 7 %
+    # thermal-efficiency basis instead.
+    # http://www.traintesting.com/bulletin_13.htm
     power=601,
     tractive_effort=176,
     rolling_resistance=13,
+    # Reflects the reduced hammer blow from the better-balanced motion.
     way_wear_factor=122188,
     payload=0,
     cost=7948000,

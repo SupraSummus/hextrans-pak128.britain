@@ -1,13 +1,4 @@
-"""Bake the improved steel rail on wooden sleepers.
-
-`SPEC` mirrors the upstream `wssri.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.wooden_sleeper_steel_rail_improved
-"""
+"""Improved steel rail on wooden sleepers."""
 
 from __future__ import annotations
 
@@ -15,11 +6,14 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 95 lb/yard -- the standard weight of rail for many years.
 SPEC = Way(
     name='wssri',
     waytype='track',
     intro_year=1888,
     intro_month=11,
+    # Late because this was the Underground's standard:
+    # http://www.trainweb.org/tubeprune/Surrey%20Quays%20Track.htm
     retire_year=1990,
     retire_month=7,
     topspeed=155,

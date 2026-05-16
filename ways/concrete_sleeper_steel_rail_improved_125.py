@@ -1,13 +1,4 @@
-"""Bake the improved steel rail on concrete sleepers (125mph).
-
-`SPEC` mirrors the upstream `cssri-125.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.concrete_sleeper_steel_rail_improved_125
-"""
+"""Improved steel rail on concrete sleepers (125 mph)."""
 
 from __future__ import annotations
 
@@ -15,6 +6,7 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 113 lb/yard.  Expensive as allows faster running.
 SPEC = Way(
     name='cssri-125',
     waytype='track',

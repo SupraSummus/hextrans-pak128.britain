@@ -1,20 +1,4 @@
-"""Bake the wrought-iron fishbelly rail.
-
-`SPEC` mirrors the upstream `wrought_iron_fishbelly.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.fishbelly
-
-Geometry caveat: real edge-rail of this era was iron strips on
-stone setts — no crushed-stone ballast, no transverse wooden
-sleepers.  Rendering through `ns-cssr.blend` gives a tinted
-ballasted track that's visually anachronistic; gameplay data is
-correct but the sprite isn't.  See TODO.md -> "Cast-iron /
-fishbelly geometry mismatch".
-"""
+"""Wrought-iron fishbelly rail."""
 
 from __future__ import annotations
 
@@ -22,6 +6,11 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# As used on the original Stockton & Darlington Railway.  28 lb/yard.
+# https://books.google.co.uk/books?id=WBI1AAAAMAAJ&pg=PA275
+# http://myweb.tiscali.co.uk/gansg/2-track/02track1.htm
+# https://lancashireminingmuseum.org/2017/05/02/fishbelly-rails-on-stone-sleepers-original-track-on-the-liverpool-manchester-bolton-leigh-railway-of-1830/
+# https://en.wikipedia.org/wiki/Wagonway#Metal_rails_introduced
 SPEC = Way(
     name='wrought_iron_fishbelly_track',
     waytype='track',

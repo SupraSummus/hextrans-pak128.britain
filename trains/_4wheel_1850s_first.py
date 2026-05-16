@@ -1,23 +1,4 @@
-"""Bake the 4wheel-1850s-first passenger carriage.
-
-Single source of truth for the asset.  `SPEC` holds the full
-upstream gameplay data (hex-engine + Simutrans-Extended schema);
-running the script emits `_4wheel_1850s_first.dat` and
-`_4wheel_1850s_first.png` as siblings — script, dat, and atlas
-share the `_`-prefixed basename so the triple moves and greps
-together.
-
-Run from the repo root:
-
-    python3 -m trains._4wheel_1850s_first
-
-or import (`from trains import _4wheel_1850s_first`) to read
-`SPEC` without baking.
-
-To seed a `Vehicle(...)` for a new asset, see
-`pak.dat.seed_python` (one-time, paste output into the
-new bake script).
-"""
+"""4wheel-1850s-first passenger carriage."""
 
 from __future__ import annotations
 

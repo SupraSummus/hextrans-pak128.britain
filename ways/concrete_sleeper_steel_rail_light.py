@@ -1,13 +1,4 @@
-"""Bake the lightweight steel rail on concrete sleepers.
-
-`SPEC` mirrors the upstream `cssr-light.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.concrete_sleeper_steel_rail_light
-"""
+"""Lightweight steel rail on concrete sleepers."""
 
 from __future__ import annotations
 
@@ -15,6 +6,8 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 98 lb/yard.
+# http://en.wikipedia.org/wiki/Permanent_way_%28history%29#Post-war_developments
 SPEC = Way(
     name='cssr_light',
     waytype='track',

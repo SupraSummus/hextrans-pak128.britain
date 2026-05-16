@@ -1,20 +1,4 @@
-"""Bake the heavier wrought-iron fishbelly rail.
-
-`SPEC` mirrors the upstream `wrought_iron_fishbelly_heavy.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.fishbelly_heavy
-
-Geometry caveat: real edge-rail of this era was iron strips on
-stone setts — no crushed-stone ballast, no transverse wooden
-sleepers.  Rendering through `ns-cssr.blend` gives a tinted
-ballasted track that's visually anachronistic; gameplay data is
-correct but the sprite isn't.  See TODO.md -> "Cast-iron /
-fishbelly geometry mismatch".
-"""
+"""Heavier wrought-iron fishbelly rail."""
 
 from __future__ import annotations
 
@@ -22,6 +6,15 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# As used on the original Liverpool & Manchester Railway.  35 lb/yard.
+# Rainhill suggests a 27 km/h limit, but higher speeds on the LMR
+# (laid with this track initially until 1835) are recorded in many
+# sources e.g. Ahrons p. 65.
+# https://books.google.co.uk/books?id=WBI1AAAAMAAJ&pg=PA275
+# http://myweb.tiscali.co.uk/gansg/2-track/02track1.htm
+# https://lancashireminingmuseum.org/2017/05/02/fishbelly-rails-on-stone-sleepers-original-track-on-the-liverpool-manchester-bolton-leigh-railway-of-1830/
+# https://en.wikipedia.org/wiki/Wagonway#Metal_rails_introduced
+# http://www.rainhilltrials.com/index.cfm/page/article/id/46/listid/27/title/The%20Liverpool%20and%20Manchester%201830%20Onwards
 SPEC = Way(
     name='wrought_iron_fishbelly_heavy_track',
     waytype='track',

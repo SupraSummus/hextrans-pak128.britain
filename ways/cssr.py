@@ -1,23 +1,4 @@
-"""Bake the concrete-sleeper / steel-rail (cssr) main-line track.
-
-110lb/yard flat-bottomed rail — see
-http://en.wikipedia.org/wiki/Permanent_way_%28history%29#Post-war_developments
-
-Single source of truth for the asset.  `SPEC` holds the gameplay
-scalars; running the script renders `cssr.png` (8 cols × 8 rows of
-hex-ribi cells) and emits `cssr.dat` keyed against that atlas.
-
-Run from the repo root:
-
-    python3 -m ways.cssr
-
-or import (`from ways import cssr`) to read `SPEC` without baking.
-The dat re-emit path (no Blender) is `python3 -m pak.reemit_dats`.
-
-`BLEND` is the upstream `ns-cssr.blend` strand-atom; `bake_way.py`
-composes it along every hex ribi's chord (see CLAUDE.md ->
-"Way-bake architecture").
-"""
+"""Concrete-sleeper / steel-rail (cssr) main-line track."""
 
 from __future__ import annotations
 
@@ -25,6 +6,8 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 110 lb/yard flat-bottomed rail.
+# http://en.wikipedia.org/wiki/Permanent_way_%28history%29#Post-war_developments
 SPEC = Way(
     name="cssr",
     waytype="track",

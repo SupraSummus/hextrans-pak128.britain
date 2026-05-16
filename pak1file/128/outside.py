@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
-"""Bake the hex pakset's `Outside` ground deliverable.
-
-Single flat hex cell rendered by the engine on void / out-of-world
-tiles (`ground_desc_t::outside`).  Without it the pakset fails to
-load with `ground.Outside.pak was not found`, so the file has to ship
-even before the rest of the map ground families are ready.
-
-Lives under `pak1file/128/` mirroring upstream's layout — see
-`pak1file/readme.txt`, which records that the loader expected a
-standalone `ground.Outside.pak` (whether hextrans still demands the
-literal filename or merely the object is undocumented here, but
-matching the upstream layout is the safe bet).  The Makefile's
-`OUTSIDE` target hands makeobj a directory output rather than a
-bundled `.pak` filename, so each object emits as `<obj>.<Name>.pak`
-on its own.
-
-Style mirrors the legacy `ls-water-outside-128.png`: a flat deep-water
-silhouette with no animation.  Reuses `grounds.water`'s deepest-depth
-base colour so the void reads as the same body of water that lines
-the map's edge, minus the per-stage glints (Outside is `Image[0][0]`
-only — one frame, no animation).
-"""
+"""Hex pakset's `Outside` ground deliverable -- flat void cell."""
 
 from __future__ import annotations
 

@@ -1,13 +1,4 @@
-"""Bake the early steel rail on wooden sleepers.
-
-`SPEC` mirrors the upstream `wssr_early.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.wooden_sleeper_steel_rail_early
-"""
+"""Early steel rail on wooden sleepers."""
 
 from __future__ import annotations
 
@@ -15,6 +6,8 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 80 lb/yard.  Original steel rails from the 1870s onwards should
+# be 80 lb/yard -- see Ahrons p. 185.
 SPEC = Way(
     name='wssr-early',
     waytype='track',
