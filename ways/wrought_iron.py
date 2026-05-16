@@ -23,10 +23,10 @@ SPEC = Way(
 )
 BLEND = "ways/ns-cssr.blend"
 MATERIALS = {
-    "Ballast": (46, 42, 40),
-    "Wood": (63, 63, 58),
-    "Rail": (72, 79, 68),
-    "RailTop": (110, 108, 107),
+    "Ballast": (54, 52, 48),
+    "Wood": (74, 78, 68),
+    "Rail": (106, 105, 100),
+    "RailTop": (191, 198, 187),
 }
 
 

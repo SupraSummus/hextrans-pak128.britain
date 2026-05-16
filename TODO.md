@@ -335,19 +335,20 @@ setts), repoint the three early-era .pys at it, drop their
 the dats are correct (intro dates, costs, wear); only visual
 fidelity for the 1789-1845 window suffers.
 
-**Rail-grade variant bake + recalibration.**  Of the 19 ported
-rail-grade scripts (cast_iron through cssri), only cssr and
-cast_iron have committed PNGs under the current Workbench FLAT
-pipeline.  The other 17 scripts hold Cycles-era `MATERIALS`
-values sampled under the previous Cycles bake; under Workbench
-FLAT they would render at the literal sampled colour with no
-shading attenuation, which is darker than upstream's authored
-atlas for the same reason cssr's old values were.  Concrete next
-move per script: fetch upstream's `ways/images/<name>.png`
-through `pak.fetch_pak`, K-means k=4 with magic-pink masked, paste
-the luminance-ordered centroids into `MATERIALS`, bake.  Same
-pattern as cssr (see CLAUDE.md → "Per-way material recolour"
-landed in the workbench-FLAT switch).
+**Rail-grade variant bake + recalibration.**  20 `ns-cssr.blend`
+rail-grade scripts (cast_iron through cssri); six have committed
+Workbench-FLAT-calibrated PNGs (cast_iron, wrought_iron_light,
+wrought_iron, wssr-early, wssri, cssr — continuous track from
+1834 onward bar a 1832-1833 micro-gap and a one-year 1887 gap).
+The remaining 14 scripts hold Cycles-era `MATERIALS` values
+sampled under the previous Cycles bake; under Workbench FLAT they
+would render at the literal sampled colour with no shading
+attenuation, which is darker than upstream's authored atlas for
+the same reason cssr's old values were.  Concrete next move per
+script: fetch upstream's `ways/images/<name>.png` through
+`pak.fetch_pak`, K-means k=4 with magic-pink masked, paste the
+luminance-ordered centroids into `MATERIALS`, bake.  Same pattern
+as cssr (see CLAUDE.md → "Per-way material recolour").
 
 **Waggonway and plateway have no upstream blend.**  `ways/waggonway.dat`
 (10 kph, wooden) and `ways/plateway.dat` (12 kph, iron-plated

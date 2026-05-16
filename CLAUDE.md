@@ -1149,10 +1149,10 @@ for tarmac).  The sampler isn't committed -- it's a one-off
 inline numpy + Pillow script, ~20 lines.  Adding a new variant
 is re-implement-as-needed: fetch upstream's PNG via
 `pak.fetch_pak`, mask `(231, 255, 255)`, k-means cluster, paste
-into a new `ways/<name>.py`.  The four committed-PNG ways (cssr,
-cast_iron, tarmac_road, tgv) are calibrated this way; the 15
-unbaked rail-grade scripts still hold Cycles-era MATERIALS that
-will need re-sampling when they're actually baked.
+into a new `ways/<name>.py`.  Every committed-PNG way is
+calibrated this way; the unbaked rail-grade scripts still hold
+Cycles-era MATERIALS that will need re-sampling when they're
+actually baked.
 
 The Transparent ground plane in `ns-cssr.blend` (Plane.005,
 material `Transparent`) is dropped via `_STRIP_MATERIALS` in the
