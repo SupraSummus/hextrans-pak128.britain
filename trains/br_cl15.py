@@ -1,7 +1,4 @@
-"""Bake the BR Class 15 diesel locomotive.
-
-See `_4wheel_1850s_first.py` for the bake-unit pattern.
-"""
+"""BR Class 15 diesel locomotive."""
 
 from __future__ import annotations
 

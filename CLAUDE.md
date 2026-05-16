@@ -653,6 +653,33 @@ the upstream.  Verbatim text is fine; trim only to fit the
 only other place the comments survive, so the bake script is
 the durable home.
 
+**Asset scripts carry asset content, not infrastructure docs.**
+Per-asset bake scripts are small (~30–60 lines): a one-line
+docstring naming the asset, the SPEC, the blend reference, the
+`if __name__` invocation.  The docstring is not a place for
+"`SPEC` mirrors upstream `<X>.dat`; `BLEND` is shared with every
+rail grade; `MATERIALS` is the per-variant recolour — see
+CLAUDE.md → 'Rail-grade material recolour'" template paragraphs,
+"Run from the repo root: `python3 -m <module>`" invocation hints,
+"First X port — exercises the Y axis of the Z schema" port-event
+narration, or "See `<other-asset>.py` for the bake-unit pattern"
+cross-references.  Shared infrastructure (the bake-unit shape,
+the rail-recolour pattern, alignment modes, projection contracts)
+lives in this file once; the port event is in `git log`; the
+invocation rule is one `python3 -m` away from any module path.
+Repeating any of it per-asset rots the moment the conventions
+shift — and N copies of "see CLAUDE.md → …" add nothing past the
+first.
+
+What does go in an asset script: the upstream `#` comments
+preserved as described above, SPEC-value rationale ("60 lb/yard
+fits better — axle loading too low at Ahrons' 55"), genuine
+calibration notes (the `heights=1` paragraph in
+`citybuildings/res_1600_kg_01.py` explains why a 2.64-intra-tile
+blend renders into one cell).  Domain caveats that span multiple
+assets (e.g. cast-iron / fishbelly sprite-vs-era mismatch) belong
+in TODO.md once, not in N asset-script docstrings.
+
 ### Atlas layout
 
 Each per-asset PNG is a single row of N facing renders, sliced by

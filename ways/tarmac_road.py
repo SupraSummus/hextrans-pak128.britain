@@ -1,21 +1,4 @@
-"""Bake the inter-urban tarmac road.
-
-First road port — exercises the way renderer on a non-rail blend.
-Unlike rails, upstream Britain doesn't ship a single straight-atom
-road blend; per-material the blends repo carries
-`<material>/{slope1, slope2, standard-city-base}.blend`, plus the
-per-shape `road_snow/{ew-snow, n, ne, ...}.blend` family used to
-pre-render snow variants.  `standard-city-base.blend` is the closest
-analog to the rail strand atom; the bake runs without errors against
-it but the silhouette has not been QAed against expectation (the
-blend may carry only a small base mesh — the bake's Cycles memory
-footprint was an order of magnitude smaller than `ns-cssr.blend`).
-See TODO.md -> "Road-blend generalization" for next moves.
-
-Run from the repo root:
-
-    python3 -m ways.tarmac_road
-"""
+"""Inter-urban tarmac road."""
 
 from __future__ import annotations
 
@@ -23,6 +6,7 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# 0.5 msa.
 SPEC = Way(
     name="tarmac_road",
     waytype="road",

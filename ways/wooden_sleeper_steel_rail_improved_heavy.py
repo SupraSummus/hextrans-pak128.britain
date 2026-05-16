@@ -1,13 +1,4 @@
-"""Bake the improved steel rail on wooden sleepers, heavy.
-
-`SPEC` mirrors the upstream `wssri-heavy.dat` gameplay data; `BLEND` is
-shared with every rail grade (the upstream `ns-cssr.blend`
-strand-atom), and `MATERIALS` is the per-variant recolour applied
-to the four blend slots — see CLAUDE.md -> "Rail-grade material
-recolour".  Run from the repo root:
-
-    python3 -m ways.wooden_sleeper_steel_rail_improved_heavy
-"""
+"""Improved steel rail on wooden sleepers, heavy."""
 
 from __future__ import annotations
 
@@ -15,6 +6,9 @@ from pak.bake import bake_way_main
 from pak.dat import Way
 
 
+# Necessary for the larger steam locomotives of 21--22 t axle loads.
+# 22 t axle loads need at least 110 lb/yard, but set to 109 here to
+# distinguish from later flat-bottomed 110 lb/yard rail.
 SPEC = Way(
     name='wssri_heavy',
     waytype='track',

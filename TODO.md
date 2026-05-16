@@ -9,18 +9,20 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**Port a multi-object vehicle.**  Five single-object ports
+**Port a multi-object vehicle.**  Six single-object ports
 exist now (1850s-first, open-third, br-cl15, br-9f,
-blackpool-brush), so the seeder workflow + the `bake_main`
-single-vehicle convenience are validated.  The multi-object
-path — one bake script emitting N dat+png pairs — is still
-on-paper-only.  Concrete next move: pick a multi-object
-upstream like `gwr-king` (loco + tender) and run a bake script
-that calls `bake_vehicle` twice with distinct `basename` (and
-typically distinct `blend`) per output.  Will surface how blends
-map to objects (one blend per object? one blend with multiple
-collections? unknown until we look at one) and whether
-`bake_main` should sprout a multi-spec variant.
+blackpool-brush, dragon-rapide), so the seeder workflow + the
+`bake_main` single-vehicle convenience are validated.  The
+multi-object path — one bake script emitting N dat+png pairs —
+is still on-paper-only.  Concrete next move: pick a multi-object
+upstream like `gwr-king` (loco + tender) or extend
+`air/dragon_rapide.py` to bake the paired `dragon-rapide-mail`
+variant (upstream's dat carries both in one file), and run a
+bake script that calls `bake_vehicle` twice with distinct
+`basename` (and typically distinct `blend`) per output.  Will
+surface how blends map to objects (one blend per object? one
+blend with multiple collections? unknown until we look at one)
+and whether `bake_main` should sprout a multi-spec variant.
 
 **Expand build scope as categories bake.**  `make all` compiles
 `grounds/`, `air/`, `trains/`, `trams/`, `ways/` today — the

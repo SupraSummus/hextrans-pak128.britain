@@ -1,16 +1,4 @@
-"""Bake the de Havilland DH.89 Dragon Rapide passenger biplane.
-
-First aircraft port — confirms upstream's `vehicles`-alignment
-camera + 128px tile size also works for air assets straight out
-of the box (no new viewpoint or scale tweaks beyond what
-trains/road vehicles already use; see CLAUDE.md -> "Upstream
-blend calibration contract", "Alignment mode" paragraph).
-
-The upstream dat ships a paired mail variant
-(`dragon-rapide-mail`); not yet ported — would be the first
-multi-object bake unit.  See `_4wheel_1850s_first.py` for the
-single-object pattern this script follows.
-"""
+"""De Havilland DH.89 Dragon Rapide passenger biplane."""
 
 from __future__ import annotations
 
@@ -18,9 +6,12 @@ from pak.bake import bake_main
 from pak.dat import Vehicle
 
 
+# https://en.wikipedia.org/wiki/De_Havilland_Dragon_Rapide
+# http://www.aviacaocomercial.net/english/frotavarig.htm
 SPEC = Vehicle(
     name="dragon-rapide",
     waytype="air",
+    # CC-BY-SA.
     copyright="Emmanuel Baranger",
     freight="Passagiere",
     engine_type="petrol",
@@ -28,6 +19,7 @@ SPEC = Vehicle(
     retire_year=1939, retire_month=12,
     speed=214,
     weight=1.6,
+    # https://en.wikipedia.org/wiki/De_Havilland_Dragon_Rapide#Specifications_(Dragon_Rapide)
     power=300,
     tractive_effort=4,
     payload=8,

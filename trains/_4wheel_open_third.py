@@ -1,13 +1,4 @@
-"""Bake the 4wheel-open-third early third-class open carriage.
-
-Reference photo: http://gerald-massey.org.uk/Railway/carriages/Operational/Carriage3.png
-Little other information is available about these, but assume early
-third class open wagons from a time when second class was becoming
-routinely enclosed and third class passengers first started to be
-conveyed.
-
-See `_4wheel_1850s_first.py` for the bake-unit pattern.
-"""
+"""4wheel-open-third early third-class open carriage."""
 
 from __future__ import annotations
 
@@ -15,6 +6,10 @@ from pak.bake import bake_main
 from pak.dat import Vehicle
 
 
+# Early third-class open wagon from a time when second class was
+# becoming routinely enclosed and third-class passengers first
+# started to be conveyed.  Reference photo:
+# http://gerald-massey.org.uk/Railway/carriages/Operational/Carriage3.png
 SPEC = Vehicle(
     name="4wheel-open-third",
     waytype="track",
@@ -30,7 +25,7 @@ SPEC = Vehicle(
     rolling_resistance=19,
     # The payload of the (unillustrated) Birmingham & Derby Junction
     # thirds of 1839 was 40 (Lacy & Dow p. 6).  These are smaller
-    # carriages — capacity assumed lower.
+    # carriages -- capacity assumed lower.
     payload=30,
     min_loading_time=17,
     max_loading_time=47,

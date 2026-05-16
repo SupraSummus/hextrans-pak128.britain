@@ -1,14 +1,4 @@
-"""Bake the Blackpool Brush railcoach tram.
-
-Built 1937 for Blackpool tramway.
-
-References:
- - https://en.wikipedia.org/wiki/Blackpool_tramway#Boat_cars
- - http://blackpool-trams.yolasite.com/brush-trams.php
- - capacity: http://www.britishtramsonline.co.uk/blackpoolfleet.doc
-
-See `trains/_4wheel_1850s_first.py` for the bake-unit pattern.
-"""
+"""Blackpool Brush railcoach tram (built 1937)."""
 
 from __future__ import annotations
 
@@ -16,6 +6,9 @@ from pak.bake import bake_main
 from pak.dat import Vehicle
 
 
+# http://en.wikipedia.org/wiki/Blackpool_tramway#Boat_cars
+# http://blackpool-trams.yolasite.com/brush-trams.php
+# Capacity: http://www.britishtramsonline.co.uk/blackpoolfleet.doc
 SPEC = Vehicle(
     name="Blackpool-Brush",
     waytype="tram_track",
@@ -50,7 +43,7 @@ SPEC = Vehicle(
     upgrade=["Blackpool-ProgressTwin-Power"],
     # Upstream's sparse `way_constraint_permissive[1]=1` and
     # `way_constraint_prohibitive[0]=0` (category-indexed flags)
-    # don't fit the dense-list schema yet — dropped here; see
+    # don't fit the dense-list schema yet -- dropped here; see
     # TODO.md "Sparse way_constraint indexing".
 )
 BLEND = "trams/blackpool-brush.blend"

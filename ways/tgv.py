@@ -1,15 +1,4 @@
-"""Bake the TGV (high-speed rail) track.
-
-UK HS1 / French TGV-style permanent way — solid concrete base,
-no ballast.  The bake reuses `pak/bake_way.py`'s composition
-pipeline against `ways/tgv.blend` as a second-rail generalization
-test of the renderer (CLAUDE.md -> "Per-blend strip lists belong
-in a per-asset bake script").
-
-Run from the repo root:
-
-    python3 -m ways.tgv
-"""
+"""TGV (high-speed rail) track."""
 
 from __future__ import annotations
 
@@ -23,9 +12,14 @@ SPEC = Way(
     intro_year=1981,
     intro_month=9,
     topspeed=320,
+    # Actual French TGV track has a 17 t axle load; HS1 in the UK
+    # accommodates at least the Class 92 (21 t).
+    # http://www.therailwaycentre.com/Recognition%20Tech%20Data%20EMU/EMU_373.html
     max_weight=21,
     wear_capacity=4200000000,
     cost=250000,
+    # Lower than otherwise owing to the hard concrete base in place
+    # of ballast.
     maintenance=950,
 )
 BLEND = "ways/tgv.blend"
