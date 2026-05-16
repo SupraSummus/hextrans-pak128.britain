@@ -54,9 +54,18 @@ HEIGHT_STEP = 8
 # pull in numpy via this module just to read it.
 from .way import HEX_TILE_RADIUS  # noqa: E402,F401
 
-# Pixel lift per world-z unit, shared with pak128 square dimetric so a
-# given 3D part has comparable on-screen height in both projections.
-PIXELS_PER_UNIT = DEFAULT_W / math.sqrt(2.0)
+# Shear z-coefficient: post-shear render-frame y = world_y/√3 +
+# world_z * HEX_SHEAR_Z_COEF (see `hex_proj_shear` below).  Set to
+# sin(60°) to match upstream square dimetric's world-z-to-screen lift
+# per blend unit (cam_rot_x = 60°, ortho projection), so a blend
+# authored for square renders at the same on-screen z extent under
+# hex without per-asset compensation.
+HEX_SHEAR_Z_COEF = math.sin(math.radians(60.0))
+
+# Pixel lift per world-z (intra-tile) unit.  Camera projects 1 world
+# unit to `W/(2R)` pixels in the post-shear frame, so screen-y lift
+# per world-z = HEX_SHEAR_Z_COEF · W/(2R).
+PIXELS_PER_UNIT = HEX_SHEAR_Z_COEF * DEFAULT_W / 2.0
 
 
 def engine_z_per_step(height_step: int = 1, w: int = DEFAULT_W) -> float:
@@ -132,21 +141,21 @@ def hex_proj_shear() -> tuple[tuple[float, ...], ...]:
     shear below, a camera with `ortho_scale = 2R` and image width `W`
     looking down +Y sees the right pixels:
         sx_blender = W/2 + x * (W / (2R))                  -> same as engine
-        sy_blender = H/2 + (y/sqrt(3) + z*sqrt(2)) * (W/(2R))
-                   = H/2 + y * W/(2R sqrt(3)) + z * (W*sqrt(2)/(2R))
-                   = H/2 + y * w-coef + z * (W*sqrt(2)/2)
-                   z-coef at R=1, W=128: 128*sqrt(2)/2 = 64*sqrt(2) = 90.51
-                   PIXELS_PER_UNIT = 128/sqrt(2) = 90.51  -> match
+        sy_blender = H/2 + (y/sqrt(3) + z*sin(60°)) * (W/(2R))
+                   = H/2 + y * W/(2R sqrt(3)) + z * (W*sin(60°)/(2R))
+                   z-coef at R=1, W=128: 128*sin(60°)/2 ≈ 55.43
+                   PIXELS_PER_UNIT = 128*sin(60°)/2 ≈ 55.43  -> match
+
+    See `HEX_SHEAR_Z_COEF` above for the z-coef = sin(60°) rationale.
     """
     inv_sqrt3 = 1.0 / math.sqrt(3.0)
-    sqrt2 = math.sqrt(2.0)
     # Column-major would matter for some math libs; Blender's `Matrix`
     # constructor takes row-major and we return the same.
     return (
-        (1.0, 0.0,       0.0,   0.0),
-        (0.0, 1.0,       0.0,   0.0),
-        (0.0, inv_sqrt3, sqrt2, 0.0),
-        (0.0, 0.0,       0.0,   1.0),
+        (1.0, 0.0,       0.0,             0.0),
+        (0.0, 1.0,       0.0,             0.0),
+        (0.0, inv_sqrt3, HEX_SHEAR_Z_COEF, 0.0),
+        (0.0, 0.0,       0.0,             1.0),
     )
 
 

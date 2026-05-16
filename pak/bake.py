@@ -37,14 +37,21 @@ def hex_layouts_default(dims_x: int, dims_y: int) -> int:
     `layouts=None`.  Pak-side policy, not engine schema — atlas size
     is a render-time choice, distinct from `pak.dat.layouts_default`
     which mirrors the engine's read-side default for `dims=X,Y` (no
-    Z).  Single-tile assets get 8 to match `HEX_VIEWPOINT`'s 8-facing
-    convention (half cardinal, half 45° corner views).  Rectangular
-    tiles fall back to the engine default (2 — one per orientation)
-    until a multi-tile asset ports and pins the right hex count;
-    see TODO.md → "Building hex layout count is arbitrary at 8".
+    Z).  Single-tile assets get 6 — hex has 6-fold rotational
+    symmetry, so 60° steps map facings onto the six hex edge
+    directions exactly.  City-building placement (`simcity.cc` ->
+    `simrand(get_all_layouts())`) is uniform over `[0, layouts)`,
+    so 6 layouts give every map placement an on-axis silhouette;
+    8 would have left half of placements at 45° off-axis where the
+    hex grid has nothing to align to.  Map rotation (which
+    `gebaeude_t::rotate90` would walk) is fatal under hex and the
+    code path is unreachable, so its missing 6-layout case doesn't
+    bite.  Rectangular tiles fall back to the engine default (2 —
+    one per orientation) until a multi-tile asset ports and pins
+    the right hex count.
     """
     if dims_x == 1 and dims_y == 1:
-        return 8
+        return 6
     from pak.dat import layouts_default
     return layouts_default(dims_x, dims_y)
 

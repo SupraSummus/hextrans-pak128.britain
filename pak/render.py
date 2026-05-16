@@ -82,13 +82,6 @@ class Viewpoint:
     fit_kind: str
     extrinsic: Optional[tuple]  # 4x4 row-major tuple, or None for identity
     facings: list[Facing]
-    # Optional non-uniform z scale applied on top of `fit_kind`.  None
-    # means uniform (z scales with x/y).  Buildings under hex use
-    # `sin(60°)/√2 ≈ 0.612` to undo hex shear's √2 z lift, giving the
-    # same on-screen z extent as pak128 square dimetric for upstream
-    # blends authored against that projection — see "Building-bake
-    # architecture" in CLAUDE.md.
-    fit_z_scale: Optional[float] = None
 
 
 def _strip_scene(bpy) -> Optional[float]:
@@ -248,8 +241,7 @@ def _bake_world_into_meshes(bpy, mathutils):
 
 
 def _compute_fit(mathutils, records, fit_kind: str,
-                 blend_ortho: Optional[float] = None,
-                 z_scale: Optional[float] = None):
+                 blend_ortho: Optional[float] = None):
     """Build the world->fitted-frame 4x4 the per-facing transform composes
     over.  `fit_kind="none"` is identity (model renders at its native
     blend-coord scale).  `fit_kind="hex"` centres the XY bounding box
@@ -261,15 +253,7 @@ def _compute_fit(mathutils, records, fit_kind: str,
     when the blend has no camera.  Buildings tend to ship at
     ortho_scale=12 (twice the per-cell zoom) and honouring that per-
     asset is what makes them render at upstream's per-pixel scale
-    instead of half-size.
-
-    `z_scale` (when set) multiplies the z axis after the uniform fit
-    scale, before z_floor pinning — used by hex building bakes to
-    compress the model's z so the projection's √2 z lift matches
-    square dimetric's sin(60°) z lift (`fit_z_scale ≈ 0.612`).  The
-    rendered building's z proportions then read like upstream's
-    square renders even though the engine still places the sprite
-    in a hex cell."""
+    instead of half-size."""
     M = mathutils.Matrix
     if fit_kind == "none":
         return M.Identity(4)
@@ -286,12 +270,7 @@ def _compute_fit(mathutils, records, fit_kind: str,
         cx = (min(xs) + max(xs)) / 2.0
         cy = (min(ys) + max(ys)) / 2.0
         z_floor = min(zs)
-        sx = sy = scale
-        sz = scale * z_scale if z_scale is not None else scale
-        # Diagonal scale (sx, sy, sz, 1) applied to centred coords.  Z
-        # floor pinning runs in pre-scale coords so the same z_floor
-        # value lands at world z = 0 regardless of z_scale.
-        S = M.Diagonal((sx, sy, sz, 1.0))
+        S = M.Diagonal((scale, scale, scale, 1.0))
         return S @ M.Translation((-cx, -cy, -z_floor))
     raise SystemExit(f"unknown fit_kind: {fit_kind!r}")
 
@@ -366,8 +345,7 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     blend_ortho = _strip_scene(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, blend_ortho)
     records = _bake_world_into_meshes(bpy, mathutils)
-    fit = _compute_fit(mathutils, records, viewpoint.fit_kind, blend_ortho,
-                       z_scale=viewpoint.fit_z_scale)
+    fit = _compute_fit(mathutils, records, viewpoint.fit_kind, blend_ortho)
     extrinsic = (mathutils.Matrix(viewpoint.extrinsic) if viewpoint.extrinsic
                  else mathutils.Matrix.Identity(4))
 
