@@ -957,19 +957,14 @@ heads S; pinned to `display/hex_proj.h::hex_screen_dx/dy` at
 pass.  No image-space slicing — each cell is its own 128 × 128
 Cycles render, the way vehicles already work.
 
-**Z compensation.**  `building_hex_viewpoint` sets
-`fit_z_scale = HEX_BUILDING_Z_FIT_SCALE` (= `sin(60°)/√2 ≈
-0.612`), pre-scaling the blend's z before the hex shear's √2 lift
-so the screen z extent matches pak128 square dimetric's `sin(60°)`
-lift.  Upstream Britain blends are authored against dimetric, so
-uncompensated they read 1.63× too tall in hex (e.g. `res_1600_
-kg_01`'s corner-on layouts at 121 px tall instead of upstream's
-91 px).  Vehicles don't carry this because their calibration
-diff (`SQUARE_VIEWPOINT`) uses the same per-blend-unit z lift as
-`HEX_VIEWPOINT` — the proportions match by construction.  Whether
-the engine's `hex_proj_shear` z coefficient itself should be
-`sin(60°)` instead of `√2` (eliminating the need for any pak-side
-compensation) is the open question in TODO.md.
+**Z coefficient.**  `hex_proj_shear`'s z-row coefficient is
+`2·sin(60°) = √3` (and `PIXELS_PER_UNIT = W·sin(60°)`), pinned to
+upstream square dimetric's `sin(60°)` lift per blend unit.  An
+upstream Britain blend authored for dimetric therefore renders at
+the same on-screen z extent under hex — no per-asset compensation
+in the building viewpoint.  Vehicles and ways inherit the same
+shear; rebake any pre-change PNGs to pick up the corrected z
+proportions (see TODO.md).
 
 Three landmines the first real building port surfaces:
 

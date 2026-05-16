@@ -35,7 +35,13 @@ from __future__ import annotations
 import math
 from math import radians
 
-from pak.hex_synth import DEFAULT_W, HEX_TILE_RADIUS, UPSTREAM_ORTHO_SCALE, hex_proj_shear
+from pak.hex_synth import (
+    DEFAULT_W,
+    HEX_SHEAR_Z_COEF,
+    HEX_TILE_RADIUS,
+    UPSTREAM_ORTHO_SCALE,
+    hex_proj_shear,
+)
 from pak.render import Facing, Viewpoint
 
 
@@ -174,7 +180,6 @@ HEX_VIEWPOINT = Viewpoint(
 # (0, W/2) = world (0, -R·√3).  Bake-side single source of truth for
 # multi-tile footprint translations.
 
-_SQRT2 = math.sqrt(2.0)
 _SQRT3 = math.sqrt(3.0)
 
 HEX_KOORD_Q_WORLD: tuple[float, float] = (1.5 * HEX_TILE_RADIUS,
@@ -183,27 +188,16 @@ HEX_KOORD_R_WORLD: tuple[float, float] = (0.0,
                                           -_SQRT3 * HEX_TILE_RADIUS)
 
 
-# Pre-scale applied to a hex-building blend's z before the hex shear's
-# √2 lift, so on-screen z extent matches pak128 square dimetric's
-# sin(60°) lift.  Upstream Britain blends are authored against the
-# dimetric projection; uncompensated, the same blend renders 1.63×
-# taller under hex than under square (= √2 / sin 60°).  Whether the
-# engine's `hex_proj_shear` z coefficient should itself be sin(60°)
-# instead of √2 — eliminating the need for any compensation — is the
-# open question logged in TODO.md.
-HEX_BUILDING_Z_FIT_SCALE: float = math.sin(radians(60.0)) / _SQRT2
-
-
 # World-z (intra-tile) shift per `backimage[…][height][…]` level.
 # The engine paints level h at `ypos -= h * raster_width` screen px
 # (`obj/gebaeude.cc::display`); at the standard `raster_width = W`
 # and the hex projection's `ortho_scale = 2R`, one full image height
-# = 2 intra-tile units of post-shear y.  Under the `hex_proj_shear`
-# z-coefficient `√2`, that's `2/√2 = √2` intra-tile in world z.
-# Bake side translates the model DOWN by `h * HEX_HEIGHT_LEVEL_WORLD_Z`
-# to render the height-h slice into the (un-shifted) hex camera; the
-# engine then paints each level at its proper screen offset.
-HEX_HEIGHT_LEVEL_WORLD_Z: float = _SQRT2 * HEX_TILE_RADIUS
+# = 2R intra-tile units of post-shear y.  Bake side translates the
+# model DOWN by `h * HEX_HEIGHT_LEVEL_WORLD_Z` (= `2R / shear_z_coef`)
+# in world z to render the height-h slice into the (un-shifted) hex
+# camera; the engine then paints each level at its proper screen
+# offset.
+HEX_HEIGHT_LEVEL_WORLD_Z: float = 2.0 * HEX_TILE_RADIUS / HEX_SHEAR_Z_COEF
 
 
 def hex_tile_world_offset(qx: int, ry: int) -> tuple[float, float]:
@@ -299,18 +293,16 @@ def building_hex_viewpoint(
     visible window.
 
     Layout rotation is `(360/layouts) * l` CCW around Z — each layout
-    spaces evenly around the circle, so a building with `layouts=8`
-    renders the same 8 headings as `HEX_VIEWPOINT`'s vehicle facings
-    (S, SW, W, NW, N, NE, E, SE) and `layouts=4` lands face-on at
-    each cardinal.  Authored Britain blends sit with façades along
-    world X/Y, so face-on (0, 90, 180, 270) views show one wall
-    flat to the hex camera — visually a flat elevation, not the
-    two-walls-visible silhouette upstream's dimetric corners give.
-    Prefer `layouts=8` (or `=6` for hex-native 60° steps) on
-    buildings so at least the off-axis layouts show the corner.
-    The engine's layout-to-map-rotation convention is unverified;
-    if a port shows wrong rotations, flip the sign or shift the
-    modulus.
+    spaces evenly around the circle.  Single-tile buildings default
+    to `layouts=6` (60° steps, hex-native).  Authored Britain blends
+    sit with façades along world X/Y, so 0° and 180° show one wall
+    flat to the hex camera; the four off-axis layouts (60°, 120°,
+    240°, 300°) show the two-walls-visible corner silhouette
+    upstream's dimetric corners give.  Whether layout 0 actually
+    shows the building's "front" face on the camera-side depends on
+    which side the blend's author placed it — for the `1600-
+    detatched-house-2f` blend that's the side with the gap in the
+    hedge, so layout 0 lands a flat front on the hex N edge.
     """
     step = 360.0 / layouts
     facings: list[Facing] = []
@@ -340,5 +332,4 @@ def building_hex_viewpoint(
         fit_kind="hex",
         extrinsic=hex_proj_shear(),
         facings=facings,
-        fit_z_scale=HEX_BUILDING_Z_FIT_SCALE,
     )
