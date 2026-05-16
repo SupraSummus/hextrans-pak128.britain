@@ -52,7 +52,9 @@ def bake_vehicle(
     """
     blend_path = fetch(blend)
     cmd = [
-        "blender", "-b", str(blend_path), "-P", str(_RENDER_SCRIPT),
+        "blender", "-b", str(blend_path),
+        "--python-exit-code", "1",
+        "-P", str(_RENDER_SCRIPT),
         "--",
         "--out", str(out_dir),
         "--name", basename,
@@ -94,7 +96,6 @@ def bake_way(
     basename: str,
     out_dir: Path,
     strip: str = "Sphere",
-    samples: int = 32,
     materials: dict[str, tuple[int, int, int]] | None = None,
 ) -> Path:
     """Drive `pak/bake_way.py` to render `<out_dir>/<basename>.png`,
@@ -115,13 +116,14 @@ def bake_way(
     just unpacks three-element sequences).  Returns the dat path.
     """
     cmd = [
-        "blender", "-b", "-P", str(_BAKE_WAY_SCRIPT),
+        "blender", "-b",
+        "--python-exit-code", "1",
+        "-P", str(_BAKE_WAY_SCRIPT),
         "--",
         "--blend", blend,
         "--name", basename,
         "--out", str(out_dir),
         "--strip", strip,
-        "--samples", str(samples),
     ]
     if materials:
         cmd += ["--materials", json.dumps(materials)]
@@ -186,7 +188,9 @@ def bake_building(
     blend_path = fetch(blend)
     cells_per_row = spec.dims_x * spec.dims_y
     cmd = [
-        "blender", "-b", str(blend_path), "-P", str(_RENDER_SCRIPT),
+        "blender", "-b", str(blend_path),
+        "--python-exit-code", "1",
+        "-P", str(_RENDER_SCRIPT),
         "--",
         "--out", str(out_dir),
         "--name", basename,

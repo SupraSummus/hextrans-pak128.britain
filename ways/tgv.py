@@ -29,7 +29,13 @@ SPEC = Way(
     maintenance=950,
 )
 BLEND = "ways/tgv.blend"
+MATERIALS = {
+    "Ballast": (83, 77, 75),
+    "Wood": (129, 119, 115),
+    "Rail": (159, 148, 142),
+    "RailTop": (205, 201, 199),
+}
 
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, BLEND, __file__)
+    bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)

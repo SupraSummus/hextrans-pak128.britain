@@ -1,13 +1,12 @@
-"""Structural checks on `MATERIALS` dicts in `ways/<rail>.py` bake scripts.
+"""Structural shape check on `MATERIALS` dicts in `ways/<name>.py`.
 
-`pak/bake_way.py --materials <JSON>` reads the dict at bake time; a
-malformed entry only fails when that variant is actually baked.
-This runs on every push so the missing-key / out-of-range bug
-breaks CI immediately, without waiting for the next Blender
-invocation.  We walk `ways/*.py` directly rather than reusing
-`pak.bake_units.discover` (which gates on `.dat` + `.png`
-siblings) — an unbaked rail-script port is exactly the state we
-want covered.
+Catches malformed RGB entries (wrong arity, non-int, out-of-range)
+without invoking Blender.  Material-name correctness is left to the
+bake driver, which raises `RuntimeError: --materials targets unknown
+blend materials: [...]` when a key doesn't match the open blend's
+slot set -- duplicating that check here would force every new blend
+to maintain a slot-set table here in lockstep, with the blend itself
+as the actual source of truth.
 """
 from __future__ import annotations
 
@@ -18,16 +17,7 @@ from types import ModuleType
 from pak import REPO_ROOT
 
 
-_RAIL_MATERIALS: frozenset[str] = frozenset({"Ballast", "Wood", "Rail", "RailTop"})
-
-
 def _ways_modules_with_materials() -> list[tuple[str, ModuleType]]:
-    """Every `ways/<name>` module that exposes a top-level `MATERIALS`.
-
-    Import-and-filter rather than text-grep: a comment mentioning
-    `MATERIALS` would survive a grep, but `getattr` only returns the
-    real binding.
-    """
     out: list[tuple[str, ModuleType]] = []
     for path in sorted((REPO_ROOT / "ways").glob("*.py")):
         if path.name == "__init__.py":
@@ -39,21 +29,19 @@ def _ways_modules_with_materials() -> list[tuple[str, ModuleType]]:
     return out
 
 
-class TestRailScriptMaterials(unittest.TestCase):
+class TestWayScriptMaterials(unittest.TestCase):
 
-    def test_at_least_one_rail_script_exists(self):
-        # Guard against an "all rails got deleted" silent pass.
+    def test_at_least_one_script_exists(self):
+        # Guard against an "all MATERIALS got deleted" silent pass.
         self.assertGreater(len(_ways_modules_with_materials()), 0)
 
-    def test_every_rail_script_has_well_formed_materials(self):
+    def test_every_materials_dict_is_well_formed(self):
         for name, mod in _ways_modules_with_materials():
             with self.subTest(script=name):
                 materials = mod.MATERIALS
                 self.assertIsInstance(materials, dict)
-                self.assertEqual(set(materials), _RAIL_MATERIALS,
-                                 f"{name} MATERIALS keys don't match "
-                                 "ns-cssr.blend's material slots")
                 for material, rgb in materials.items():
+                    self.assertIsInstance(material, str)
                     self.assertEqual(len(rgb), 3,
                                      f"{name}.MATERIALS[{material!r}] "
                                      "isn't a 3-tuple")

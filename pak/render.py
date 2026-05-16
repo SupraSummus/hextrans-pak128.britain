@@ -142,6 +142,16 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     scn.render.resolution_percentage = 100
     scn.render.film_transparent = True
     scn.render.image_settings.color_mode = "RGBA"
+    # Pin Cycles knobs that are otherwise non-deterministic across CI
+    # runs even on identical hardware: threads (multi-threaded reduction
+    # order), adaptive sampling (per-pixel termination on a noise
+    # estimate), the denoiser (the blend may save it on), and the
+    # sample seed (the blend may save a non-zero value).
+    scn.render.threads_mode = "FIXED"
+    scn.render.threads = 1
+    scn.cycles.use_denoising = False
+    scn.cycles.use_adaptive_sampling = False
+    scn.cycles.seed = 0
 
     return cam, sun
 

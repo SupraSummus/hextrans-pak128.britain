@@ -348,46 +348,19 @@ setts), repoint the three early-era .pys at it, drop their
 the dats are correct (intro dates, costs, wear); only visual
 fidelity for the 1789-1845 window suffers.
 
-**RailTop specular dominates the MATERIALS diffuse override.**
-`ns-cssr.blend`'s `RailTop` material reads as bright bluish-white in
-our bake (sampled (181, 200, 200) on cssr `s` cell) regardless of
-the per-rail `MATERIALS["RailTop"]` value — under Cycles auto-
-conversion of the `use_nodes=False` material, the specular
-reflection from sky ambient dominates the diffuse contribution.
-The calibrated `RailTop` values in each `ways/<rail>.py` are
-therefore partly fictional (committed, but only weakly visible).
-Concrete next move: try `mat.specular_intensity = 0.0` for
-`RailTop` (and probably the other materials too — none of
-`ns-cssr.blend`'s slots want real specular) in
-`pak/bake_way.py::_apply_material_overrides`, rerun
-`python3 -m ways.cssr`, check that the rail head reads grey not
-sky-blue.  Trigger: bake any rail variant where the cross-family
-RailTop difference looks washed-out — wrought-iron (olive RailTop
-(110, 108, 107)) vs cssr (pure-grey RailTop (183, 183, 183))
-should be a noticeable side-by-side contrast and currently isn't.
-
-**Whole-pakset shading-gain compensation.**  The committed per-rail
-`MATERIALS` colours are upstream rendered-RGB (sampled by hand from
-upstream PNGs' NS-chord cell), not diffuse-base.  Our hex sun
-shading attenuates ~30 %: setting Ballast diffuse to (87, 87, 87)
-for cssr renders as (64, 71, 71).  Result is honest (no per-material
-fudge) but the whole pakset reads a notch darker than upstream's
-published atlases.  Concrete next move when more than the existing
-two ways have baked atlases: pick cssr as the anchor (upstream
-chord-cell target is pure grey 87 / 118 / 133 / 183), bump
-`pak/viewpoints.py` sun energy until our render's K-clustered cssr
-lands within ±5 of those values, rebake everything that's
-downstream.  Done as one constant for the whole pakset, not
-per-asset.  Soft trigger.
-
-**Rail variant bake validation.**  19 ports of the catalog
-(cast_iron through cssri) have `MATERIALS` colocated but only
-cssr + cast_iron are baked.  Concrete next move: bake the remaining
-17 variants and eyeball that the per-family colour differentiation
-reads as expected.  Address the `RailTop` specular issue first
-(separate TODO) so family differences (e.g. wrought-iron olive vs
-cssr pure grey) aren't washed out by sky reflection on the rail
-head.
+**Rail-grade variant bake + recalibration.**  Of the 19 ported
+rail-grade scripts (cast_iron through cssri), only cssr and
+cast_iron have committed PNGs under the current Workbench FLAT
+pipeline.  The other 17 scripts hold Cycles-era `MATERIALS`
+values sampled under the previous Cycles bake; under Workbench
+FLAT they would render at the literal sampled colour with no
+shading attenuation, which is darker than upstream's authored
+atlas for the same reason cssr's old values were.  Concrete next
+move per script: fetch upstream's `ways/images/<name>.png`
+through `pak.fetch_pak`, K-means k=4 with magic-pink masked, paste
+the luminance-ordered centroids into `MATERIALS`, bake.  Same
+pattern as cssr (see CLAUDE.md → "Per-way material recolour"
+landed in the workbench-FLAT switch).
 
 **Waggonway and plateway have no upstream blend.**  `ways/waggonway.dat`
 (10 kph, wooden) and `ways/plateway.dat` (12 kph, iron-plated
