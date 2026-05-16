@@ -7,7 +7,7 @@ this repo's history (CLAUDE.md -> "Repo size strategy") so the
 build's `copy` step stages them on demand.
 
 Reading the bake-unit `.py` keeps the source of truth singular —
-the same `SPEC: Vehicle` that drives `emit_vehicle` also names the
+the same `SPEC` / `SPECS` that drives the dat emit also names the
 wav.  The committed `.dat` is the derived artefact; never read it
 here.
 
@@ -20,19 +20,19 @@ import shutil
 import sys
 from pathlib import Path
 
-from .bake_units import discover, import_script
+from .bake_units import discover, import_script, specs_of
 from .dat import Vehicle
 from .fetch_pak import fetch
 
 
 def collect() -> set[str]:
-    """Every `.wav` named by a ported bake unit's `SPEC.sound`."""
-    wavs: set[str] = set()
-    for script in discover():
-        spec = getattr(import_script(script), "SPEC", None)
-        if isinstance(spec, Vehicle) and spec.sound:
-            wavs.add(spec.sound)
-    return wavs
+    """Every `.wav` named by a ported bake unit's vehicle `sound`."""
+    return {
+        spec.sound
+        for script in discover()
+        for spec in specs_of(import_script(script))
+        if isinstance(spec, Vehicle) and spec.sound
+    }
 
 
 def main(argv: list[str]) -> int:

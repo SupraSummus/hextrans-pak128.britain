@@ -453,29 +453,43 @@ emits the corresponding `.dat` + `.png` outputs as siblings.  The
 script is the **single source of truth** — no upstream `.dat` is
 read at bake time.
 
-The bake-unit shape (single-vehicle demonstrated;
-multi-vehicle pattern designed but not yet exercised):
+Two bake-unit shapes:
 
 ```
+air/
+  dragon_rapide.py        # SPECS = [PASSENGER, MAIL] -> one combined dat
+  dragon_rapide.dat       # generated; two obj=vehicle blocks separated by ----
+  dragon_rapide.png       # generated; shared atlas for both blocks
 trains/
-  __init__.py                    # makes the dir an importable package
-  _4wheel_1850s_first.py         # bake unit; 1 SPEC -> 1 dat + 1 png
-  _4wheel_1850s_first.dat        # generated
-  _4wheel_1850s_first.png        # generated
-  _gwr_king.py                   # (illustrative) 2 SPECs (loco + tender)
-  _gwr_king.dat                  # generated
-  _gwr_king.png
-  _gwr_king_tender.dat
-  _gwr_king_tender.png
-  4wheel-stanhope.dat            # unported upstream (seeder input)
+  __init__.py             # makes the dir an importable package
+  _4wheel_1850s_first.py  # SPEC = Vehicle(...)  -> 1 dat + 1 png
+  _4wheel_1850s_first.dat # generated
+  _4wheel_1850s_first.png # generated
+  _gwr_king.py            # (illustrative) 2 distinct-sprite outputs
+  _gwr_king.dat           # generated  } loco
+  _gwr_king.png           # generated  }
+  _gwr_king_tender.dat    # generated  } tender
+  _gwr_king_tender.png    # generated  }
+  4wheel-stanhope.dat     # unported upstream (seeder input)
   …
 ```
 
-Today only `_4wheel_1850s_first` is ported.  The multi-vehicle
-pattern (one script emitting multiple dat+png pairs) is
-intentionally supported by the parser and emitter but not yet
-demonstrated end-to-end; the first multi-object port will validate
-how blends map to objects in real upstream blend files.
+**Shared-sprite multi-object (`SPECS`).**  When upstream packs two
+vehicles into one dat that share the same image refs — e.g.
+`dragon-rapide` + `dragon-rapide-mail`, same plane in different
+gameplay roles — the bake unit declares `SPECS: list[Vehicle]` and
+`emit_vehicles` writes one combined dat where every block points
+at the shared `<basename>.0.<col>` atlas.  One render, two
+gameplay objects.
+
+**Distinct-sprite multi-object (illustrative `_gwr_king`).**  Loco
+and tender are visually different objects; each gets its own
+`<basename>.{dat,png}` triple driven by a per-output `bake_vehicle`
+call inside the same script.  Designed but not yet exercised
+end-to-end — `pak/reemit_dats.py` still introspects only `SPEC` /
+`SPECS` and will need a per-script reemit hook for this case (see
+TODO.md → "Multi-object reemit hook" — and "Bake script shape"
+below).
 
 All three files in a bake-unit triple share the same basename.
 A leading `_` is required only when the asset name starts with a
@@ -521,9 +535,12 @@ if __name__ == "__main__":
 
 `bake_main` derives out-dir + basename from `__file__` and calls
 the underlying `bake_vehicle` (fetch-blend / run-render /
-emit-dat).  Multi-object bake units skip the convenience and
-call `bake_vehicle` directly per output, with distinct `basename`
-(and typically distinct `blend`) per call.
+emit-dat).  Both accept either a `Vehicle` or a `list[Vehicle]` —
+shared-sprite multi-object scripts pass `SPECS` to the same entry
+point and the dat-emit step writes one combined dat.  Distinct-
+sprite multi-object bake units skip the convenience and call
+`bake_vehicle` directly per output, with distinct `basename` (and
+typically distinct `blend`) per call.
 
 **Ways follow the same shape.**  A way bake script holds a typed
 `Way` (covers the hex-engine `Obj=way` schema + the few extended
@@ -565,7 +582,7 @@ those keys — revisit when the slope-cell pass lands.
 `Vehicle` fields cover both hex-engine (keys
 `descriptor/writer/vehicle_writer.cc` reads) and
 Simutrans-Extended schema (`bidirectional`, `comfort`, `axles`,
-`tractive_effort`, `liverytype`, …).  `emit_vehicle` writes every
+`tractive_effort`, `liverytype`, …).  `emit_vehicles` writes every
 set field; the hex engine silently ignores keys it doesn't
 recognise, so extended-only keys are harmless from its
 perspective and shipping the full schema makes the dat
@@ -582,8 +599,9 @@ nested-bracket capitalisation.
 Construction catches typos (`TypeError: unexpected keyword`).
 Unset fields (`None` for scalars, `[]` for lists) are skipped on
 emit, matching upstream's convention of omitting keys that take
-the engine's default.  Multi-object bake scripts hold a list of
-`Vehicle`s and call `emit_vehicle` once per output.
+the engine's default.  Shared-sprite multi-object bake scripts
+pass a list of `Vehicle`s in a single `emit_vehicles` call;
+distinct-sprite scripts call it once per output.
 
 **Importable bake scripts.**  Asset names that start with a
 digit (`4wheel_…`) aren't valid Python identifiers — a leading
@@ -793,34 +811,40 @@ Present:
   (one-time seeder: upstream object entries → fully-populated
   `Vehicle`), `seed_python(vehicle)` (paste-ready non-default-only
   source repr for a new bake script), and
-  `emit_vehicle(vehicle, out_dir, basename)` (writes the dat
-  with every set field plus hex-atlas image refs).  The freight-
-  image subsystem (`freightimage[<dir>]`,
+  `emit_vehicles(list_of_vehicle, out_dir, basename)` (writes
+  one combined dat where every block points at the same atlas;
+  pass a one-element list for the single-vehicle case).  The
+  freight-image subsystem (`freightimage[<dir>]`,
   `freightimage[N][<dir>]`, `freightimagetype[N]`) is the one
   area `Vehicle` doesn't model yet — see `TODO.md`.
 - `pak/bake.py` — per-asset bake driver.
   `bake_vehicle(spec, blend=..., basename=..., out_dir=...)`
   fetches the blend, runs the hex renderer, writes the atlas
-  PNG, and emits the dat.  Bake scripts shrink to imports +
-  SPEC + a single `bake_vehicle(...)` call.
+  PNG, and emits the dat.  `spec` may be a single `Vehicle` or a
+  `list[Vehicle]` (shared-sprite multi-object — emit_vehicles
+  writes one combined dat).  Bake scripts shrink to imports +
+  SPEC (or SPECS) + a single `bake_main(...)` call.
 - `pak/bake_units.py` — `discover()` returns every
   per-asset bake script (`.py` with `.dat` + `.png` siblings outside
-  `pak/`, `tests/`, `grounds/`, `simutranslator/`), and
-  `import_script(path)` imports it by its repo-relative dotted
-  name.  Shared by `reemit_dats`, `fetch_wavs`, and
-  `tests/test_ported_dats` so the catalog has one definition of
-  what counts as a ported asset.
+  `pak/`, `tests/`, `grounds/`, `simutranslator/`), `import_script
+  (path)` imports it by its repo-relative dotted name, and
+  `specs_of(mod)` normalises a script's `SPECS` (multi-object
+  shared sprite) or `SPEC` (single) attribute into a list — one
+  definition of what counts as a ported asset, shared by
+  `reemit_dats`, `fetch_wavs`, `check`, and `tests/test_ported_dats`.
 - `pak/reemit_dats.py` — catalog-wide driver that
-  imports every `discover()`-ed bake script and calls
-  `emit_vehicle` on its `SPEC`.  No Blender, no render.  Wired
-  into CI as the `reemit-dats` lint job to catch SPEC ↔
-  committed-`.dat` drift on every push.  Raises on a bake script
-  without `SPEC: Vehicle` rather than silently skipping — the
-  first multi-object bake unit will need to extend this (see
-  `TODO.md` → "Multi-object reemit hook").
+  imports every `discover()`-ed bake script and re-emits its dat
+  from `SPECS` (multi-block via `emit_vehicles`) or `SPEC` (single
+  via the right per-type emitter).  No Blender, no render.  Wired
+  into CI as the `reemit-dats` lint job to catch dat drift on
+  every push.  Raises on a bake script with neither — distinct-
+  sprite multi-object units (one script emitting multiple
+  `<basename>.{dat,png}` triples) still need a per-script reemit
+  hook (see `TODO.md` → "Multi-object reemit hook").
 - `pak/fetch_wavs.py` — catalog-wide driver that walks
-  `bake_units.discover()`, reads each `SPEC.sound`, and pulls the
-  named wav from the upstream pak via `fetch_pak`.  Invoked by
+  `bake_units.discover()`, reads `sound` off every `SPEC` /
+  `SPECS` Vehicle, and pulls each unique wav from the upstream
+  pak via `fetch_pak`.  Invoked by
   the Makefile `copy` step to stage sounds into `$(PAKDIR)/sound/`
   on every build.
 - `tests/test_dat.py` — `unittest`-based smoke tests for parse,
@@ -1213,11 +1237,10 @@ post-failure step and reports whether the drift is in the pixel
 data or only in the PNG encoding (zlib / chunk layout) -- the
 latter would be a libpng / image_settings issue, not the
 renderer.  `reemit-dats` runs
-`python3 -m pak.reemit_dats` (imports every vehicle bake
-script, re-runs `emit_vehicle` from its `SPEC` — no Blender, no
+`python3 -m pak.reemit_dats` (imports every bake script, re-runs
+the matching emitter from `SPEC` / `SPECS` — no Blender, no
 render) and asserts `git diff --exit-code -- '*.dat'`; catches dat
-drift between a bake script's SPEC and its committed `.dat` sibling
-on every push.  `tests` runs the `python3 -m unittest` suite under
+drift between bake script and committed `.dat` sibling on every push.  `tests` runs the `python3 -m unittest` suite under
 `tests/` (needs `numpy` for the `pak.hex_synth` import chain pulled in
 by `test_square_synth`).
 

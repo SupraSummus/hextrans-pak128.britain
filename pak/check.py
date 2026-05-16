@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 from pak import REPO_ROOT, diff_buildings, diff_upstream
+from pak.bake_units import specs_of
 from pak.dat import Building
 
 
@@ -61,7 +62,8 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float] | None
     mod = _load(script)
     blend = getattr(mod, "BLEND", None)
     stem = getattr(mod, "UPSTREAM_STEM", None)
-    spec = getattr(mod, "SPEC", None)
+    specs = specs_of(mod)
+    spec = specs[0] if specs else None
     if blend is None or stem is None:
         missing = "BLEND" if blend is None else "UPSTREAM_STEM"
         print(f"{script.name}: no {missing}, skipping (add one to enable diff)")

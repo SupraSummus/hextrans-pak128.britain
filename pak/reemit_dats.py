@@ -9,33 +9,35 @@ bake.
 
 Bake-unit discovery is shared with `pak.fetch_wavs` via
 `pak.bake_units` (see CLAUDE.md -> "Bake units and per-asset
-layout").  A bake-unit script without a `SPEC: Vehicle` raises —
-the multi-object pattern would need its own re-emit hook; refuse to
-silently skip.
+layout").  A script with `SPECS: list[Vehicle]` (shared-sprite
+variants — e.g. `air/dragon_rapide.py`) emits a combined multi-
+object dat via `emit_vehicles`; otherwise `SPEC: Vehicle | Way |
+Building` drives the single-object emitters.  A script with
+neither raises rather than silently skipping.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from pak import REPO_ROOT
-from pak.bake_units import discover, import_script
+from pak.bake_units import discover, import_script, specs_of
 from pak.dat import (
-    Building, Vehicle, Way, emit_building, emit_vehicle, emit_way,
+    Building, Vehicle, Way, emit_building, emit_vehicles, emit_way,
 )
 
 
 def _reemit(script: Path) -> Path:
-    spec = getattr(import_script(script), "SPEC", None)
-    if isinstance(spec, Vehicle):
-        return emit_vehicle(spec, out_dir=script.parent, basename=script.stem)
-    if isinstance(spec, Way):
-        return emit_way(spec, out_dir=script.parent, basename=script.stem)
-    if isinstance(spec, Building):
-        return emit_building(spec, out_dir=script.parent, basename=script.stem)
+    specs = specs_of(import_script(script))
+    out_dir, basename = script.parent, script.stem
+    if specs and all(isinstance(s, Vehicle) for s in specs):
+        return emit_vehicles(specs, out_dir=out_dir, basename=basename)
+    if len(specs) == 1 and isinstance(specs[0], Way):
+        return emit_way(specs[0], out_dir=out_dir, basename=basename)
+    if len(specs) == 1 and isinstance(specs[0], Building):
+        return emit_building(specs[0], out_dir=out_dir, basename=basename)
     rel = script.relative_to(REPO_ROOT)
     raise RuntimeError(
-        f"{rel} has no `SPEC: Vehicle | Way | Building` — multi-object "
-        f"bake units need their own re-emit hook"
+        f"{rel} has no usable `SPEC` / `SPECS` for reemit"
     )
 
 
