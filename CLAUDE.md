@@ -246,17 +246,12 @@ auto-fit) — trust the contract instead.
 **Artist-authored XYZ is the placement contract.**  `_compute_fit`
 with `fit_kind="hex"` is scale-only: convert blend coords to
 intra-tile coords by `2*HEX_TILE_RADIUS/blend_ortho` and stop.  No
-XY recentre, no z-floor drop.  Earlier the renderer did both as a
-substitute for upstream's per-facing camera offset (the
-`"vehicles"` / `"normal"` alignment positions in the upstream render
-script), but the substitute masked real authoring quirks and the
-per-tile `model_translation` axis (added for multi-tile buildings)
-is the right place to express positional anchoring -- not the fit
-matrix.  Britain blends are authored against the contributing-
-graphics spec (long-axis Y, centre near origin, footings at z=0
-for buildings); the scale-only fit honours that authoring on
-everything that follows the spec, and surfaces drift on assets
-that don't.
+XY recentre, no z-floor drop.  Britain blends are authored against
+the contributing-graphics spec (long-axis Y, centre near origin,
+footings at z=0 for buildings); the scale-only fit honours that
+authoring and surfaces drift on assets that don't.  Positional
+anchoring goes through the per-tile `model_translation` axis (used
+by multi-tile buildings), not the fit matrix.
 
 **Alignment mode is asset-class-dependent.**  Trains, trams, water
 craft and aircraft use upstream's **`vehicles` alignment** camera
@@ -648,11 +643,8 @@ populates both scalar `payload` (max, what the hex engine reads)
 and `payload_by_class` (the upstream class breakdown).
 
 **Generated artefacts are committed** for "see the change in the
-PR" review.  Cumulative atlas weight gets measured after the
-first batch lands (`TODO.md` → "Atlas commit vs.
-CI-artefact-only").  Debug renders, per-facing PNGs, diff
-visualisations go to a `.gitignore`d `out/` and regenerate on
-demand.
+PR" review.  Debug renders, per-facing PNGs, diff visualisations
+go to a `.gitignore`d `out/` and regenerate on demand.
 
 **Upstream dats get deleted once ported.**  An upstream `.dat`
 is the seeder input for `port_vehicle`; once a bake script's
@@ -731,207 +723,86 @@ Lives at `pak/` in this repo, not in the blends repo
 (blends are upstream-owned and stay reusable; our hex-rendering
 opinions don't belong there).
 
-Present:
+**Fetch.**  `_fetch.py` is the shared HTTP / `.cache/` / lock-file
+/ TOFU machinery; `fetch_blend.py` and `fetch_pak.py` are thin
+per-`Source` wrappers; `fetch_wavs.py` is a batch helper over
+`fetch_pak` driven by `bake_units.discover()`.  See "Asset
+sourcing without cloning" above.
 
-- `pak/_fetch.py` — shared `Source`-driven HTTP fetch + `.cache/`
-  resolver + lock-file parser/emitter + validate-or-record.
-- `pak/fetch_blend.py` / `pak/fetch_pak.py` — thin per-source
-  wrappers over `_fetch`.  `Source` carries the GitHub slug, lock
-  filename and `.cache/` subdir; each wrapper re-exports `fetch`
-  for its source.
-  Used by `diff_upstream.py` today and by future runtime `.wav`
-  fetching (see `TODO.md`).
-- `pak/render.py` — `blender -b -P` harness that takes a
-  `Viewpoint` and renders one atlas (plus optional per-facing PNGs).
-  Strips the blend's Camera / Sphere / Lamp objects on entry and
-  installs its own from the Viewpoint — the .blend is treated as
-  pure model data.  Same code path serves the upstream square
-  reference and this project's hex projection; the only difference
-  is which `Viewpoint` gets passed in.  Applies the upstream blend
-  calibration contract (see above) and emits a single-row atlas PNG.
-- `pak/viewpoints.py` — `SQUARE_VIEWPOINT` (reproduces
-  the upstream `render_SimutransRender_pak128Britain-65.py`
-  "vehicles" alignment verbatim) and `HEX_VIEWPOINT` (camera looking
-  +Y at origin, ortho_scale=2R, hex shear baked into mesh via
-  `extrinsic`, model rotated per facing).  Same facing labels in
-  both so .dat keys port without relabelling.
-- `pak/diff.py` — shared mask/IoU/dRGB/XOR primitives consumed by
-  every per-asset-class harness (`diff_upstream`, `diff_buildings`,
-  `diff_trees`, `diff_grounds`, `diff_fence`).  `MAGIC_PINK` is the
-  single canonical transparency key; `silhouette_mask` handles both
-  RGBA and RGB inputs with caller-tunable alpha threshold (vehicles
-  & trees at `>16`, buildings & fence at `>0` -- soft-AA calibration
-  story in `diff_buildings._silhouette_mask` docstring).  Per-class
-  specialisations (layout permutation, slope→cell parsing, (age,
-  season) grid, multi-facing OR) stay in each harness.
-- `pak/diff_upstream.py` — drives `render.py --viewpoint
-  square --keep-per-facing`, fetches the matching upstream PNG via
-  `fetch_pak.py`, and reports the contour and colour metrics from
-  "Calibration validation loop" above (silhouette IoU + XOR pixel
-  count, and common-bg blurred all-pixel mean abs(RGB-delta)).
-  Returns non-zero if any facing is below 0.90 IoU.
-- `pak/tune_materials.py` — per-asset colour solver: iterates
-  `Material.color` overrides against the blurred dRGB metric until
-  no improvement.  See "Per-asset colour solver" below.
-- `pak/check.py` — convenience driver around
-  `diff_upstream.py` / `diff_buildings.py`.  Takes a bake-script
-  path (or `--all`), imports it, reads `BLEND` and `UPSTREAM_STEM`
-  from the module, dispatches by `SPEC` type (Vehicle vs Building)
-  to the matching diff harness, prints metrics.  Vehicle SPECs go
-  through the worst-IoU + sum-XOR-pixel summary; Building SPECs
-  produce the N×N permutation matrix described below.
-- `pak/diff_buildings.py` — square-projection diff harness for
-  ported buildings.  Renders the blend through
-  `building_square_viewpoint` (upstream's normal-alignment cardinal
-  cameras, blend's authored ortho_scale) and slices the upstream
-  atlas PNG into per-layout cells.  Reports an N_layouts ×
-  N_layouts IoU matrix `M[our_L][upstream_C]` plus the best-
-  matching permutation -- when ours ≠ identity, our layout
-  rotation convention permutes vs upstream's dat-declared mapping,
-  which is the diagnostic for landmine (a) in "Building-bake
-  architecture" above.  Handles upstream's RGB + magic-pink
-  transparency (vs our renders' proper RGBA) via
-  `_silhouette_mask`.  Single-tile (`dims = 1×1`, heights=1) only;
-  multi-tile per-cell diffs need a square tile lattice -- deferred.
-- `pak/square_synth.py` — `SquareGeom`, a sibling to
-  `HexGeom` implementing pak128.Britain's square-dimetric tile
-  layout (4 corners, base-3 slope encoding, 128×128 cells with the
-  flat lozenge spanning `y = 64..127`).  Same `Geom` interface as
-  `HexGeom` — `corner_count`, `corner_world_xy`, `corner_projected_xy`,
-  `all_chords`, `corner_labels`, `full_path`, plus
-  `decode_corner_heights` / `iter_valid_slopes` / `slope_is_valid`
-  — so the generic partition / region / fill / outline helpers in
-  `hex.py` work against either projection without isinstance
-  branches.  Exists for `diff_grounds.py`'s test harness (see
-  below); not on the hex production path.
-- `pak/diff_grounds.py` — square-projection diff harness
-  for the parametric ground bakers.  Re-runs `grounds/<asset>.py`
-  through `SquareGeom`, fetches the matching upstream PNG +
-  `Image[N]=...` dat via `fetch_pak`, parses the slope→cell map
-  (multi-object dat support; scope by `Name=`), and reports
-  per-cell silhouette IoU + per-region brightness ratio.  The
-  asset's `min_iou` in the `ASSETS` table is the calibrated
-  regression floor (slightly under the current measured min, so
-  drift below trips CI without flagging today's baseline).  Today
-  only `light_texture` is wired in — mean IoU 0.97, min 0.90 vs
-  upstream's authored cell atlas; mean ratio ≈ 1.1× reflects the
-  hex-engine lightmap multiplier scale vs pak128-standard's, not a
-  generation bug.  The point of the harness is to exercise slope
-  decode + partition + Lambert + fill + atlas layout end-to-end
-  against authored ground truth; extend `ASSETS` per baker (see
-  TODO.md → "Square-bake diff harness coverage").
-- `pak/dat.py` — Simutrans `.dat` parse / port / emit.
-  Exposes `Vehicle` (typed dataclass covering both hex-engine
-  and Extended schema; list fields may carry
-  `metadata["dat_key"]` to remap field-name → dat-key, e.g.
-  `payload_by_class` → `payload[N]`), `parse(path)` (splits
-  multi-object dats into `list[list[(k, v)]]`), `port_vehicle`
-  (one-time seeder: upstream object entries → fully-populated
-  `Vehicle`), `seed_python(vehicle)` (paste-ready non-default-only
-  source repr for a new bake script), and
-  `emit_vehicles(list_of_vehicle, out_dir, basename)` (writes
-  one combined dat where every block points at the same atlas;
-  pass a one-element list for the single-vehicle case).  The
-  freight-image subsystem (`freightimage[<dir>]`,
-  `freightimage[N][<dir>]`, `freightimagetype[N]`) is the one
-  area `Vehicle` doesn't model yet — see `TODO.md`.
-- `pak/bake.py` — per-asset bake driver.
-  `bake_vehicle(spec, blend=..., basename=..., out_dir=...)`
-  fetches the blend, runs the hex renderer, writes the atlas
-  PNG, and emits the dat.  `spec` may be a single `Vehicle` or a
-  `list[Vehicle]` (shared-sprite multi-object — emit_vehicles
-  writes one combined dat).  `bake_building` accepts an optional
-  `materials=MATERIALS` dict (see `pak.materials`) routed to
-  `pak/render.py --materials`.  `bake_tree` drives the
-  `ages × seasons` grid render and feeds `clamp_age_overrides` to
-  `emit_trees` so the dat fills out the engine's full 5-age slot
-  count from however few ages the bake renders.  Bake scripts
-  shrink to imports + SPEC (or SPECS) + a single `bake_main(...)`
-  call.
-- `pak/blend_slots.py` — minimal pre-2.5 .blend parser; reads
-  BI's Material+MTex struct array (image refs, texco, size, ofs,
-  per-material rgb+alpha) directly from the binary.  Britain's
-  blends are all saved by Blender 2.42/2.48 so the legacy struct
-  layout survives even though 2.80+ dropped the
-  `material.texture_slots` API.  CLI: `python3 -m pak.blend_slots
-  <blend>` dumps every material's slot table.
-- `pak/materials.py` — `Material` dataclass (image / texco /
-  size / ofs / noise / color / slots) carried in each
-  `citybuildings/<asset>.py` as `MATERIALS = {...}`.  Three forms:
-  single image, single noise, full BI slot stack (`slots=[Slot(...),
-  ...]`).  `Slot` mirrors `pak.blend_slots.TextureSlot` with
-  blend mode and fac.  `to_jsonable` / `from_jsonable` serialise
-  for subprocess transit; `seed_python` emits paste-ready source.
-  See "Texture rebinding" and "Multi-slot composition" below.
-- `pak/extract_materials.py` — one-shot seeder.
-  `python3 -m pak.extract_materials <blend>` prints the
-  `MATERIALS = {...}` block to paste next to SPEC; emits the
-  full BI slot stack per material (image+image+CLOUDS where the
-  blend has it).
-- `pak/diag_per_material.py` — per-material dRGB attribution
-  for buildings.  Renders the asset twice (normal + flat-emission
-  material id map, sidecar `*.materials.json`) and reports which
-  materials own which fraction of the upstream-vs-ours dRGB.
-  `--all` aggregates across the catalog and prints worst-offender
-  materials by name — that's how systematic gaps (e.g. "every
-  dark-diffuse surface renders too dark") surface in one place.
-  Note: its `mean per-px dRGB` metric is weighted by per-material
-  id-map coverage and doesn't match `pak.check`'s intersection-
-  mean exactly; use for relative ranking, not absolute calibration.
-- `pak/bake_units.py` — `discover()` returns every
-  per-asset bake script (`.py` with `.dat` + `.png` siblings outside
-  `pak/`, `tests/`, `grounds/`, `simutranslator/`), `import_script
-  (path)` imports it by its repo-relative dotted name, and
-  `specs_of(mod)` normalises a script's `SPECS` (multi-object
-  shared sprite) or `SPEC` (single) attribute into a list — one
-  definition of what counts as a ported asset, shared by
-  `reemit_dats`, `fetch_wavs`, `check`, and `tests/test_ported_dats`.
-- `pak/reemit_dats.py` — catalog-wide driver that
-  imports every `discover()`-ed bake script and re-emits its dat
-  from `SPECS` (multi-block via `emit_vehicles`) or `SPEC` (single
-  via the right per-type emitter).  No Blender, no render.  Wired
-  into CI as the `reemit-dats` lint job to catch dat drift on
-  every push.  Raises on a bake script with neither — distinct-
-  sprite multi-object units (one script emitting multiple
-  `<basename>.{dat,png}` triples) still need a per-script reemit
-  hook (see `TODO.md` → "Multi-object reemit hook").
-- `pak/fetch_wavs.py` — catalog-wide driver that walks
-  `bake_units.discover()`, reads `sound` off every `SPEC` /
-  `SPECS` Vehicle, and pulls each unique wav from the upstream
-  pak via `fetch_pak`.  Invoked by
-  the Makefile `copy` step to stage sounds into `$(PAKDIR)/sound/`
-  on every build.
-- `tests/test_dat.py` — `unittest`-based smoke tests for parse,
-  emit, port, seed_python, and the schema-enforcement-at-
-  construction property.  Run via
-  `python3 -m unittest tests.test_dat` (or
-  `python3 -m pytest tests/`).
-- `tests/test_square.py` — geometry assertions for
-  `SquareGeom`: slope encoding (base-3 weights, `Image[N]` corner
-  mapping), validity filter (normalised + adjacency ≤ 2, 65 slopes
-  total), screen layout pinned to upstream's `texture-lightmap.png`
-  cells, partition output for known slope shapes, and the shared
-  `Geom`-interface attribute surface that the generic helpers
-  consume.  The pinned values come from upstream and don't move,
-  so a future projection refactor has to re-justify itself against
-  the same ground truth as the diff harness.
+**Render.**  `render.py` is the `blender -b -P` harness; takes a
+`Viewpoint`, strips the blend's authored Camera / Sphere / Lamp,
+installs its own, emits an atlas PNG.  Same code path serves
+square (upstream-calibration) and hex (production) projections.
+`viewpoints.py` carries `SQUARE_VIEWPOINT` / `HEX_VIEWPOINT` and
+the building / tree factory variants; facing labels match across
+projections so .dat keys port without relabelling.  `bake_way.py`
+is the way-bake driver (Workbench backend, blender-only); see
+[`docs/bake-way.md`](docs/bake-way.md).
+
+**Dat schema.**  `dat.py` defines the `Vehicle` / `Way` /
+`Building` / `Tree` dataclasses + `parse` / `port_*` seeders +
+`emit_*` writers.  Field-name = dat-key by default; list fields
+remap via `metadata["dat_key"]`.  The freight-image subsystem
+(`freightimage[<dir>]` etc.) is the one area `Vehicle` doesn't
+model yet — see TODO.md.
+
+**Materials.**  `materials.py` defines `Material` / `Slot` /
+`Lighting` carried inline in each building/way bake script as
+`MATERIALS = {...}` / `LIGHTING = ...`.  `blend_slots.py` is a
+minimal pre-2.5 .blend parser that recovers BI's Material+MTex
+struct array (Britain's blends predate the 2.5 file format so the
+legacy layout survives even though 2.80+ dropped the
+`material.texture_slots` API).  `extract_materials.py` is the
+one-shot seeder for paste-ready `MATERIALS = {...}` blocks.
+
+**Diff (calibration / regression).**  `diff.py` carries the shared
+silhouette IoU / dRGB / XOR primitives; per-class harnesses
+specialise on top — `diff_upstream` (vehicles), `diff_buildings`
+(square-projection layout-permutation matrix), `diff_trees`,
+`diff_grounds` (parametric grounds via `SquareGeom`), `diff_fence`.
+`MAGIC_PINK` is the canonical transparency key; alpha threshold on
+`silhouette_mask` tunes per class (vehicles/trees `>16`,
+buildings/fence `>0`; soft-AA story in
+`diff_buildings._silhouette_mask` docstring).
+
+**Drivers.**  `bake.py` carries the per-asset entry points
+(`bake_vehicle`, `bake_way`, `bake_building`, `bake_tree`) bake
+scripts call.  `bake_units.discover()` enumerates every per-asset
+script (`.py` with `.dat` + `.png` siblings) and is the shared
+definition of "ported asset" consumed by `reemit_dats` (catalog-
+wide dat re-emit, the CI lint job), `fetch_wavs`, `check`, and
+`tests/test_ported_dats`.  `check.py` dispatches per-bake-script
+by `SPEC` type to the right diff harness and prints metrics.
+
+**Tuning.**  `tune_materials.py` is a gradient solver for
+per-asset MATERIALS against the blurred dRGB metric.  Caveat:
+adding `color=` to an image-only material flips the
+`image x blend_diffuse` heuristic to `image x gain`, breaking the
+small-gradient assumption — opt in with an explicit `color=`
+starting point.  `diag_per_material.py` attributes dRGB by
+material (with `--all` aggregating across the catalog to surface
+systematic gaps); its mean-per-px metric is id-map-coverage-
+weighted and doesn't match `check.py`'s intersection-mean, so use
+for relative ranking only.
+
+**Geometry shared.**  `hex_synth.py` / `square_synth.py` carry
+`HexGeom` / `SquareGeom` — partition, region, fill, outline
+primitives consumed by the parametric ground bakers and
+`diff_grounds`.  Both implement the same `Geom` interface so the
+generic helpers in `hex.py` work against either projection without
+isinstance branches.  `SquareGeom` is calibration-only (not on the
+hex production path).
+
+**Tests.**  `tests/test_dat.py` (parse / emit / port round-trips +
+schema-enforcement-at-construction), `tests/test_square.py`
+(`SquareGeom` geometry pinned to upstream's
+`texture-lightmap.png`), `tests/test_way.py` (path geometry +
+bisect convention).  Run via `python3 -m unittest` or `pytest
+tests/`.
 
 The Britain blends already carry the `sp_*` material-name
 convention for player-colour masks; port that pass over from the
 upstream render script when the first asset bake needs masks.
-
-Atlas composition is implemented inline in `render.py` rather
-than imported from `hextrans-pak128/tools/threed/bespoke.py::bake_atlas`
-because `bespoke` uses PIL and Blender's bundled Python on Ubuntu
-ships only `numpy` (see "Running the bake in a fresh sandbox"
-below).  The API surface mirrors `bake_atlas` (label/cell entries,
-`cols_per_row`, per-cell bbox printout) — port across if/when the
-two converge into a shared package.
-
-When the bake tooling stabilises it's a candidate for extraction
-into a shared `simutrans-threed` Python package consumed by both
-this pakset and `hextrans-pak128`.  Don't extract before the
-second consumer has bent the API at least once.
 
 ### Running the bake in a fresh sandbox
 
@@ -971,540 +842,32 @@ a small carriage.
 ## Building-bake architecture
 
 Buildings (`Obj=building` — attractions, monuments, city
-buildings, townhalls, HQs, stops, extensions) port via the same
-shape as vehicles: a typed `Building` SPEC in a per-asset bake
-script, a `BLEND` path, and `bake_building_main(SPEC, BLEND,
-__file__)` at the bottom.  The rendering side multiplies out into
-per-cell renders driven by the SPEC's footprint.
-
-**Engine schema** (`descriptor/writer/building_writer.cc`).
-Image keys are six-bracket
-`backimage[layout][y][x][height][phase][season]` (and `frontimage`
-likewise; the engine errors on frontimage with `height > 1`).
-`dims=X,Y,Z` parses as `(size.x, size.y, layouts)` — Z is the
-number of rotation variants, **not** vertical levels.  Engine
-default when Z is omitted: `layouts = (size.x == size.y) ? 1
-: 2`.  For odd layouts the y/x loop bounds swap:
-`h = (l & 1) ? size.x : size.y`.  `pak.dat.layouts_default` and
-`pak.dat.iter_building_cells` mirror this.
-
-**Atlas layout.**  `seasons*heights` rows × `layouts*dims_x*dims_y`
-cols.  Row formula `s * heights + h` — each season is a
-`heights`-row stripe (summer on top, winter under).  Col formula
-`l * dims_x*dims_y + y * w + x` — layouts span columns
-left-to-right; within a layout block, `w = (l & 1) ? dims_y :
-dims_x` per the engine's swap rule.  For the 1x1xN-layout
-single-height single-season case (most current ports) the result
-is one row × N cols.  The `iter_building_cells` order
-(`s, h, l, y, x`) is canonical for both the dat-side emit and the
-renderer-side facing list — keep them in sync or the wrong
-sprite paints per tile.
-
-**Seasons.**  Buildings opt in to winter via `SPEC.seasons = 2`
-plus a sibling `BLEND_WINTER` + `MATERIALS_WINTER` pair in the
-bake script.  The upstream `-snow.blend` convention is JP's
-own: each blend-sourced building that has winter art ships an
-adjacent `<name>-snow.blend` with the same geometry but
-reshuffled materials (Roof texture dropped for procedural snow
-noise, brick desaturated, ground textured for snow, etc.); the
-upstream render script has no season logic, just feeds the snow
-blend through the same pipeline.  We mirror this:
-`bake_building` runs two `blender -b -P render.py` subprocesses
-when `seasons >= 2`, one per blend, and `_stitch_seasons`
-vertically concatenates the per-season PNGs (summer on top).
-Seed `MATERIALS_WINTER` via `python3 -m pak.extract_materials
-<winter-blend>`.
-
-A landmine specific to the `-snow.blend` siblings: many ship
-with their geometry collection saved at `hide_render=True` (JP
-toggles visibility interactively before rendering, and the saved
-state carries the off-toggle).  `pak.render._bake_world_into_meshes`
-falls back to lifting `collection.hide_render` on every collection
-holding a non-hidden mesh when the per-collection filter yields
-zero meshes — Blender's renderer respects the collection flag
-regardless of our vertex transforms.
-
-**Per-cell rendering.**  `viewpoints.building_hex_viewpoint
-(layouts, dims_x, dims_y)` returns a Viewpoint with one Facing
-per cell.  The Facing's `model_rot_z_deg = (360°/layouts) * l`
-rotates the model into the layout's orientation — `layouts=8`
-spaces facings at 45° (the same set `HEX_VIEWPOINT` uses for
-vehicles), `layouts=4` lands face-on at each cardinal.  Its
-`model_translation` is `-hex_tile_world_offset(qx=x, ry=y)`,
-the negative of the cell's world centre computed from the hex
-tile lattice (`HEX_KOORD_Q_WORLD` heads SE, `HEX_KOORD_R_WORLD`
-heads S; pinned to `display/hex_proj.h::hex_screen_dx/dy` at
-`ortho_scale = 2R`, `W = 128`).  The standard hex camera looking
-+Y at world origin then renders just that cell's content per
-pass.  No image-space slicing — each cell is its own 128 × 128
-EEVEE render (vs vehicles' Cycles; see "Lighting calibration"
-below).
-
-**Z coefficient.**  `hex_proj_shear`'s z-row coefficient is
-`2·sin(60°) = √3` (and `PIXELS_PER_UNIT = W·sin(60°)`), pinned to
-upstream square dimetric's `sin(60°)` lift per blend unit.  An
-upstream Britain blend authored for dimetric therefore renders at
-the same on-screen z extent under hex — no per-asset compensation
-in the building viewpoint.  Vehicles and ways inherit the same
-shear; rebake any pre-change PNGs to pick up the corrected z
-proportions (see TODO.md).
-
-Three landmines the first real building port surfaces:
-
-* **Layout rotation sign.**  `building_hex_viewpoint` uses
-  `(360°/layouts) * l` CCW.  The square-projection diff against
-  `res_1600_kg_01` lands at mean IoU 0.94 with no clear winner
-  between identity and off-diagonal permutation (matrix
-  dominated by the building's near-mirror symmetry).  Triggers
-  on the first asymmetric building port; see TODO.md → "Building-
-  bake layout rotation sign needs asymmetric asset" for the
-  concrete probe.
-* **Multi-tile centring.**  `fit_kind="hex"` centres on the
-  model's XY bounding box, which is right for single-tile
-  assets.  For a multi-tile blend whose authored frame puts tile
-  (0,0) at world origin (or the footprint centre at origin, or
-  somewhere else entirely — unknown upstream convention), the
-  per-cell translations may need to compose with a per-asset
-  offset.  Surfaces as "every cell renders the same part of the
-  model".  Fix: a `fit_kind="hex_building"` variant in
-  `render.py::_compute_fit` that anchors on a known footprint
-  reference instead.
-* **Alignment mode.**  `HEX_VIEWPOINT`'s camera is the
-  "vehicles"-alignment Britain blends are authored against;
-  upstream's "normal alignment" (`op_list "1"` for stops/
-  buildings/road vehicles, `"0"` for 4-view buildings) sits at
-  a different camera Z/Y.  The single fixed hex camera the bake
-  uses doesn't distinguish; the practical effect is the
-  building's ground line lands a few px off.  Diagnose via the
-  square-projection diff harness (`pak/diff_buildings.py`), which
-  uses the upstream-correct normal-alignment cameras and so its
-  residual IoU gap (currently ~6 % for `res_1600_kg_01`) lower-
-  bounds the hex render's alignment-mode error.
-
-A fourth landmine the calibration diff exposed:
-
-* **Per-blend ortho_scale must reach the diff camera.**  Vehicles
-  are all authored at ortho_scale=24 (the contributing-graphics
-  convention) so `SQUARE_VIEWPOINT`'s hardcoded 24 happens to
-  match.  Buildings author at 12 (twice the per-cell zoom).  With
-  a hardcoded camera ortho_scale, the diff renders the building
-  at half-size in the cell (IoU drops to 0.26).
-  `Viewpoint.ortho_scale=None` means "use the blend's authored
-  value"; `_install_camera_and_sun` falls back to `blend_ortho`
-  (returned by `_strip_scene`).  `building_square_viewpoint` uses
-  this so the diff renders at the upstream blend's per-pixel
-  scale.  `building_hex_viewpoint` and the hex production bake
-  intentionally don't -- they target the pak's intra-tile coord
-  system, with `_compute_fit("hex")` doing the
-  `INTRA_TILE_PER_BLEND_UNIT = 2R / blend_ortho` scale conversion.
-
-The dat side (Building dataclass, `emit_building`, `port_building`,
-`bake_building`) is in tree and tested round-trip against
-upstream `attractions/nelson-column.dat` (2×2×1, `type=mon`).
-The render side ships end-to-end via `citybuildings/
-res_1600_kg_01.py` (1×1×8, `type=res`); the four landmines above
-are exercised on a single-tile near-symmetric residential, so
-multi-tile centring and layout-rotation-sign disambiguation still
-wait on a multi-tile asymmetric port.
-
-**Lighting calibration.**  All upstream PNGs (vehicles, ways,
-buildings alike) were rendered in **Blender Internal under Blender
-2.79** — confirmed by the contributing-graphics tutorial board 75
-topic=17510 (pins Blender 2.79, references BI's OSA-samples
-preset 11→16) and the migration thread topic=21677 ("only
-openable in Blender <2.80, uses the internal renderer").  BI was
-dropped in 2.80 with no upgrade path; everything we render is
-therefore a BI substitute.
-
-We pick the substitute per asset class.  Buildings go through
-`BLENDER_EEVEE`: Britain's `use_nodes=False` BI materials, with
-their flat-Lambert + ambient assumption, render washed-out and
-hue-shifted under Cycles' physical BSDF (sun_energy 0.028 lands
-as near-zero), but read close enough under EEVEE once ambient
-and sun strength are scaled against an upstream PNG.  Vehicles
-and ways stay on Cycles — also an empirical substitute, not a
-match to upstream's authoring engine (there is no Cycles-rendered
-upstream target for any asset class).  Cycles happens to produce
-acceptable results on the vehicle/way blends and was the first
-substitute tried; switching a flaky-cross-CPU vehicle to
-Workbench or EEVEE wouldn't "break upstream calibration" because
-no such Cycles-native calibration exists.
-
-`pak.viewpoints.sun_rotation_for_camera(cam_z, elev=30°, az=-90°)`
-is the single source of truth for the building sun direction —
-used by both the `building_square_viewpoint` (apples-to-apples
-diff against upstream's per-cardinal cells, cam_z varies per
-facing) and `building_hex_viewpoint` (shipped atlas, cam_z=0).
-Sun energy enters via `_strip_scene`: each Britain blend ships
-its own SUN lamp at the BI-authored `energy=0.028`, which
-`render.py::BlendAuthored` captures before stripping the lamp.
-Building viewpoints declare `sun_energy=None,
-sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE` (= 2.0/0.028 ≈ 71.4)
-so `_install_camera_and_sun` resolves to `authored × scale ≈ 2.0`
-under EEVEE.  Vehicles/ways pin `sun_energy=0.028` directly under
-Cycles where the upstream PNG is the calibration target.
-
-The remaining EEVEE-substitution magic numbers — sun direction
-(elev=30°, az=-90° defaults) and world ambient (0.30 grey in
-`pak.render`) — are the global fallback; per-asset values land
-via `LIGHTING = Lighting(world_ambient, sun_energy_scale,
-sun_elev_deg, sun_az_offset_deg)` declared alongside MATERIALS in
-the bake script (see `pak.materials.Lighting`).  `_apply_lighting`
-in `pak.render` overrides each field where non-None after
-`_install_camera_and_sun` runs; missing entries fall through to
-the global.  Today only `res_1600_kg_01` carries one (ambient
-0.55, elev 45°); see TODO → "Lighting overrides exist; only the
-pilot uses them" for sweeping the fleet.
-
-Authored `world.color` (Britain blends ship (0.906, 1.0, 1.0))
-is *not* extracted: that value was BI's background sky, not its
-ambient term, and modern EEVEE's `world.color` IS the ambient
-term — so the authored value is the wrong thing to plug in here.
-
-**Per-asset colour solver.**  `pak.tune_materials <bake_script>`
-runs an iterative gradient solver on the bake script's MATERIALS
-against the blurred-all-pixel dRGB metric.  Each step renders the
-asset twice (normal + id-map), composites both ours and upstream
-onto a common background, blurs σ=3, samples per-material means
-from the **blurred** images (σ=0 attribution doesn't track the
-σ=3 metric -- neighborhoods average across material boundaries),
-proposes `new_color = current_color * (up_mean / our_mean)`
-clamped + damped, re-measures.  Only `color=`-bearing materials
-get tuned: adding `color=` to an image-only material flips the
-heuristic `image x blend_diffuse` path to `image x gain`, a
-larger step than the small-gradient iteration assumes.  Opt an
-image-only material into solver tuning by giving it an explicit
-`color=` starting point in the bake script.
-
-**Texture rebinding.**  Blender 2.80 dropped BI's
-`material.texture_slots[i]` API, but the Material+MTex struct
-data survives in the .blend binary because Britain's blends are
-all saved by 2.42/2.48 (pre-2.5 file format).  The full pipeline:
-
-* **`pak/blend_slots.py`** parses the binary directly to recover
-  `tex_type` (IMAGE / CLOUDS / NOISE), `image_name`, `size`,
-  `ofs`, `texco` (GLOB / ORCO / UV) per slot, plus per-material
-  rgb + alpha.  Not a general .blend parser; targets only what
-  building binding needs.
-* **`pak/extract_materials.py`** is the one-shot seeder
-  (`python3 -m pak.extract_materials <blend>`).  Emits the full BI
-  slot stack per material as `Material(slots=[Slot(...), ...])`
-  in paste-ready Python source.  The single-slot `image=` /
-  `noise=` shorthand forms remain for hand-tuned overrides; the
-  slot form is the BI-faithful default.
-* **`pak/materials.py`** defines the `Material` and `Slot`
-  dataclasses.  Per-material modes (mutually exclusive): a slot
-  list (`slots=[Slot(image=..., texco=..., size=..., blend="MIX",
-  fac=1.0), ...]`), a single image (`image=..., size=...`), or a
-  single noise (`noise=True`).  Optional `color=(r,g,b)` overrides
-  the .blend's diffuse as the slot-stack base or noise-band centre.
-  `to_jsonable` / `from_jsonable` serialise (slots recursively)
-  across the subprocess command line.
-* Each `citybuildings/<asset>.py` carries `MATERIALS = {...}`
-  inline next to `SPEC`, passed through
-  `bake_building_main(..., materials=MATERIALS)`.  Once seeded,
-  the dict is the authoritative representation -- hand-edits are
-  welcome (JP's authoring quirks like a Roof material pointing
-  at the BrownTile-duplicate image rather than its sibling
-  `Brick` live as in-place comments).
-* **`render.py::_bind_textures_via_nodes`** builds the node
-  graph per entry, after `_bake_world_into_meshes` runs so the
-  GLOB path can read the vertex attribute it populates:
-  * `Material(image=..., texco="GLOB")` -> Attribute
-    "blend_world_pos" -> Mapping(scale=`size`) -> ImageTexture ->
-    Multiply by diffuse colour -> Principled BSDF.  The
-    `blend_world_pos` FLOAT_VECTOR vertex attribute is populated
-    from the pre-facing-rotation blend-frame coords, so the
-    texture stays pinned to the blend frame across per-facing
-    model rotation -- BI rendered only-camera-moves and that's
-    the behaviour to mirror.
-  * `Material(image=..., texco="ORCO")` -> TexCoord.Generated ->
-    Mapping(scale=`size`) -> ...  Bbox-normalised per-mesh,
-    substitutes BI's object-local projection.
-  * `Material(noise=True)` -> Noise -> ColorRamp around the
-    diffuse colour.  BI's CLOUDS substitute (single-slot heuristic).
-  * `Material(slots=[Slot(...), ...])` -> for each slot, build a
-    sub-graph (image: `<coord> -> Mapping -> ImageTexture`;
-    procedural: `<coord> -> Mapping -> TexNoise`, with the slot's
-    output colour either the parsed Tex ColorBand mapped through
-    `ValToRGB` -- when `Tex.flag & TEX_COLORBAND` is set in the
-    .blend -- or, much more commonly in the Britain pak, a constant
-    `RGB(slot.color)` node carrying the per-slot MTex.r/g/b),
-    then chain through `MixRGB(blend_type=slot.blend, fac=slot.fac
-    × tex_intensity)` over a running base seeded from the material's
-    diffuse (or `color=` override).  Procedural slots' `tex_intensity`
-    is the noise.Fac so they partially lerp rather than fully
-    replace -- BI-faithful: a CLOUDS slot ships its per-slot RGB
-    (e.g. Hedge's `(0.10, 0.06, 0.04)`) and the noise modulates
-    influence so low-noise regions show the base while high-noise
-    regions lerp toward the slot colour.  `res_1600_kg_01` runs in
-    slot form (summer dRGB 37.6); the pilot's L0/L2 vs L1/L3
-    asymmetry vs upstream is the open residual -- see TODO ->
-    "Multi-slot IMAGE composition shadows the single-slot heuristic".
-  * Materials omitted from MATERIALS render flat-diffuse via
-    Blender's `use_nodes=False` auto-conversion.
-
-External texture filepaths in the .blend (`//../../../textures/...`)
-are remapped via `_reload_external_textures` to the blends-repo
-cache before binding.  Image data blocks whose filepath 404s
-(e.g. Pavement's typo'd `concrete-paving-smalll.jpg` path) warn
-and fall back to flat diffuse rather than failing the bake -- see
-TODO → "Pavement texture file missing from upstream blends repo".
+buildings, townhalls, HQs, stops, extensions) port via a typed
+`Building` SPEC + `BLEND` + `bake_building_main(SPEC, BLEND,
+__file__)`.  Per-cell EEVEE renders driven by the footprint
+(`backimage[layout][y][x][height][phase][season]`); per-asset
+`MATERIALS = {...}` + `LIGHTING = Lighting(...)` declared inline
+alongside the SPEC.  See [`docs/bake-building.md`](docs/bake-building.md).
 
 ## Way-bake architecture
 
-Ways (rails, roads, trams) port via a different shape than vehicles
-or grounds: an upstream rail-shape blend like `ways/ns-cssr.blend`
-is treated as the **elementary geometric atom**, and the bake
-**composes** that atom into 63 hex ribi cells (+ slope variants)
-by cloning, clipping, and transforming it onto each ribi's path.
-No parametric cross-section painter; no separate "draw the ballast,
-draw the ties, draw the rails" code.  The blend already has the
-cross-section authored as separable Rail / Sleeper / Ground meshes
-— the composition step just lays them along the right path.
-
-Two layers, kept honestly split:
-
-- **Path geometry** (`pak/way.py`, `pak/way_topology.py`).  Pure
-  data — ribi vocabulary (the `ribi_key` engine contract), slope
-  slot labels, and the per-ribi `StraightPath` list `for_edges_paths`
-  emits (stub for 1 edge, chord / V-bend for 2 edges, junction =
-  pairwise paths for 3+ edges).  No painting, no rasterizer, no
-  Blender.  Tested in `tests/test_way.py`.
-
-- **Bake driver** (`pak/bake_way.py`, runs only inside
-  `blender -b -P`).  Opens the blend, strips authored cameras /
-  lights and the `Sphere` sun-direction visualizer (matching the
-  vehicle harness in `pak/render.py`), bakes `matrix_world` into
-  mesh vertex data, then walks `HEX_ENTRIES` (popcount-then-ribi).
-  For each ribi: clones the atom meshes per
-  `pak.way_topology.for_edges_paths(edges)` segment, rotates +
-  translates the clone onto the segment's chord, bisects against
-  the segment's cap planes (`pak.way_topology.cap_plane`) + the
-  six hex-outline planes (`pak.way.hex_clip_planes()`), applies
-  the hex projection shear, and renders one PNG.  Per-cell PNGs
-  go to a temp dir (or `--cell-dir` for debugging); the stitched
-  atlas (8 cols, popcount-major) lands at `<out>/<name>.png`.
-
-  Bisect convention: every cap- and outline-plane normal points
-  **inward** (toward the chord midpoint, or toward the hex centre
-  for outline planes), and `bmesh.ops.bisect_plane` runs with
-  `clear_inner=True` so the kept half is the +normal side.  Two
-  places this contract lives — the plane builders in `pak.way` /
-  `pak.way_topology`, and the bisect call in `_bisect_mesh` —
-  must agree, or every clone gets deleted instead of clipped.
-  `tests/test_way.py` pins the +normal-side-keep convention so a
-  future refactor that inverts one side trips the test instead of
-  silently emptying the atlas.
-
-  Naming pitfall worth pinning: in `ns-cssr.blend` the mesh named
-  `Plane` is **not** an upstream ruler — it's the 2048-poly ballast
-  pile (material `Ballast`, z up to 0.28).  Stripping by name
-  generically (e.g. "anything called Plane") loses the ballast
-  silhouette.  Default-strip is `{Sphere}` only; per-blend extras
-  go via `--strip`.
-
-  Atom scale and composition:
-
-  * **Hex** scales the blend by `INTRA_TILE_PER_BLEND_UNIT` (=
-    `2R/UPSTREAM_ORTHO_SCALE` = `1/12` at current constants, the
-    same blend → intra-tile conversion `fit_kind="hex"` uses for
-    vehicles) — so a hex rail's gauge, sleeper width and
-    ballast extent land at the right **intra-tile** size.  Two
-    coord systems not to conflate:
-
-      * **Tile coords** are integers (adjacent tile is `(x+1, y)`
-        in either projection — no projection difference here).
-      * **Intra-tile coords** are continuous within one tile.
-        Our pakset fixes tile edge = 1 intra-tile unit in both
-        projections (`HEX_TILE_RADIUS` = the square tile side),
-        so a way of width `WAY_WIDTH = 0.4` crosses every tile
-        edge at the same fractional width in both projections,
-        and a way spanning a tile boundary has the same
-        complete-way-width at the crossing.
-
-    Blend coords are upstream's authoring frame, a third ruler;
-    `INTRA_TILE_PER_BLEND_UNIT` is the only conversion between
-    them.  Pixel sizes between projections differ (hex at
-    `ortho_scale = 2R` renders 1 intra-tile unit at 64 px;
-    upstream-square at `ortho_scale = 24` renders 1 blend unit
-    at 5.33 px) and that's by design — what's preserved is
-    intra-tile size, not pixel size.
-
-  * **Multi-atom-per-chord tiling** applies to **both
-    projections** — the blend's 8.78-unit strand is shorter than
-    every load-bearing chord in either system: hex at `1/12`
-    scale gives a `0.73`-unit atom against a `√3 ≈ 1.73` chord,
-    and square at native gives an 8.78-unit atom against a
-    24-unit NS chord (= `2 * SQUARE_TILE_HALF` in blend coords).
-    Upstream's NS cell visibly has 9+ sleepers — more than one
-    9-sleeper atom holds — so upstream itself tiles atoms along
-    the chord; our pipeline mirrors that.
-    `pak.way_topology.atom_offsets_along_path` returns
-    `ceil(chord_len / atom_y_extent)` chord-offset slots centred
-    on the chord midpoint; the bake driver places one atom per
-    slot, and the cap bisect trims the outer pair's overrun.
-    The blend's symmetric sleeper layout (9 ties centred on Y=0)
-    makes consecutive atoms' end-sleepers meet flush within
-    sub-millimetre intra-tile units, so the rail reads continuous
-    across the tiled atoms without explicit seam handling.
-
-  * **Square** keeps native blend scale (`atom_scale=None`) and
-    skips the blend → intra-tile conversion entirely.
-    `SQUARE_PROJECTION` exists only as the upstream-coord
-    **calibration view** for the open square diff harness
-    (mirror of `SQUARE_VIEWPOINT` with `fit_kind="none"`), so its
-    pixels are directly comparable to pak128.Britain's published
-    cells.  Its `SQUARE_TILE_HALF = UPSTREAM_ORTHO_SCALE / 2` is
-    in blend coords, **not** our intra-tile system — comparing it
-    against `HEX_TILE_RADIUS = 1` would be a category error.
-
-**Per-way material recolour** (per-way `MATERIALS` dicts).
-Upstream ships ~20 rail-grade dats (cast_iron through cssri) that
-render from one underlying geometry — within-family silhouette IoU
-is 1.000, cross-family ≥ 0.96.  The visual differentiation is
-material recolour: four blend slots (`Rail`, `RailTop`, `Wood`,
-`Ballast`) shift hue and value per variant.  We mirror that:
-each `ways/<way>.py` declares its own `MATERIALS = {…}` inline
-(colocated with the SPEC, no central catalog), passes it through
-`bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)`,
-`pak/bake.py::bake_way` serialises to JSON on the `--materials`
-arg, and `pak/bake_way.py` parses it back with `json.loads` and
-applies via `mat.diffuse_color` before render.  tarmac and tgv use
-their own blends with their own slot sets (`Dirt` / `MainColour1`
-for tarmac, the rail family plus `Tarmac` for tgv); the schema
-generalises naturally.  Old-style (`use_nodes=False`) materials
-render via the diffuse colour directly under both Cycles auto-
-conversion and Workbench `MATERIAL` color mode; node-graph
-materials would need a different override path.
-
-Under Workbench `light = "FLAT"`, rendered pixel == material's
-`diffuse_color` directly -- no shading attenuation.  `MATERIALS`
-values are K-means centroids over the upstream PNG's lit pixels
-(magic pink keyed out at `(231, 255, 255)`), luminance-ranked
-into Ballast / Wood / Rail / RailTop (k=4 for rail-family, k=2
-for tarmac).  The sampler isn't committed -- it's a one-off
-inline numpy + Pillow script, ~20 lines.  Adding a new variant
-is re-implement-as-needed: fetch upstream's PNG via
-`pak.fetch_pak`, mask `(231, 255, 255)`, k-means cluster, paste
-into a new `ways/<name>.py`.  Every committed-PNG way is
-calibrated this way; the unbaked rail-grade scripts still hold
-Cycles-era MATERIALS that will need re-sampling when they're
-actually baked.
-
-The Transparent ground plane in `ns-cssr.blend` (Plane.005,
-material `Transparent`) is dropped via `_STRIP_MATERIALS` in the
-bake driver — diffuse 0.8 grey with no texture wired up, it
-otherwise contaminates ~50 % of the lit pixels with fake bright
-grey that upstream's atlases don't show.
-
-Note on what's intentionally **not** here:
-
-- No numpy rasterizer.  An earlier session ported pak128's
-  `tools/threed/render.py` (Model/SquareCamera/HexCamera) as a
-  parametric-painting fallback, then deleted it after the pivot to
-  blend-as-atom — leaving the rasterizer in tree without a caller
-  would have rotted.  The pak128 sibling keeps it; we re-port if a
-  numpy-only path ever becomes useful here.
-
-- No `CrossSection` class.  The blend is the cross-section; no
-  duplicate Python source-of-truth for "what a rail looks like in
-  cross-section."
-
-- No square-pak calibration loop for ways yet — but the
-  *infrastructure* for one (a `--projection square` mode in
-  `pak/bake_way.py`, switching tile geometry, ribi vocabulary,
-  camera + sun, ortho_scale, extrinsic, atlas layout) **does** ship,
-  via `pak/way_proj.py::Projection`.  The actual diff harness
-  (`pak/diff_way.py`) is the open consumer; until it lands we
-  validate hex by eye + by adjacency tests (do rails meet flush at
-  shared edges?).  See TODO.md → "Way square-projection diff
-  harness".
-
-  Topology duplication is **deliberate, deferred**.  The square
-  path-dispatch helpers (`_square_between_edges`, `_square_bend`,
-  `_square_curve`, `_square_stub`, `square_for_edges_paths`) in
-  `pak/way_proj.py` are structural parallels of their hex
-  counterparts in `pak/way_topology.py` -- not literal copies:
-  `_square_bend` normalises `SQUARE_CORNERS` to unit vectors before
-  taking the apex cap normal, where the hex version uses
-  `HEX_CORNERS` directly because the hex tile has unit radius.
-  Consolidating them through a shared `tile`-geom parameter
-  (`corners`, `edges`, `opposite_edge`, `edge_midpoint`,
-  `edge_unit_dir`, `shared_corner`, `edge_unit_normal`) would be
-  the natural next refactor,
-  but doing it before the diff harness has bent the API would be
-  premature — the right shape will fall out of what the diff harness
-  actually needs to swap.  The shared invariants (`cap_plane`,
-  `path_chord_*`, the +normal-keep bisect convention) live in
-  `pak/way_topology.py` and are projection-agnostic;
-  `tests/test_way.py::_ProjectionInvariants` is the mixin that runs
-  the property-based checks against both projections' entries lists,
-  so an asymmetry (a square ribi whose paths have outward-pointing
-  cap normals, say) trips the test instead of silently miscomposing
-  an atlas.
+Ways (rails, roads, trams) treat an upstream rail-shape blend
+(e.g. `ways/ns-cssr.blend`) as the **elementary geometric atom**
+and compose it into 63 hex ribi cells by cloning, clipping and
+transforming onto each ribi's path.  Workbench backend (blender-
+only).  Path geometry in `pak/way.py` + `pak/way_topology.py`;
+bake driver in `pak/bake_way.py`.  Per-way visual differentiation
+is `MATERIALS = {...}` recolour inline in `ways/<way>.py`.  See
+[`docs/bake-way.md`](docs/bake-way.md).
 
 ## Tree-bake architecture
 
-Trees (`Obj=tree`) port via a `Tree` SPEC + `BLEND` + `bake_tree_main
-(SPEC, BLEND, __file__)`, same per-asset shape as vehicles/ways/
-buildings.  The render side is a single-facing billboard expanded
-over an `ages × seasons` grid -- one cell per (age, season) tuple.
-
-**Engine schema** (`descriptor/writer/tree_writer.cc`).  Five ages
-(0..4) and 1/2/4/5 seasonal variants -- writer hardcodes the age loop
-bound, fatals on a missing `image[age][season]` key.  `TREE_AGE_COUNT`
-in `pak.dat` exposes the constant; `clamp_age_overrides` (`pak.bake`)
-builds the fallback dict for the typical case where the bake renders
-fewer ages than the engine reads.
-
-**Atlas layout.**  `seasons` rows × `ages` cols.  Row = season (top
-= summer = 0), col = age (left = youngest = 0).  Dat refs follow
-`image[age][season]=./<basename>.<season>.<age>`.
-
-**Age stages.**  Upstream pak128.Britain renders the same model at
-four successive scales (`_TREE_AGE_SCALES` = 0.375 / 0.5 / 0.76 / 1.0,
-sampled from upstream PNG bbox heights) and points engine age 4 (the
-dormant / dying stage) at the bare `winter-3` cell.  Our bake mirrors
-this via `Facing.model_scale` (one Facing per age in
-`_tree_facings`) and `clamp_age_overrides` (fallback at dat-emit
-time).  Age-0 silhouette doesn't match upstream under uniform scaling
--- see TODO.md "Tree age-0 silhouette" for the working theory
-(upstream uses a per-age model variant we haven't located).
-
-**Lighting calibration.**  Britain tree blends ship a SPOT lamp
-rather than a SUN; `_strip_scene`'s authored-SUN extraction returns
-None and `tree_*_viewpoint` pins `sun_energy=2.0` directly, matching
-the post-scale value the building viewpoints resolve to under EEVEE.
-EEVEE engine, normal-alignment camera (the blend's authored
-`(10, -10, 11.6)` is the S-cardinal normal-alignment position) at
-the blend's authored ortho_scale (12, half the vehicle convention).
-
-**Landmines specific to trees:**
-
-* **`Plane` ground reference.**  Britain tree blends ship a ~8×8
-  grey ground plane (material `Material.003`, diffuse 0.8 white) at
-  `z ≈ 0.29` with `hide_render=False` in a non-hidden collection,
-  but upstream's published PNGs don't show it -- upstream's render
-  workflow hides it via a step that doesn't ship with the blend.
-  `tree_*_viewpoint` adds `"Plane"` to `Viewpoint.strip_meshes`
-  alongside the default `"Sphere"`.
-
-* **Per-season leaf-colour calibration.**  The engine's seasons
-  axis is the .blend material's diffuse-colour swap upstream paints
-  manually before each per-season render.  Phase 1 ships `seasons=1`
-  (summer only) honestly; the autumn / winter / spring / winter-snow
-  rows are a Phase 2 calibration pass (TODO.md → tree per-season
-  leaf-colour).  Avoid the temptation to ship `seasons=5` with
-  every row redirecting to summer -- the dat would lie about what
-  in-engine behaviour we deliver.
-
-* **Hex projection has no ground truth.**  `tree_square_viewpoint`
-  diffs against upstream's published `<stem>-<season>-<age>_S.png`;
-  hex is `fit_kind="hex"` against blend coords (intra-tile scale =
-  `2R/blend_ortho`) and is validated only against the matching
-  square render.  A future hex regression that doesn't affect the
-  square diff has no automated catch -- see TODO.md.
+Trees (`Obj=tree`) port via a `Tree` SPEC + `BLEND` +
+`bake_tree_main(SPEC, BLEND, __file__)` — a single-facing
+billboard expanded over an `ages × seasons` grid.  Five ages
+(engine hardcoded) come from one model at four successive scales
+plus a `winter-3` fallback for age 4 via `clamp_age_overrides`.
+EEVEE backend.  See [`docs/bake-tree.md`](docs/bake-tree.md).
 
 ## CI
 
