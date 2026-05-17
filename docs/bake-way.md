@@ -109,27 +109,27 @@ Two layers, kept honestly split:
     in blend coords, **not** our intra-tile system — comparing it
     against `HEX_TILE_RADIUS = 1` would be a category error.
 
-**Per-way material recolour** (per-way `MATERIALS` dicts).
+**Per-way material recolour** (per-way `materials=` dicts).
 Upstream ships ~20 rail-grade dats (cast_iron through cssri) that
 render from one underlying geometry — within-family silhouette IoU
 is 1.000, cross-family ≥ 0.96.  The visual differentiation is
 material recolour: four blend slots (`Rail`, `RailTop`, `Wood`,
 `Ballast`) shift hue and value per variant.  We mirror that:
-each `ways/<way>.py` declares its own `MATERIALS = {…}` inline
-(colocated with the SPEC, no central catalog), passes it through
-`bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)`,
-`pak/bake.py::bake_way` serialises to JSON on the `--materials`
-arg, and `pak/bake_way.py` parses it back with `json.loads` and
-applies via `mat.diffuse_color` before render.  tarmac and tgv use
-their own blends with their own slot sets (`Dirt` / `MainColour1`
-for tarmac, the rail family plus `Tarmac` for tgv); the schema
-generalises naturally.  Old-style (`use_nodes=False`) materials
-render via the diffuse colour directly under both Cycles auto-
-conversion and Workbench `MATERIAL` color mode; node-graph
-materials would need a different override path.
+each `ways/<way>.py` declares its own `materials={…}` inline on
+the SPEC (no central catalog), `bake_way_main(SPEC, __file__)`
+threads it through `pak/bake.py::bake_way`, which serialises to
+JSON on the `--materials` arg, and `pak/bake_way.py` parses it
+back with `json.loads` and applies via `mat.diffuse_color` before
+render.  tarmac and tgv use their own blends with their own slot
+sets (`Dirt` / `MainColour1` for tarmac, the rail family plus
+`Tarmac` for tgv); the schema generalises naturally.  Old-style
+(`use_nodes=False`) materials render via the diffuse colour
+directly under both Cycles auto-conversion and Workbench
+`MATERIAL` color mode; node-graph materials would need a different
+override path.
 
 Under Workbench `light = "FLAT"`, rendered pixel == material's
-`diffuse_color` directly -- no shading attenuation.  `MATERIALS`
+`diffuse_color` directly -- no shading attenuation.  `materials=`
 values are K-means centroids over the upstream PNG's lit pixels
 (magic pink keyed out at `(231, 255, 255)`), luminance-ranked
 into Ballast / Wood / Rail / RailTop (k=4 for rail-family, k=2
@@ -139,7 +139,7 @@ is re-implement-as-needed: fetch upstream's PNG via
 `pak.fetch_pak`, mask `(231, 255, 255)`, k-means cluster, paste
 into a new `ways/<name>.py`.  Every committed-PNG way is
 calibrated this way; the unbaked rail-grade scripts still hold
-Cycles-era MATERIALS that will need re-sampling when they're
+Cycles-era materials that will need re-sampling when they're
 actually baked.
 
 The Transparent ground plane in `ns-cssr.blend` (Plane.005,

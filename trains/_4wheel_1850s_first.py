@@ -35,10 +35,10 @@ SPEC = Vehicle(
         "LNWR-Early", "MR-Early", "MR-Standard", "GNR-early",
         "LSWR-Indian-red", "GWR-early", "GWR-two-tone",
     ],
+    blend="trains/Carriages/4wheel-1850.blend",
+    upstream_stem="trains/carriages/4wheel-1850-first-lnwr",
 )
-BLEND = "trains/Carriages/4wheel-1850.blend"
-UPSTREAM_STEM = "trains/carriages/4wheel-1850-first-lnwr"
 
 
 if __name__ == "__main__":
-    bake_main(SPEC, BLEND, __file__)
+    bake_main(SPEC, __file__)

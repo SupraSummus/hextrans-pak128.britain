@@ -37,9 +37,9 @@ SPEC = Vehicle(
         "BR-Class37", "BR-Class40", "BR-Class45", "none",
     ],
     liverytype=["BR-Early", "BR-Blue"],
+    blend="trains/Locomotives/br-cl15.blend",
 )
-BLEND = "trains/Locomotives/br-cl15.blend"
 
 
 if __name__ == "__main__":
-    bake_main(SPEC, BLEND, __file__)
+    bake_main(SPEC, __file__)

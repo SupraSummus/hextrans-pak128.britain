@@ -43,9 +43,12 @@ from __future__ import annotations
 import re
 from dataclasses import MISSING, dataclass, field, fields, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pak.way import HEX_ENTRIES
+
+if TYPE_CHECKING:
+    from pak.materials import Lighting, Material
 
 _INDEX_RE = re.compile(r"\[([^\]]*)\]")
 _TERMINATOR_RE = re.compile(r"^-+\s*$")
@@ -77,6 +80,18 @@ def _list_field(*, dat_key: str | None = None) -> Any:
     """
     meta = {"dat_key": dat_key} if dat_key else {}
     return field(default_factory=list, metadata=meta)
+
+
+def _bake_meta(default: Any = None) -> Any:
+    """Bake-pipeline metadata field — declared on the SPEC dataclass but
+    skipped by the dat emitters.  The blend path, upstream PNG stem,
+    per-material recipe, winter sibling and EEVEE lighting tune all
+    live on SPEC so that one named bundle per asset is the source of
+    truth, but none of them maps to a hex-engine dat key — they're
+    inputs to the bake pipeline, consumed by `pak.bake` and
+    `pak.check` rather than emitted into `.dat`.
+    """
+    return field(default=default, metadata={"bake_meta": True})
 
 
 @dataclass
@@ -164,15 +179,20 @@ class Vehicle:
     upgrade: list[str] = _list_field()
     way_constraint_permissive: list[str] = _list_field()
 
+    # Bake-pipeline metadata.  Not emitted into the dat.
+    blend: str | None = _bake_meta()
+    upstream_stem: str | None = _bake_meta()
+
 
 _VEHICLE_FIELDS_SCALAR: tuple[str, ...] = tuple(
-    f.name for f in fields(Vehicle) if f.default_factory is MISSING
+    f.name for f in fields(Vehicle)
+    if f.default_factory is MISSING and not f.metadata.get("bake_meta")
 )
 # (field_name, dat_key) pairs for indexed-list emission.
 _VEHICLE_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
     (f.name, f.metadata.get("dat_key", f.name))
     for f in fields(Vehicle)
-    if f.default_factory is not MISSING
+    if f.default_factory is not MISSING and not f.metadata.get("bake_meta")
 )
 
 
@@ -227,8 +247,24 @@ class Way:
     icon: str | None = None
     cursor: str | None = None
 
+    # Bake-pipeline metadata.  Not emitted into the dat.  `materials`
+    # is a per-blend-material RGB recolour dict applied via
+    # `mat.diffuse_color` before render — see
+    # `docs/bake-way.md` -> "Per-way material recolour".
+    blend: str | None = _bake_meta()
+    upstream_stem: str | None = _bake_meta()
+    materials: dict[str, tuple[int, int, int]] | None = _bake_meta()
+    # Comma-separated mesh names to drop on entry; default Sphere is
+    # the upstream sun-direction visualizer.  Per-blend overrides go
+    # here when the blend ships extra debug meshes that don't belong
+    # in the bake (see CLAUDE.md -> "Way-bake architecture" -> Naming
+    # pitfall).
+    strip: str = _bake_meta(default="Sphere")
 
-_WAY_FIELDS_SCALAR: tuple[str, ...] = tuple(f.name for f in fields(Way))
+
+_WAY_FIELDS_SCALAR: tuple[str, ...] = tuple(
+    f.name for f in fields(Way) if not f.metadata.get("bake_meta")
+)
 
 
 @dataclass
@@ -330,6 +366,18 @@ class Building:
     class_proportion_jobs: list[int] = field(default_factory=list)
     upgrade: list[str] = field(default_factory=list)
 
+    # Bake-pipeline metadata.  Not emitted into the dat.  `materials`
+    # is a per-blend-material `Material` recipe (BI slot stacks, image
+    # refs, procedural noise); `lighting` overrides the EEVEE ambient
+    # / sun tune per asset.  `blend_winter` / `materials_winter` opt
+    # the asset into the winter atlas pass when `seasons >= 2`.
+    blend: str | None = _bake_meta()
+    upstream_stem: str | None = _bake_meta()
+    materials: dict[str, Material] | None = _bake_meta()
+    blend_winter: str | None = _bake_meta()
+    materials_winter: dict[str, Material] | None = _bake_meta()
+    lighting: Lighting | None = _bake_meta()
+
 
 @dataclass
 class Tree:
@@ -360,9 +408,14 @@ class Tree:
     # 5 = + winter-snow.  See `tree_writer.cc`.
     seasons: int = 1
 
+    # Bake-pipeline metadata.  Not emitted into the dat.
+    blend: str | None = _bake_meta()
+    upstream_stem: str | None = _bake_meta()
+
 
 _TREE_FIELDS_SCALAR: tuple[str, ...] = tuple(
-    f.name for f in fields(Tree) if f.name != "seasons"
+    f.name for f in fields(Tree)
+    if f.name != "seasons" and not f.metadata.get("bake_meta")
 )
 # Engine reads exactly 5 ages (`tree_writer.cc` loops `age in 0..5`);
 # not configurable per asset.  Public so bake-side callers can clamp
@@ -399,11 +452,12 @@ _BUILDING_FIELDS_SCALAR: tuple[str, ...] = tuple(
     f.name for f in fields(Building)
     if f.default_factory is MISSING
     and f.name not in ("dims_x", "dims_y", "layouts", "heights", "seasons")
+    and not f.metadata.get("bake_meta")
 )
 _BUILDING_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
     (f.name, f.metadata.get("dat_key", f.name))
     for f in fields(Building)
-    if f.default_factory is not MISSING
+    if f.default_factory is not MISSING and not f.metadata.get("bake_meta")
 )
 
 

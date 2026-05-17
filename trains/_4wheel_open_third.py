@@ -40,9 +40,9 @@ SPEC = Vehicle(
     comfort_by_class=[0, 16],
     # TODO: add more liveries (B&DJR, GJR, MCR, MR, LNWR, etc.).
     liverytype=["LMR-Standard"],
+    blend="trains/Carriages/4wheel-open-third.blend",
 )
-BLEND = "trains/Carriages/4wheel-open-third.blend"
 
 
 if __name__ == "__main__":
-    bake_main(SPEC, BLEND, __file__)
+    bake_main(SPEC, __file__)

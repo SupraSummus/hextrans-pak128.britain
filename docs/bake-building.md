@@ -6,9 +6,11 @@ bake-unit conventions).
 Buildings (`Obj=building` — attractions, monuments, city
 buildings, townhalls, HQs, stops, extensions) port via the same
 shape as vehicles: a typed `Building` SPEC in a per-asset bake
-script, a `BLEND` path, and `bake_building_main(SPEC, BLEND,
-__file__)` at the bottom.  The rendering side multiplies out into
-per-cell renders driven by the SPEC's footprint.
+script with inline bake-meta (`blend=`, `upstream_stem=`,
+`materials=`, `blend_winter=`, `materials_winter=`, `lighting=`),
+and `bake_building_main(SPEC, __file__)` at the bottom.  The
+rendering side multiplies out into per-cell renders driven by
+the SPEC's footprint.
 
 **Engine schema** (`descriptor/writer/building_writer.cc`).
 Image keys are six-bracket
@@ -34,19 +36,18 @@ renderer-side facing list — keep them in sync or the wrong
 sprite paints per tile.
 
 **Seasons.**  Buildings opt in to winter via `SPEC.seasons = 2`
-plus a sibling `BLEND_WINTER` + `MATERIALS_WINTER` pair in the
-bake script.  The upstream `-snow.blend` convention is JP's
-own: each blend-sourced building that has winter art ships an
-adjacent `<name>-snow.blend` with the same geometry but
-reshuffled materials (Roof texture dropped for procedural snow
-noise, brick desaturated, ground textured for snow, etc.); the
-upstream render script has no season logic, just feeds the snow
-blend through the same pipeline.  We mirror this:
-`bake_building` runs two `blender -b -P render.py` subprocesses
-when `seasons >= 2`, one per blend, and `_stitch_seasons`
-vertically concatenates the per-season PNGs (summer on top).
-Seed `MATERIALS_WINTER` via `python3 -m pak.extract_materials
-<winter-blend>`.
+plus `blend_winter=` + `materials_winter=` on the same SPEC.
+The upstream `-snow.blend` convention is JP's own: each
+blend-sourced building that has winter art ships an adjacent
+`<name>-snow.blend` with the same geometry but reshuffled
+materials (Roof texture dropped for procedural snow noise, brick
+desaturated, ground textured for snow, etc.); the upstream
+render script has no season logic, just feeds the snow blend
+through the same pipeline.  We mirror this: `bake_building` runs
+two `blender -b -P render.py` subprocesses when `seasons >= 2`,
+one per blend, and `_stitch_seasons` vertically concatenates the
+per-season PNGs (summer on top).  Seed `materials_winter` via
+`python3 -m pak.extract_materials <winter-blend>`.
 
 A landmine specific to the `-snow.blend` siblings: many ship
 with their geometry collection saved at `hide_render=True` (JP
@@ -169,9 +170,9 @@ Cycles where the upstream PNG is the calibration target.
 The remaining EEVEE-substitution magic numbers — sun direction
 (elev=30°, az=-90° defaults) and world ambient (0.30 grey in
 `pak.render`) — are the global fallback; per-asset values land
-via `LIGHTING = Lighting(world_ambient, sun_energy_scale,
-sun_elev_deg, sun_az_offset_deg)` declared alongside MATERIALS in
-the bake script (see `pak.materials.Lighting`).  `_apply_lighting`
+via `lighting=Lighting(world_ambient, sun_energy_scale,
+sun_elev_deg, sun_az_offset_deg)` on the SPEC (see
+`pak.materials.Lighting`).  `_apply_lighting`
 in `pak.render` overrides each field where non-None after
 `_install_camera_and_sun` runs; missing entries fall through to
 the global.  Today only `res_1600_kg_01` carries one (ambient
@@ -184,7 +185,7 @@ ambient term, and modern EEVEE's `world.color` IS the ambient
 term — so the authored value is the wrong thing to plug in here.
 
 **Per-asset colour solver.**  `pak.tune_materials <bake_script>`
-runs an iterative gradient solver on the bake script's MATERIALS
+runs an iterative gradient solver on the SPEC's `materials=` dict
 against the blurred-all-pixel dRGB metric.  Each step renders the
 asset twice (normal + id-map), composites both ours and upstream
 onto a common background, blurs σ=3, samples per-material means
@@ -222,13 +223,12 @@ all saved by 2.42/2.48 (pre-2.5 file format).  The full pipeline:
   the .blend's diffuse as the slot-stack base or noise-band centre.
   `to_jsonable` / `from_jsonable` serialise (slots recursively)
   across the subprocess command line.
-* Each `citybuildings/<asset>.py` carries `MATERIALS = {...}`
-  inline next to `SPEC`, passed through
-  `bake_building_main(..., materials=MATERIALS)`.  Once seeded,
-  the dict is the authoritative representation -- hand-edits are
-  welcome (JP's authoring quirks like a Roof material pointing
-  at the BrownTile-duplicate image rather than its sibling
-  `Brick` live as in-place comments).
+* Each `citybuildings/<asset>.py` carries `materials={...}`
+  inline on the SPEC.  Once seeded, the dict is the authoritative
+  representation -- hand-edits are welcome (JP's authoring
+  quirks like a Roof material pointing at the BrownTile-duplicate
+  image rather than its sibling `Brick` live as in-place
+  comments).
 * **`render.py::_bind_textures_via_nodes`** builds the node
   graph per entry, after `_bake_world_into_meshes` runs so the
   GLOB path can read the vertex attribute it populates:
@@ -263,8 +263,8 @@ all saved by 2.42/2.48 (pre-2.5 file format).  The full pipeline:
     slot form (summer dRGB 37.6); the pilot's L0/L2 vs L1/L3
     asymmetry vs upstream is the open residual -- see TODO ->
     "Multi-slot IMAGE composition shadows the single-slot heuristic".
-  * Materials omitted from MATERIALS render flat-diffuse via
-    Blender's `use_nodes=False` auto-conversion.
+  * Materials omitted from the SPEC's `materials=` dict render
+    flat-diffuse via Blender's `use_nodes=False` auto-conversion.
 
 External texture filepaths in the .blend (`//../../../textures/...`)
 are remapped via `_reload_external_textures` to the blends-repo

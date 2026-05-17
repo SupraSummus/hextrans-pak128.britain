@@ -197,15 +197,15 @@ def run(bake_path: Path, season: str = "summer", max_iters: int = 50) -> None:
     if season == "winter":
         if spec.seasons < 2:
             raise SystemExit("asset has no winter season")
-        blend = mod.BLEND_WINTER
-        materials = dict(getattr(mod, "MATERIALS_WINTER", {}) or {})
+        blend = spec.blend_winter
+        materials = dict(spec.materials_winter or {})
         season_row = 1
     else:
-        blend = mod.BLEND
-        materials = dict(getattr(mod, "MATERIALS", {}) or {})
+        blend = spec.blend
+        materials = dict(spec.materials or {})
         season_row = 0
-    lighting = getattr(mod, "LIGHTING", None)
-    upstream_stem = mod.UPSTREAM_STEM
+    lighting = spec.lighting
+    upstream_stem = spec.upstream_stem
 
     blend_path = fetch_blend(blend)
     up_path = fetch_pak(upstream_stem)

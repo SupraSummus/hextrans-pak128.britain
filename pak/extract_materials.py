@@ -4,8 +4,9 @@ Reads the BI MTex slot data via `pak.blend_slots` (which parses the
 .blend binary directly because Blender 4.0 dropped the
 `material.texture_slots` API), collapses each material to its
 authoritative first IMAGE slot or fallback procedural slot, and
-emits the inline Python source to paste next to `SPEC` in the
-bake script.
+emits the inline Python source.  Paste the dict body into the
+SPEC's `materials=` field (the `MATERIALS = ` prefix is a relic of
+the seeder; the bake script doesn't need a module-level name).
 
 Run as::
 

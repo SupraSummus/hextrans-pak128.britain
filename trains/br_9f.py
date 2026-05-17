@@ -35,9 +35,9 @@ SPEC = Vehicle(
     smoke="Steam",
     sound="the-mart-ban-br-9f.wav",
     constraint_next=["BR-9F-Tender"],
+    blend="trains/Locomotives/br-9f.blend",
 )
-BLEND = "trains/Locomotives/br-9f.blend"
 
 
 if __name__ == "__main__":
-    bake_main(SPEC, BLEND, __file__)
+    bake_main(SPEC, __file__)

@@ -10,9 +10,9 @@ SPEC = Tree(
     distribution_weight=180,
     climates="temperate,mediterran,tropical",
     seasons=1,
+    blend="trees/oak.blend",
+    upstream_stem="trees/oak",
 )
-BLEND = "trees/oak.blend"
-UPSTREAM_STEM = "trees/oak"
 
 if __name__ == "__main__":
-    bake_tree_main(SPEC, BLEND, __file__)
+    bake_tree_main(SPEC, __file__)

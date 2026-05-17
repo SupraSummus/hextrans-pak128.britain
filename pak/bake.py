@@ -1,18 +1,20 @@
 """Per-asset bake driver — shrinks bake scripts to their essentials.
 
-A bake script's job is to declare:
-
-  - the asset's `SPEC` (`Vehicle`, holds gameplay data)
-  - the upstream blend path
-
-`bake_vehicle` does the rest: fetch the blend, run the hex
-renderer to produce the atlas PNG, write the dat next to it.
-Bake scripts collapse to ~10 lines of imports + spec + a
-one-line `bake_vehicle(...)` call at `__main__` time.
+A bake script declares one `SPEC` (or `SPECS` list) plus, at
+`__main__` time, a single `bake_*_main(SPEC, __file__)` call.
+Everything the bake pipeline needs — `blend`, `upstream_stem`,
+`materials`, `blend_winter`, `materials_winter`, `lighting`,
+`strip` — lives on the SPEC itself as bake-pipeline metadata
+(see `pak.dat._bake_meta`).  The dat emitters skip those fields;
+this driver reads them off the SPEC and threads them through to
+the renderer.
 
 Multi-object bake units call `bake_vehicle` once per output,
-passing distinct `basename` (and typically distinct `blend`)
-per call.
+passing distinct `basename` per call.  Shared-sprite multi-object
+units (SPECS list) all carry the same blend / upstream_stem /
+materials values on every Vehicle in the list -- typically via a
+local `_BLEND = "..."` variable referenced from each Vehicle's
+`blend=`; `bake_vehicle` asserts they match and uses the first.
 """
 
 from __future__ import annotations
@@ -75,10 +77,28 @@ def _resolve_building_layouts(spec: Building) -> Building:
     return replace(spec, layouts=hex_layouts_default(spec.dims_x, spec.dims_y))
 
 
+def _shared_blend(specs: list, basename: str) -> str:
+    """Return the single `blend` path shared across a SPECS list.
+
+    Shared-sprite multi-object scripts (e.g. `dragon-rapide` +
+    `-mail`) declare every Vehicle/Tree with the same `blend=` value
+    (typically a local `_BLEND = "..."` referenced from each); one
+    render produces one atlas referenced by every block.  Diverging
+    blends on the same list would silently render the first and
+    point both at it — assert match here instead.  Works on any SPEC
+    type that carries a `.blend` field.
+    """
+    blends = {s.blend for s in specs}
+    if None in blends:
+        raise ValueError(f"{basename}: SPEC missing blend=")
+    if len(blends) != 1:
+        raise ValueError(f"{basename}: SPECS disagree on blend= ({sorted(blends)})")
+    return next(iter(blends))
+
+
 def bake_vehicle(
     spec: Vehicle | list[Vehicle],
     *,
-    blend: str,
     basename: str,
     out_dir: Path,
     viewpoint: str = "hex",
@@ -93,13 +113,14 @@ def bake_vehicle(
     sprites (e.g. loco + tender) call `bake_vehicle` once per output
     with distinct `basename` instead.
 
-    `blend` is the path inside the upstream blends repo (resolved
-    via `fetch_blend.fetch` against the global `blends.lock` SHA).
-    `basename` is the shared filesystem stem for atlas and dat —
-    typically the bake script's `Path(__file__).stem`.  Returns the
-    dat path.
+    `Vehicle.blend` is the path inside the upstream blends repo
+    (resolved via `fetch_blend.fetch` against the global
+    `blends.lock` SHA).  `basename` is the shared filesystem stem
+    for atlas and dat — typically the bake script's
+    `Path(__file__).stem`.  Returns the dat path.
     """
     specs = [spec] if isinstance(spec, Vehicle) else list(spec)
+    blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
     cmd = [
         "blender", "-b", str(blend_path),
@@ -121,7 +142,7 @@ def bake_vehicle(
     return out_dat
 
 
-def bake_main(spec: Vehicle | list[Vehicle], blend: str, file: str) -> Path:
+def bake_main(spec: Vehicle | list[Vehicle], file: str) -> Path:
     """Convenience for bake scripts that render one blend per script.
 
     Derives `out_dir` and `basename` from the calling script's
@@ -129,49 +150,42 @@ def bake_main(spec: Vehicle | list[Vehicle], blend: str, file: str) -> Path:
     list (`SPECS` for shared-sprite variants).
     """
     path = Path(file).resolve()
-    return bake_vehicle(
-        spec, blend=blend, basename=path.stem, out_dir=path.parent,
-    )
+    return bake_vehicle(spec, basename=path.stem, out_dir=path.parent)
 
 
-def bake_way(
-    spec: Way,
-    *,
-    blend: str,
-    basename: str,
-    out_dir: Path,
-    strip: str = "Sphere",
-    materials: dict[str, tuple[int, int, int]] | None = None,
-) -> Path:
+def bake_way(spec: Way, *, basename: str, out_dir: Path) -> Path:
     """Drive `pak/bake_way.py` to render `<out_dir>/<basename>.png`,
     then emit `<out_dir>/<basename>.dat` from `spec`.
 
-    `blend` is the path inside the upstream blends repo (resolved by
-    `bake_way.py` via `fetch_blend.fetch`).  `strip` is a comma-
-    separated list of mesh names to drop on entry — default `Sphere`
-    (the upstream sun-direction visualizer); per-blend overrides go
-    here when a blend ships extra debug meshes that don't belong in
-    the bake (see `CLAUDE.md` -> "Way-bake architecture" -> Naming
-    pitfall).  `materials` (if supplied) recolours the blend's named
-    materials in-place — the rail-grade catalog renders the same
-    blend with per-variant `MATERIALS` dicts colocated in each
-    `ways/<rail>.py`; this driver serialises the dict to JSON on
-    the `--materials` CLI arg, the Blender subprocess parses it
-    back (tuples come through as lists; the override applier
-    just unpacks three-element sequences).  Returns the dat path.
+    `spec.blend` is the path inside the upstream blends repo (resolved
+    by `bake_way.py` via `fetch_blend.fetch`).  `spec.strip` is a
+    comma-separated list of mesh names to drop on entry — default
+    `Sphere` (the upstream sun-direction visualizer); per-blend
+    overrides go here when a blend ships extra debug meshes that
+    don't belong in the bake (see `CLAUDE.md` -> "Way-bake
+    architecture" -> Naming pitfall).  `spec.materials` (if supplied)
+    recolours the blend's named materials in-place — the rail-grade
+    catalog renders the same blend with per-variant `materials=`
+    dicts on each `ways/<rail>.py` SPEC; this driver serialises the
+    dict to JSON on the `--materials` CLI arg, the Blender
+    subprocess parses it back (tuples come through as lists; the
+    override applier just unpacks three-element sequences).
+    Returns the dat path.
     """
+    if spec.blend is None:
+        raise ValueError(f"{basename}: SPEC missing blend=")
     cmd = [
         "blender", "-b",
         "--python-exit-code", "1",
         "-P", str(_BAKE_WAY_SCRIPT),
         "--",
-        "--blend", blend,
+        "--blend", spec.blend,
         "--name", basename,
         "--out", str(out_dir),
-        "--strip", strip,
+        "--strip", spec.strip,
     ]
-    if materials:
-        cmd += ["--materials", json.dumps(materials)]
+    if spec.materials:
+        cmd += ["--materials", json.dumps(spec.materials)]
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
 
@@ -183,24 +197,17 @@ def bake_way(
     return out_dat
 
 
-def bake_way_main(
-    spec: Way, blend: str, file: str, *,
-    strip: str = "Sphere",
-    materials: dict[str, tuple[int, int, int]] | None = None,
-) -> Path:
+def bake_way_main(spec: Way, file: str) -> Path:
     """Convenience for single-way bake scripts.
 
     Derives `out_dir` and `basename` from the calling script's
     `__file__`, so each bake script's bottom collapses to:
 
         if __name__ == "__main__":
-            bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)
+            bake_way_main(SPEC, __file__)
     """
     path = Path(file).resolve()
-    return bake_way(
-        spec, blend=blend, basename=path.stem, out_dir=path.parent,
-        strip=strip, materials=materials,
-    )
+    return bake_way(spec, basename=path.stem, out_dir=path.parent)
 
 
 def _render_building_season(
@@ -256,17 +263,7 @@ def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
     combined.save(out_path)
 
 
-def bake_building(
-    spec: Building,
-    *,
-    blend: str,
-    basename: str,
-    out_dir: Path,
-    materials: dict[str, Material] | None = None,
-    blend_winter: str | None = None,
-    materials_winter: dict[str, Material] | None = None,
-    lighting=None,
-) -> Path:
+def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     """Fetch the blend(s), render the multi-tile atlas, emit the dat.
 
     Drives `pak/render.py` under `--viewpoint hex_building` with the
@@ -278,11 +275,12 @@ def bake_building(
     matching `backimage[l][y][x][h][0][s]=./<basename>.<row>.<col>`
     row/col formula.
 
-    When `spec.seasons >= 2`, requires `blend_winter` (the upstream
-    sibling `-snow.blend` per asset) and typically `materials_winter`
-    (seed via `python3 -m pak.extract_materials <winter-blend>`).
-    Renders each season into a temporary `<basename>__s<i>.png`, then
-    vertically concatenates with summer on top.
+    When `spec.seasons >= 2`, requires `spec.blend_winter` (the
+    upstream sibling `-snow.blend` per asset) and typically
+    `spec.materials_winter` (seed via `python3 -m pak.extract_materials
+    <winter-blend>`).  Renders each season into a temporary
+    `<basename>__s<i>.png`, then vertically concatenates with summer
+    on top.
 
     Layout rotation, per-cell translation, and the model's centring
     convention are all best-guess on the first pass.  When the first
@@ -292,29 +290,32 @@ def bake_building(
     centring may need a multi-tile variant that anchors on the
     building's koord origin rather than the model's XY bbox).
     """
+    if spec.blend is None:
+        raise ValueError(f"{basename}: SPEC missing blend=")
     spec = _resolve_building_layouts(spec)
 
-    season_inputs: list[tuple[str, dict[str, Material] | None]] = [(blend, materials)]
+    # Single-season bake renders straight into `<basename>.png`;
+    # multi-season renders per-season into `<basename>__s<i>.png`
+    # tempfiles, then `_stitch_seasons` concatenates summer-on-top.
+    season_inputs: list[tuple[str, dict[str, Material] | None]] = [
+        (spec.blend, spec.materials),
+    ]
     if spec.seasons >= 2:
-        if blend_winter is None:
+        if spec.blend_winter is None:
             raise ValueError(
                 f"{basename}: spec.seasons={spec.seasons} requires blend_winter"
             )
-        season_inputs.append((blend_winter, materials_winter))
+        season_inputs.append((spec.blend_winter, spec.materials_winter))
 
-    if len(season_inputs) == 1:
-        _render_building_season(
-            blend=blend, name=basename, out_dir=out_dir,
-            spec=spec, materials=materials, lighting=lighting,
-        )
-    else:
-        tmp_paths: list[Path] = []
-        for s, (b, m) in enumerate(season_inputs):
-            tmp_name = f"{basename}__s{s}"
-            tmp_paths.append(_render_building_season(
-                blend=b, name=tmp_name, out_dir=out_dir,
-                spec=spec, materials=m, lighting=lighting,
-            ))
+    single = len(season_inputs) == 1
+    tmp_paths: list[Path] = []
+    for s, (b, m) in enumerate(season_inputs):
+        name = basename if single else f"{basename}__s{s}"
+        tmp_paths.append(_render_building_season(
+            blend=b, name=name, out_dir=out_dir,
+            spec=spec, materials=m, lighting=spec.lighting,
+        ))
+    if not single:
         _stitch_seasons(tmp_paths, out_dir / f"{basename}.png")
         for p in tmp_paths:
             p.unlink()
@@ -330,7 +331,6 @@ def bake_building(
 def bake_tree(
     spec: Tree | list[Tree],
     *,
-    blend: str,
     basename: str,
     out_dir: Path,
     ages: int = 4,
@@ -355,6 +355,7 @@ def bake_tree(
     # a single grid -- mismatched seasons would need per-Tree atlas
     # slices, which the upstream `tree.dat` doesn't exercise.
     seasons = max(t.seasons for t in specs)
+    blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
 
     cmd = [
@@ -402,7 +403,7 @@ def clamp_age_overrides(
 
 
 def bake_tree_main(
-    spec: Tree | list[Tree], blend: str, file: str, *,
+    spec: Tree | list[Tree], file: str, *,
     ages: int = 4,
     viewpoint: str = "tree_hex",
 ) -> Path:
@@ -412,37 +413,23 @@ def bake_tree_main(
     `__file__`, so each bake script's bottom collapses to:
 
         if __name__ == "__main__":
-            bake_tree_main(SPEC, BLEND, __file__)
+            bake_tree_main(SPEC, __file__)
     """
     path = Path(file).resolve()
     return bake_tree(
-        spec, blend=blend, basename=path.stem, out_dir=path.parent,
+        spec, basename=path.stem, out_dir=path.parent,
         ages=ages, viewpoint=viewpoint,
     )
 
 
-def bake_building_main(
-    spec: Building, blend: str, file: str, *,
-    materials: dict[str, Material] | None = None,
-    blend_winter: str | None = None,
-    materials_winter: dict[str, Material] | None = None,
-    lighting=None,
-) -> Path:
+def bake_building_main(spec: Building, file: str) -> Path:
     """Convenience for single-building bake scripts.
 
     Derives `out_dir` and `basename` from the calling script's
     `__file__`, so each bake script's bottom collapses to:
 
         if __name__ == "__main__":
-            bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)
-
-    Pass `blend_winter` / `materials_winter` alongside when the SPEC
-    declares `seasons=2`.
+            bake_building_main(SPEC, __file__)
     """
     path = Path(file).resolve()
-    return bake_building(
-        spec, blend=blend, basename=path.stem, out_dir=path.parent,
-        materials=materials,
-        blend_winter=blend_winter, materials_winter=materials_winter,
-        lighting=lighting,
-    )
+    return bake_building(spec, basename=path.stem, out_dir=path.parent)

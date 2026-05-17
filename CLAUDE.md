@@ -319,11 +319,11 @@ glance.  This is the only step that touches upstream PNGs — see
 steering signal.
 
 `pak/check.py` is the driver: it imports a bake script,
-reads `BLEND` and `UPSTREAM_STEM` (declared next to `SPEC`), and
-runs the diff with no extra path-passing.  `--all` sweeps every
-bake script under `trains/` for a fleet-wide summary; scripts
-without `UPSTREAM_STEM` are skipped with a notice (fill in when
-the upstream sprite stem is known).
+reads `SPEC.blend` and `SPEC.upstream_stem`, and runs the diff
+with no extra path-passing.  `--all` sweeps every bake script
+under `trains/` for a fleet-wide summary; scripts whose SPEC
+lacks `upstream_stem` are skipped with a notice (fill it in
+when the upstream sprite stem is known).
 
 ## What to carry from upstream, tiered
 
@@ -510,8 +510,11 @@ matches whatever's atomic to bake; output basenames are the bake
 script's choice per-object, not derived from the script's name.
 
 **Bake script shape.**  A bake script holds its gameplay data
-inline as a typed `Vehicle` instance and a blend reference, then
-calls `bake_main` from `pak/bake.py`.  The full
+*and* its bake-pipeline metadata (blend path, upstream PNG stem,
+per-material recipe, EEVEE lighting tune) inline on a typed SPEC
+dataclass, then calls `bake_main` from `pak/bake.py`.  The dat
+emitters skip the bake-meta fields (`pak.dat._bake_meta` marker);
+`pak/bake.py` and `pak/check.py` read them off SPEC.  The full
 single-vehicle bake script:
 
 ```python
@@ -528,26 +531,32 @@ SPEC = Vehicle(
     constraint_prev=["any"],
     constraint_next=["any"],
     # … 20-or-so more fields for a complete port
+    blend="trains/Carriages/4wheel-1850.blend",
+    upstream_stem="trains/carriages/4wheel-1850-first-lnwr",
 )
-BLEND = "trains/Carriages/4wheel-1850.blend"
 
 if __name__ == "__main__":
-    bake_main(SPEC, BLEND, __file__)
+    bake_main(SPEC, __file__)
 ```
 
 `bake_main` derives out-dir + basename from `__file__` and calls
 the underlying `bake_vehicle` (fetch-blend / run-render /
 emit-dat).  Both accept either a `Vehicle` or a `list[Vehicle]` —
 shared-sprite multi-object scripts pass `SPECS` to the same entry
-point and the dat-emit step writes one combined dat.  Distinct-
-sprite multi-object bake units skip the convenience and call
-`bake_vehicle` directly per output, with distinct `basename` (and
-typically distinct `blend`) per call.
+point and the dat-emit step writes one combined dat.  Both
+Vehicles in such a list carry the same `blend=` / `upstream_stem=`
+values; the convention is a local `_BLEND = "..."` /
+`_UPSTREAM_STEM = "..."` at module top referenced from each
+Vehicle, so a divergence is caught by `_shared_blend`'s assert.
+Distinct-sprite multi-object bake units skip the convenience and
+call `bake_vehicle` directly per output, with distinct `basename`
+per call.
 
 **Ways follow the same shape.**  A way bake script holds a typed
 `Way` (covers the hex-engine `Obj=way` schema + the few extended
 keys upstream Britain dats carry: `wear_capacity`, `axle_load`)
-plus a `BLEND` and a `bake_way_main(SPEC, BLEND, __file__)` call:
+plus `blend=` / `materials=` / `strip=` bake-meta on the same
+SPEC and a `bake_way_main(SPEC, __file__)` call:
 
 ```python
 from pak.bake import bake_way_main
@@ -559,11 +568,17 @@ SPEC = Way(
     topspeed=160, max_weight=22,
     wear_capacity=4128000000,
     cost=140000, maintenance=375,
+    blend="ways/ns-cssr.blend",
+    materials={
+        "Ballast": (100, 100, 100),
+        "Wood": (134, 134, 134),
+        "Rail": (192, 192, 192),
+        "RailTop": (255, 255, 255),
+    },
 )
-BLEND = "ways/ns-cssr.blend"
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, BLEND, __file__)
+    bake_way_main(SPEC, __file__)
 ```
 
 `bake_way_main` shells out to `pak/bake_way.py` under `blender -b
@@ -573,9 +588,10 @@ atlas.  `emit_way` keys the dat's per-ribi image refs against
 `pak/bake_way.py`'s popcount-then-ribi hex atlas layout (`image[-
 ][0]` at row 0 col 0, then 63 ribi labels left-to-right, 8 cells
 per row — see `_HEX_WAY_LABELS` in `pak/dat.py`).  Per-blend strip
-extras (e.g. extra debug meshes) thread through `bake_way_main(...,
-strip="Sphere,Ruler")`; the rail strand atom in `ns-cssr.blend`
-only needs the default `Sphere` strip.
+extras (e.g. extra debug meshes) ride on the SPEC's `strip=`
+field (default `"Sphere"` — the upstream sun-direction
+visualizer); the rail strand atom in `ns-cssr.blend` only needs
+the default `Sphere` strip.
 
 Slope sprites (`imageup[<slope_key>][N]`), seasons, the `front`
 layer and `cursor` / `icon` are not yet baked, so `emit_way` omits
@@ -672,10 +688,10 @@ the durable home.
 
 **Asset scripts carry asset content, not infrastructure docs.**
 Per-asset bake scripts are small (~30–60 lines): a one-line
-docstring naming the asset, the SPEC, the blend reference, the
-`if __name__` invocation.  The docstring is not a place for
-"`SPEC` mirrors upstream `<X>.dat`; `BLEND` is shared with every
-rail grade; `MATERIALS` is the per-variant recolour — see
+docstring naming the asset, the SPEC (with its bake-meta fields),
+and the `if __name__` invocation.  The docstring is not a place
+for "`SPEC` mirrors upstream `<X>.dat`; `blend=` is shared with
+every rail grade; `materials=` is the per-variant recolour — see
 CLAUDE.md → 'Rail-grade material recolour'" template paragraphs,
 "Run from the repo root: `python3 -m <module>`" invocation hints,
 "First X port — exercises the Y axis of the Z schema" port-event
@@ -747,13 +763,13 @@ remap via `metadata["dat_key"]`.  The freight-image subsystem
 model yet — see TODO.md.
 
 **Materials.**  `materials.py` defines `Material` / `Slot` /
-`Lighting` carried inline in each building/way bake script as
-`MATERIALS = {...}` / `LIGHTING = ...`.  `blend_slots.py` is a
-minimal pre-2.5 .blend parser that recovers BI's Material+MTex
-struct array (Britain's blends predate the 2.5 file format so the
-legacy layout survives even though 2.80+ dropped the
+`Lighting` carried on each building/way SPEC's `materials=` /
+`lighting=` bake-meta fields.  `blend_slots.py` is a minimal
+pre-2.5 .blend parser that recovers BI's Material+MTex struct
+array (Britain's blends predate the 2.5 file format so the legacy
+layout survives even though 2.80+ dropped the
 `material.texture_slots` API).  `extract_materials.py` is the
-one-shot seeder for paste-ready `MATERIALS = {...}` blocks.
+one-shot seeder for paste-ready `materials={...}` blocks.
 
 **Diff (calibration / regression).**  `diff.py` carries the shared
 silhouette IoU / dRGB / XOR primitives; per-class harnesses
@@ -774,9 +790,9 @@ wide dat re-emit, the CI lint job), `fetch_wavs`, `check`, and
 `tests/test_ported_dats`.  `check.py` dispatches per-bake-script
 by `SPEC` type to the right diff harness and prints metrics.
 
-**Tuning.**  `tune_materials.py` is a gradient solver for
-per-asset MATERIALS against the blurred dRGB metric.  Caveat:
-adding `color=` to an image-only material flips the
+**Tuning.**  `tune_materials.py` is a gradient solver for the
+per-asset `materials=` dict against the blurred dRGB metric.
+Caveat: adding `color=` to an image-only material flips the
 `image x blend_diffuse` heuristic to `image x gain`, breaking the
 small-gradient assumption — opt in with an explicit `color=`
 starting point.  `diag_per_material.py` attributes dRGB by
@@ -843,11 +859,11 @@ a small carriage.
 
 Buildings (`Obj=building` — attractions, monuments, city
 buildings, townhalls, HQs, stops, extensions) port via a typed
-`Building` SPEC + `BLEND` + `bake_building_main(SPEC, BLEND,
-__file__)`.  Per-cell EEVEE renders driven by the footprint
+`Building` SPEC + `bake_building_main(SPEC, __file__)`.  Per-cell
+EEVEE renders driven by the footprint
 (`backimage[layout][y][x][height][phase][season]`); per-asset
-`MATERIALS = {...}` + `LIGHTING = Lighting(...)` declared inline
-alongside the SPEC.  See [`docs/bake-building.md`](docs/bake-building.md).
+`materials=` + `lighting=` declared on the SPEC.  See
+[`docs/bake-building.md`](docs/bake-building.md).
 
 ## Way-bake architecture
 
@@ -857,13 +873,13 @@ and compose it into 63 hex ribi cells by cloning, clipping and
 transforming onto each ribi's path.  Workbench backend (blender-
 only).  Path geometry in `pak/way.py` + `pak/way_topology.py`;
 bake driver in `pak/bake_way.py`.  Per-way visual differentiation
-is `MATERIALS = {...}` recolour inline in `ways/<way>.py`.  See
+is `materials=` recolour on the SPEC in `ways/<way>.py`.  See
 [`docs/bake-way.md`](docs/bake-way.md).
 
 ## Tree-bake architecture
 
-Trees (`Obj=tree`) port via a `Tree` SPEC + `BLEND` +
-`bake_tree_main(SPEC, BLEND, __file__)` — a single-facing
+Trees (`Obj=tree`) port via a `Tree` SPEC +
+`bake_tree_main(SPEC, __file__)` — a single-facing
 billboard expanded over an `ages × seasons` grid.  Five ages
 (engine hardcoded) come from one model at four successive scales
 plus a `winter-3` fallback for age 4 via `clamp_age_overrides`.

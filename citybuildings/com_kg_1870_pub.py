@@ -30,10 +30,11 @@ SPEC = Building(
     mail_demand=10,
     class_proportion=[0, 5, 45, 50, 0],
     class_proportion_jobs=[70, 20, 8, 2, 0],
+    blend="citybuildings/1870-pub.blend",
+    upstream_stem="citybuildings/images/com/1870-pub.png",
+    materials=MATERIALS,
 )
-BLEND = "citybuildings/1870-pub.blend"
-UPSTREAM_STEM = "citybuildings/images/com/1870-pub.png"
 
 
 if __name__ == "__main__":
-    bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)
+    bake_building_main(SPEC, __file__)

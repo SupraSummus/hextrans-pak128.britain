@@ -195,18 +195,18 @@ the multi-slot colour-band gap above — same fix, different
 manifestation.
 
 **Lighting overrides exist; only the pilot uses them.**  Per-asset
-`LIGHTING = Lighting(world_ambient, sun_energy_scale, sun_elev_deg,
-sun_az_offset_deg)` lands as a module-level constant alongside
-MATERIALS, threaded through bake / diff / render via `--lighting`
-JSON.  `res_1600_kg_01` carries one (ambient 0.55, elev 45°);
-the other six ported buildings still rely on the global EEVEE-
-substitute defaults (ambient 0.30, elev 30°).  Per-asset preferences
-diverge (res_kg_1920's opposing-ambient need is structural, not
-fixed by material data) so the global is unlikely to beat per-asset
-tuning across the fleet.  Concrete next move: run `pak.tune_materials`
-on each ported building, accept whichever per-asset `LIGHTING +
-MATERIALS` it converges to.  Light cost (~2-5 min per asset); does
-not require any infrastructure beyond what landed.
+`lighting=Lighting(world_ambient, sun_energy_scale, sun_elev_deg,
+sun_az_offset_deg)` lives on the SPEC alongside `materials=`,
+threaded through bake / diff / render via `--lighting` JSON.
+`res_1600_kg_01` carries one (ambient 0.55, elev 45°); the other
+six ported buildings still rely on the global EEVEE-substitute
+defaults (ambient 0.30, elev 30°).  Per-asset preferences diverge
+(res_kg_1920's opposing-ambient need is structural, not fixed by
+material data) so the global is unlikely to beat per-asset tuning
+across the fleet.  Concrete next move: run `pak.tune_materials` on
+each ported building, accept whichever per-asset `lighting=` +
+`materials=` it converges to.  Light cost (~2-5 min per asset);
+does not require any infrastructure beyond what landed.
 
 **Pavement texture file missing from upstream blends repo.**
 Multiple Britain blends reference a `concrete-paving-small` Image

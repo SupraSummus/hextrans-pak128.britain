@@ -96,16 +96,14 @@ SPEC = Building(
     mail_demand=1,
     class_proportion=[0, 40, 100, 75, 0],
     seasons=2,
+    blend="citybuildings/1600-detatched-house-2f.blend",
+    blend_winter="citybuildings/1600-detatched-house-2f-snow.blend",
+    upstream_stem="citybuildings/images/res/1600-detatched-house-2f.png",
+    materials=MATERIALS,
+    materials_winter=MATERIALS_WINTER,
+    lighting=LIGHTING,
 )
-BLEND = "citybuildings/1600-detatched-house-2f.blend"
-BLEND_WINTER = "citybuildings/1600-detatched-house-2f-snow.blend"
-UPSTREAM_STEM = "citybuildings/images/res/1600-detatched-house-2f.png"
 
 
 if __name__ == "__main__":
-    bake_building_main(
-        SPEC, BLEND, __file__,
-        materials=MATERIALS,
-        blend_winter=BLEND_WINTER, materials_winter=MATERIALS_WINTER,
-        lighting=LIGHTING,
-    )
+    bake_building_main(SPEC, __file__)

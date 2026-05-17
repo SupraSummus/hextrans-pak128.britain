@@ -1,4 +1,4 @@
-"""Structural shape checks on `MATERIALS` dicts in `citybuildings/<asset>.py`,
+"""Structural shape checks on each building SPEC's `materials=` dict,
 plus round-trip tests on `pak.materials`.
 
 `Material.__post_init__` validates field shape (texco enum, image-xor-noise
@@ -19,13 +19,14 @@ from pak import REPO_ROOT
 from pak.materials import Lighting, Material, Slot, from_jsonable, seed_python, to_jsonable
 
 
-def _building_modules_with_materials() -> list[tuple[str, ModuleType]]:
+def _building_specs_with_materials() -> list[tuple[str, ModuleType]]:
     out: list[tuple[str, ModuleType]] = []
     for path in sorted((REPO_ROOT / "citybuildings").glob("*.py")):
         if path.name == "__init__.py":
             continue
         mod = importlib.import_module(f"citybuildings.{path.stem}")
-        if hasattr(mod, "MATERIALS"):
+        spec = getattr(mod, "SPEC", None)
+        if getattr(spec, "materials", None):
             out.append((path.stem, mod))
     return out
 
@@ -33,14 +34,14 @@ def _building_modules_with_materials() -> list[tuple[str, ModuleType]]:
 class TestBuildingScriptMaterials(unittest.TestCase):
 
     def test_at_least_one_script_exists(self):
-        # Guard against an "all MATERIALS got deleted" silent pass.
-        self.assertGreater(len(_building_modules_with_materials()), 0)
+        # Guard against an "all materials got deleted" silent pass.
+        self.assertGreater(len(_building_specs_with_materials()), 0)
 
     def test_every_materials_dict_is_well_formed(self):
-        for name, mod in _building_modules_with_materials():
+        for name, mod in _building_specs_with_materials():
             with self.subTest(script=name):
-                self.assertIsInstance(mod.MATERIALS, dict)
-                for k, v in mod.MATERIALS.items():
+                self.assertIsInstance(mod.SPEC.materials, dict)
+                for k, v in mod.SPEC.materials.items():
                     self.assertIsInstance(k, str)
                     self.assertIsInstance(v, Material)
 

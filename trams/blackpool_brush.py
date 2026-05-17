@@ -44,9 +44,9 @@ SPEC = Vehicle(
     # `way_constraint_prohibitive[0]=0` (category-indexed flags)
     # don't fit the dense-list schema yet -- dropped here; see
     # TODO.md "Sparse way_constraint indexing".
+    blend="trams/blackpool-brush.blend",
 )
-BLEND = "trams/blackpool-brush.blend"
 
 
 if __name__ == "__main__":
-    bake_main(SPEC, BLEND, __file__)
+    bake_main(SPEC, __file__)
