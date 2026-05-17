@@ -128,52 +128,41 @@ port the material-swap code from the upstream `-65` script into
 a `--mask` mode on render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
-**Building material→texture binding can read from .blend binary,
-not just guess by name.**  `pak/blend_slots.py` parses the pre-2.5
-Material/MTex structs that survive in every Britain building blend
-(saved as Blender 2.42/2.48, so the `MTex *mtex[10]` slot array is
-intact in the binary even though Blender 2.80's API stripped it).
-Per-slot data extracted: `tex_type` (IMAGE / CLOUDS / NOISE /
-MUSGRAVE / STUCCI / WOOD), `image_name`, `size` (per-axis tile
-count), `ofs`, `texco` (ORCO/GLOB/UV), `blendtype`, `colfac`, plus
-per-material rgb + alpha.  Validated on res_1600_kg_01: the binary
-says Roof's texture is `BrownTile` (image `flemish-bond-impr.001`)
-at size `(3, 1, 2)`, not `Brick` -- the hand-coded
-`explicit_map["roof"] = "brick"` is overlaying the wrong pattern.
-No production consumer yet -- `pak.blend_slots` ships as a parser
-+ `python3 -m pak.blend_slots <blend>` CLI inspection tool.  The
-straightforward "feed slot data into Blender's Mapping node"
-integration regressed res_1600 from 26.6 to 39.1 dRGB because
-BI's TEXCO_GLOB sizes the texture against world units while
-Blender 4.0's Mapping/Generated operates on bbox-normalised
-[0, 1], a factor of `world_span` apart; a fixed coord-scale
-multiplier (×6 for GLOB, ×2 for ORCO) wasn't enough.  Concrete
-next move: compute the per-mesh bbox extent in blend space at
-material-binding time (before `_bake_world_into_meshes` runs),
-use it as the per-asset GLOB→Generated multiplier; verify on
-res_1600 first, then sweep the fleet.  Once landed, delete
-`_TEX_TILE` and `explicit_map` from `pak/render.py`.
 
-**Building lighting is near the fleet-mean global minimum; per-asset
-preferences disagree.**  Three EEVEE-substitution knobs
+**Building lighting needs re-calibration against the new MATERIALS
+baseline.**  The previous EEVEE-substitution knobs
 (`_BI_TO_EEVEE_SUN_SCALE` ≈ 71.4, sun direction elev=30°/az_offset=-90°,
-world ambient 0.30 grey) came out of grid+line search against
-`res_1600_kg_01`.  `diff_buildings` now reports per-layout dRGB
-alongside IoU (see `pak/diff_buildings.py`); a 12-point grid
-(elev=0, az ∈ {-90,-45,+45,+90}, amb ∈ {0.15,0.30,0.50}) on the
-6-asset fleet (excl. gasometer) found no combination beats the
-baseline 30.7 mean dRGB.  The per-asset numbers tell a sharper story:
-res_kg_1920_detatched bottoms at 20.3 dRGB at amb=0.50 (very bright
-ambient), while res_kg_1870_townhouse hits 61.7 at the same point
-(very bad).  The two assets have opposing lighting preferences, so
-fleet-mean tuning is necessarily a compromise.  Sun energy itself
-is no longer a free knob — it's `authored × scale`, so a future
-blend authoring a non-0.028 sun picks that up automatically.
-Concrete next move: move sun + ambient into a per-asset
-`LIGHTING` dict on `Building` SPEC (mirroring how ways carry per-
-recolour `MATERIALS`), defaulting to today's fleet values; calibrate
-townhouse and detached houses independently.  See also "Per-asset
-material binding" above -- the same per-asset story drives both.
+world ambient 0.30 grey) were grid-searched against a hand-coded
+material-binding path (now retired -- see "Building material binding
+now reads BI MTex slot data" above).  Under the new slot-driven
+binding the fleet-mean dRGB shifted slightly (res_1600 from 26.6 to
+30.6; fleet mean from ~30.7 to ~32.2 excl gasometer) because the
+old hand-tuned `_TEX_TILE` frequencies were themselves part of the
+lighting fit.  Per-asset preferences still disagree (res_kg_1920's
+opposing-ambient need is structural, not fixed by material data).
+Concrete next move: re-run the 12-point grid (elev=0, az ∈
+{-90,-45,+45,+90}, amb ∈ {0.15,0.30,0.50}) on the 6-asset fleet
+under the new MATERIALS path; if no global beats the current
+baseline, move sun + ambient into a per-asset `LIGHTING` dict on
+`Building` SPEC (mirroring how ways carry per-recolour
+`MATERIALS`), defaulting to today's fleet values; calibrate
+townhouse and detached houses independently.
+
+**Pavement texture file missing from upstream blends repo.**
+Multiple Britain blends reference a `concrete-paving-small` Image
+data block whose filepath points to `//../../../concrete-paving-
+smalll.jpg` (note the triple-l typo) -- a path that 404s against
+`blends.lock`'s SHA-pinned upstream.  `_resolve_image` returns
+None for these and `_bind_textures_via_nodes` warns + falls back
+to flat diffuse, so the bake completes but Pavement / Tiles etc.
+on res_1600, the townhouse, both detached houses, and the
+gasometer renders without their authored texture.  Concrete next
+move: grep the blends repo for any remaining `concrete-paving-*`
+asset, work out whether the typo is fixable upstream or whether
+the file was lost in a directory rename.  Until then, every
+Britain blend referencing this image lands at higher dRGB than it
+should (interior shading shows the diffuse colour with no surface
+detail).
 
 **Gasometer renders see-through under EEVEE.**  Symptom:
 ind_1860_jh_gasometer sits at IoU 0.80 / dRGB 65 vs the fleet's
@@ -196,19 +185,20 @@ is a no-op under EEVEE 4.0, so any alpha integration has to build
 a real Principled BSDF graph with the Alpha socket wired.
 
 **Pixel-perfect building match needs UVs (or new materials).**
-The 26.6 dRGB floor on `res_1600_kg_01` is set by BI's lost
-per-slot texture scale/offset/projection-mode + lost UVs.  Three
-ways to close it if it becomes a goal: (1) re-author every
-Britain blend with proper UVs + node-based image textures
-(~500 blends, content work); (2) sidecar Blender 2.79b with BI
-in the bake sandbox (breaks cross-renderer determinism); (3)
-ship new hex-native materials authored from scratch (artistic
-divergence from upstream).  Today's `_bind_textures_via_nodes`
-gets the per-region mean right via `Generated` coords +
-material-name binding + per-material tile-count, and per-asset
-material color via `MixRGB(MULTIPLY, diffuse_color)` — the
-remaining gap is spatial frequency on each wall.  No concrete
-next move unless one of the three is chosen.
+The ~30 dRGB floor on `res_1600_kg_01` is set by BI's lost UVs --
+slot data via `pak.blend_slots` recovers per-axis size/ofs/texco
+but not per-vertex UV coords.  Three ways to close it if it
+becomes a goal: (1) re-author every Britain blend with proper
+UVs + node-based image textures (~500 blends, content work);
+(2) sidecar Blender 2.79b with BI in the bake sandbox (breaks
+cross-renderer determinism); (3) ship new hex-native materials
+authored from scratch (artistic divergence from upstream).
+Today's `_bind_textures_via_nodes` gets the per-region mean
+right via slot-driven `blend_world_pos` (GLOB) or `Generated`
+(ORCO) coords + the slot's authored `size`, and per-asset
+material color via `MixRGB(MULTIPLY, diffuse_color)` -- the
+remaining gap is per-vertex UV detail.  No concrete next move
+unless one of the three is chosen.
 
 **Multi-tile vehicle overflow.**  `HEX_VIEWPOINT`'s `fit_kind="hex"`
 applies a single pakset-wide scale (`2R / upstream_ortho_scale = 2R/24`)

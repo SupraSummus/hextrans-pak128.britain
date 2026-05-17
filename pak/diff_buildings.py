@@ -73,7 +73,8 @@ def _silhouette_mask(rgba):
     return a & ~pink
 
 
-def _render(blend_path: Path, out_dir: Path, name: str, layouts: int) -> None:
+def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
+            materials: dict | None = None) -> None:
     script = HERE / "render.py"
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
@@ -82,6 +83,11 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int) -> None:
         "--building-footprint", f"1,1,{layouts},1",
         "--keep-per-facing",
     ]
+    if materials:
+        import json
+
+        from pak.materials import to_jsonable
+        cmd += ["--materials", json.dumps(to_jsonable(materials))]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
 
@@ -215,7 +221,8 @@ def _best_permutation(mat) -> list[int]:
     return list(best_perm)
 
 
-def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path):
+def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
+        materials: dict | None = None):
     """Render `blend` through `square_building`, diff each layout
     against `upstream_png`'s columns, return (matrix, permutation).
 
@@ -227,7 +234,7 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)
     render_name = Path(blend).stem
-    _render(blend_path, out_dir, render_name, layouts)
+    _render(blend_path, out_dir, render_name, layouts, materials=materials)
     up_path = fetch_pak(upstream_png)
     up_cells = _split_upstream(up_path, layouts)
     our_rgba = _load_our_renders(out_dir, render_name, layouts)

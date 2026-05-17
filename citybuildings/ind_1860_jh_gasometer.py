@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from pak.bake import bake_building_main
 from pak.dat import Building
+from pak.materials import Material
+
+MATERIALS = {
+    "MainColour1.001": Material(noise=True),
+    "Material.001":    Material(noise=True),
+    "Material.002":    Material(noise=True),
+    "Material.003":    Material(noise=True),
+}
 
 # Gasometer.  Rotationally symmetric — keep upstream's single layout.
 SPEC = Building(
@@ -26,4 +34,4 @@ UPSTREAM_STEM = "citybuildings/images/ind/1860-gasometer.png"
 
 
 if __name__ == "__main__":
-    bake_building_main(SPEC, BLEND, __file__)
+    bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)

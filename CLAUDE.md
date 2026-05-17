@@ -822,8 +822,26 @@ Present:
   fetches the blend, runs the hex renderer, writes the atlas
   PNG, and emits the dat.  `spec` may be a single `Vehicle` or a
   `list[Vehicle]` (shared-sprite multi-object — emit_vehicles
-  writes one combined dat).  Bake scripts shrink to imports +
+  writes one combined dat).  `bake_building` accepts an optional
+  `materials=MATERIALS` dict (see `pak.materials`) routed to
+  `pak/render.py --materials`.  Bake scripts shrink to imports +
   SPEC (or SPECS) + a single `bake_main(...)` call.
+- `pak/blend_slots.py` — minimal pre-2.5 .blend parser; reads
+  BI's Material+MTex struct array (image refs, texco, size, ofs,
+  per-material rgb+alpha) directly from the binary.  Britain's
+  blends are all saved by Blender 2.42/2.48 so the legacy struct
+  layout survives even though 2.80+ dropped the
+  `material.texture_slots` API.  CLI: `python3 -m pak.blend_slots
+  <blend>` dumps every material's slot table.
+- `pak/materials.py` — `Material` dataclass (image / texco /
+  size / ofs / noise) carried in each `citybuildings/<asset>.py`
+  as `MATERIALS = {...}`.  `to_jsonable` / `from_jsonable`
+  serialise for subprocess transit; `seed_python` emits paste-
+  ready source.  See "Texture rebinding" above.
+- `pak/extract_materials.py` — one-shot seeder.
+  `python3 -m pak.extract_materials <blend>` prints the
+  `MATERIALS = {...}` block to paste next to SPEC; collapses each
+  material to its first IMAGE slot or fallback CLOUDS/NOISE slot.
 - `pak/bake_units.py` — `discover()` returns every
   per-asset bake script (`.py` with `.dat` + `.png` siblings outside
   `pak/`, `tests/`, `grounds/`, `simutranslator/`), `import_script
@@ -1073,27 +1091,57 @@ background sky, not its ambient term, and modern EEVEE's
 `world.color` IS the ambient term — so the authored value is the
 wrong thing to plug in here.
 
-**Texture rebinding.**  Blender 2.80 dropped BI's `material.
-texture_slots[i]` data, but `bpy.data.textures` and
-`bpy.data.images` survive.  `pak.render._bind_textures_via_nodes`
-reconstructs the binding by name-matching material to texture
-(case-insensitive prefix), with an `explicit_map` for cases the
-prefix misses (`Pavement` material → `Pavings` texture; `Roof` /
-`RoofSide` → `Brick` because upstream JP's authoring used the
-same flemish-bond brick for walls and roof tiles).  Each match
-gets a Principled BSDF whose Base Color is the texture sampled
-at `Generated` coordinates (BI's default projection) scaled by
-`_TEX_TILE[mat_name]` (calibrated by eye against upstream's brick
-frequency, since BI's per-slot scale is lost).  Materials in
-`procedural_noise_mats = {"hedge"}` get a `Noise → ColorRamp`
-node graph instead, substituting BI's lost CLOUDS texture.
-External texture filepaths (`//../../../textures/...`) are
-remapped via `_reload_external_textures` to the blends-repo cache
-before binding.  All three tables are calibrated to
-`res_1600_kg_01`'s material names — the second building port will
-need either parallel extensions or migration into a per-asset
-SPEC field (see TODO → "Per-asset material binding for buildings
-is hand-coded for one blend").
+**Texture rebinding.**  Blender 2.80 dropped BI's
+`material.texture_slots[i]` API, but the Material+MTex struct
+data survives in the .blend binary because Britain's blends are
+all saved by 2.42/2.48 (pre-2.5 file format).  The full pipeline:
+
+* **`pak/blend_slots.py`** parses the binary directly to recover
+  `tex_type` (IMAGE / CLOUDS / NOISE), `image_name`, `size`,
+  `ofs`, `texco` (GLOB / ORCO / UV) per slot, plus per-material
+  rgb + alpha.  Not a general .blend parser; targets only what
+  building binding needs.
+* **`pak/extract_materials.py`** is the one-shot seeder
+  (`python3 -m pak.extract_materials <blend>`).  Collapses each
+  material to its first IMAGE slot or fallback procedural slot
+  and emits paste-ready Python source for the bake script's
+  `MATERIALS = {...}` dict.
+* **`pak/materials.py`** defines the `Material` dataclass --
+  per-material `image / texco / size / ofs` or `noise=True`.
+  `to_jsonable` / `from_jsonable` serialise across the subprocess
+  command line.
+* Each `citybuildings/<asset>.py` carries `MATERIALS = {...}`
+  inline next to `SPEC`, passed through
+  `bake_building_main(..., materials=MATERIALS)`.  Once seeded,
+  the dict is the authoritative representation -- hand-edits are
+  welcome (JP's authoring quirks like a Roof material pointing
+  at the BrownTile-duplicate image rather than its sibling
+  `Brick` live as in-place comments).
+* **`render.py::_bind_textures_via_nodes`** builds the node
+  graph per entry, after `_bake_world_into_meshes` runs so the
+  GLOB path can read the vertex attribute it populates:
+  * `Material(image=..., texco="GLOB")` -> Attribute
+    "blend_world_pos" -> Mapping(scale=`size`) -> ImageTexture ->
+    Multiply by diffuse colour -> Principled BSDF.  The
+    `blend_world_pos` FLOAT_VECTOR vertex attribute is populated
+    from the pre-facing-rotation blend-frame coords, so the
+    texture stays pinned to the blend frame across per-facing
+    model rotation -- BI rendered only-camera-moves and that's
+    the behaviour to mirror.
+  * `Material(image=..., texco="ORCO")` -> TexCoord.Generated ->
+    Mapping(scale=`size`) -> ...  Bbox-normalised per-mesh,
+    substitutes BI's object-local projection.
+  * `Material(noise=True)` -> Noise -> ColorRamp around the
+    diffuse colour.  BI's CLOUDS substitute.
+  * Materials omitted from MATERIALS render flat-diffuse via
+    Blender's `use_nodes=False` auto-conversion.
+
+External texture filepaths in the .blend (`//../../../textures/...`)
+are remapped via `_reload_external_textures` to the blends-repo
+cache before binding.  Image data blocks whose filepath 404s
+(e.g. Pavement's typo'd `concrete-paving-smalll.jpg` path) warn
+and fall back to flat diffuse rather than failing the bake -- see
+TODO → "Pavement texture file missing from upstream blends repo".
 
 ## Way-bake architecture
 

@@ -24,6 +24,7 @@ from pathlib import Path
 from pak import REPO_ROOT
 from pak.dat import Building, Vehicle, Way, emit_building, emit_vehicles, emit_way
 from pak.fetch_blend import fetch
+from pak.materials import Material
 
 _RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
 _BAKE_WAY_SCRIPT = Path(__file__).resolve().parent / "bake_way.py"
@@ -198,6 +199,7 @@ def bake_building(
     blend: str,
     basename: str,
     out_dir: Path,
+    materials: dict[str, Material] | None = None,
 ) -> Path:
     """Fetch the blend, render the multi-tile atlas, emit the dat.
 
@@ -232,6 +234,9 @@ def bake_building(
         f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
         "--cols-per-row", str(cells_per_row),
     ]
+    if materials:
+        from pak.materials import to_jsonable
+        cmd += ["--materials", json.dumps(to_jsonable(materials))]
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
 
@@ -243,16 +248,20 @@ def bake_building(
     return out_dat
 
 
-def bake_building_main(spec: Building, blend: str, file: str) -> Path:
+def bake_building_main(
+    spec: Building, blend: str, file: str, *,
+    materials: dict[str, Material] | None = None,
+) -> Path:
     """Convenience for single-building bake scripts.
 
     Derives `out_dir` and `basename` from the calling script's
     `__file__`, so each bake script's bottom collapses to:
 
         if __name__ == "__main__":
-            bake_building_main(SPEC, BLEND, __file__)
+            bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)
     """
     path = Path(file).resolve()
     return bake_building(
         spec, blend=blend, basename=path.stem, out_dir=path.parent,
+        materials=materials,
     )

@@ -100,18 +100,6 @@ class Viewpoint:
     engine: str = "CYCLES"
 
 
-# Per-material texture-tile frequency on Generated coords.  Default 8.0
-# (8 cycles per object-bbox axis) reads as small bricks on a typical
-# wall.  Pavement is a single ground plane that wants finer aggregate
-# detail (more cycles); roof tiles read smaller than wall bricks.
-_TEX_TILE: dict[str, float] = {
-    "brick": 8.0,
-    "roof": 12.0,
-    "roofside": 12.0,
-    "pavement": 6.0,
-}
-
-
 def _reload_external_textures(bpy) -> None:
     """Britain blends reference textures via relative filepaths like
     `//../../../textures/flemish-bond-improved.png` that don't resolve
@@ -151,116 +139,144 @@ def _bsdf_node(nt):
     return bsdf
 
 
-def _bind_textures_via_nodes(bpy) -> None:
-    """Reconstruct BI material->texture bindings via the name-match
-    heuristic against `bpy.data.textures` (which survives the
-    2.80 stripping of `material.texture_slots`).  Builds a Principled
-    BSDF node graph per matched material: Generated coords -> Mapping
-    (scale `tile_n`) -> ImageTexture -> Multiply by fallback diffuse
-    -> Base Color.  Materials with no image-texture match but a name
-    in `procedural_noise_mats` (Hedge) get a Noise->ColorRamp node
-    graph instead -- substitutes BI's lost CLOUDS texture.
-
-    See CLAUDE.md -> "Building-bake architecture" for what this
-    approximation does and does not recover from upstream's BI render.
-
-    A richer recovery path -- reading BI's authoritative MTex slot
-    data from the .blend binary (`pak/blend_slots.py`) -- is staged
-    but not wired in; see TODO."""
-
-    tex_by_name: dict[str, bpy.types.Texture] = {}
-    for t in bpy.data.textures:
-        if t.type == "IMAGE" and t.image and t.image.size[0] > 0:
-            tex_by_name[t.name.lower()] = t
-
-    # Fallback hand-encoded overrides for material/texture name pairs
-    # the prefix matcher misses.  Only kicks in when slot-data extraction
-    # didn't bind this material.
-    explicit_map = {
-        "pavement": "pavings",
-        "roof": "brick",
-        "roofside": "brick",
-    }
-
-    def match_texture(mat_name: str):
-        key = mat_name.lower()
-        if key in explicit_map and explicit_map[key] in tex_by_name:
-            return tex_by_name[explicit_map[key]]
-        for tname, tex in tex_by_name.items():
-            if key == tname or key.startswith(tname) or tname.startswith(key):
-                return tex
+def _resolve_image(bpy, image_name: str):
+    """Look up `bpy.data.images[image_name]`; return None if missing
+    or if the file failed to load (size 0).  The seeder writes the
+    BI slot's Image ID name verbatim, so this is a direct dict-style
+    lookup -- no fuzzy matching."""
+    img = bpy.data.images.get(image_name)
+    if img is None or img.type != "IMAGE" or img.size[0] == 0:
         return None
+    return img
 
-    procedural_noise_mats = {"hedge"}
 
-    def build_image_material(m, tex):
-        fallback_diffuse = tuple(m.diffuse_color)
-        m.use_nodes = True
-        nt = m.node_tree
-        nt.nodes.clear()
-        out = nt.nodes.new("ShaderNodeOutputMaterial")
-        bsdf = _bsdf_node(nt)
-        tex_img = nt.nodes.new("ShaderNodeTexImage")
-        tex_img.image = tex.image
+def _build_image_material(bpy, m, tex_img, mat_spec) -> None:
+    """Wire `m` as `<coord> -> Mapping(scale=size) -> Image ->
+    Mul(diffuse) -> Principled BSDF`.
+
+    Coord source by `mat_spec.texco`:
+    - "GLOB": Attribute("blend_world_pos") populated by
+      `_bake_world_into_meshes`.  Reads the original blend-frame world
+      position, untouched by `_apply_facing`'s per-facing v.co rewrites,
+      so the texture stays projected from a fixed world frame the way
+      BI did when only the camera moved across facings.  Mapping.scale
+      is `mat_spec.size` directly: BI sized GLOB textures in world units
+      and our attribute coords *are* world units.
+    - "ORCO" / "UV": TexCoord.Generated, the bbox-normalised substitute
+      (we have no preserved UVs).  Mapping.scale = `mat_spec.size`,
+      matching BI's per-axis cycles across the object bbox."""
+    fallback_diffuse = tuple(m.diffuse_color)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = _bsdf_node(nt)
+    tex_node = nt.nodes.new("ShaderNodeTexImage")
+    tex_node.image = tex_img
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.vector_type = "POINT"
+    mapping.inputs["Scale"].default_value = tuple(mat_spec.size)
+    if any(mat_spec.ofs):
+        mapping.inputs["Location"].default_value = tuple(mat_spec.ofs)
+    if mat_spec.texco == "GLOB":
+        coord = nt.nodes.new("ShaderNodeAttribute")
+        coord.attribute_name = "blend_world_pos"
+        nt.links.new(coord.outputs["Vector"], mapping.inputs["Vector"])
+    else:
         coord = nt.nodes.new("ShaderNodeTexCoord")
-        mapping = nt.nodes.new("ShaderNodeMapping")
-        mapping.vector_type = "POINT"
-        tile_n = _TEX_TILE.get(m.name.lower(), 8.0)
-        mapping.inputs["Scale"].default_value = (tile_n, tile_n, tile_n)
-        mul = nt.nodes.new("ShaderNodeMixRGB")
-        mul.blend_type = "MULTIPLY"
-        mul.inputs["Fac"].default_value = 1.0
-        mul.inputs["Color2"].default_value = (*fallback_diffuse[:3], 1.0)
         nt.links.new(coord.outputs["Generated"], mapping.inputs["Vector"])
-        nt.links.new(mapping.outputs["Vector"], tex_img.inputs["Vector"])
-        nt.links.new(tex_img.outputs["Color"], mul.inputs["Color1"])
-        nt.links.new(mul.outputs["Color"], bsdf.inputs["Base Color"])
-        nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
-        m.diffuse_color = fallback_diffuse
+    mul = nt.nodes.new("ShaderNodeMixRGB")
+    mul.blend_type = "MULTIPLY"
+    mul.inputs["Fac"].default_value = 1.0
+    mul.inputs["Color2"].default_value = (*fallback_diffuse[:3], 1.0)
+    nt.links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
+    nt.links.new(tex_node.outputs["Color"], mul.inputs["Color1"])
+    nt.links.new(mul.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    m.diffuse_color = fallback_diffuse
 
-    def build_noise_material(m):
-        fallback_diffuse = tuple(m.diffuse_color)
-        m.use_nodes = True
-        nt = m.node_tree
-        nt.nodes.clear()
-        out = nt.nodes.new("ShaderNodeOutputMaterial")
-        bsdf = _bsdf_node(nt)
-        noise = nt.nodes.new("ShaderNodeTexNoise")
-        noise.inputs["Scale"].default_value = 50.0
-        noise.inputs["Detail"].default_value = 2.0
-        ramp = nt.nodes.new("ShaderNodeValToRGB")
-        ramp.color_ramp.elements[0].position = 0.4
-        ramp.color_ramp.elements[0].color = (
-            fallback_diffuse[0] * 0.6,
-            fallback_diffuse[1] * 0.6,
-            fallback_diffuse[2] * 0.6,
-            1.0,
-        )
-        ramp.color_ramp.elements[1].position = 0.6
-        ramp.color_ramp.elements[1].color = (
-            min(1.0, fallback_diffuse[0] * 1.2),
-            min(1.0, fallback_diffuse[1] * 1.2),
-            min(1.0, fallback_diffuse[2] * 1.2),
-            1.0,
-        )
-        coord = nt.nodes.new("ShaderNodeTexCoord")
-        nt.links.new(coord.outputs["Generated"], noise.inputs["Vector"])
-        nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
-        nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
-        nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
-        m.diffuse_color = fallback_diffuse
 
-    for m in bpy.data.materials:
-        if m.use_nodes:
-            continue
-        key = m.name.lower()
-        if key in procedural_noise_mats:
-            build_noise_material(m)
-            continue
-        tex = match_texture(m.name)
-        if tex is None:
-            continue
-        build_image_material(m, tex)
+def _build_noise_material(bpy, m) -> None:
+    """CLOUDS substitute: Noise -> ColorRamp around the material's
+    diffuse colour.  Used for `Material(noise=True)` entries -- BI's
+    pre-2.5 procedural textures don't survive to modern Blender, and
+    a noise band around the diffuse colour reads close enough at
+    pakset zoom."""
+    fallback_diffuse = tuple(m.diffuse_color)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = _bsdf_node(nt)
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 50.0
+    noise.inputs["Detail"].default_value = 2.0
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].position = 0.4
+    ramp.color_ramp.elements[0].color = (
+        fallback_diffuse[0] * 0.6,
+        fallback_diffuse[1] * 0.6,
+        fallback_diffuse[2] * 0.6,
+        1.0,
+    )
+    ramp.color_ramp.elements[1].position = 0.6
+    ramp.color_ramp.elements[1].color = (
+        min(1.0, fallback_diffuse[0] * 1.2),
+        min(1.0, fallback_diffuse[1] * 1.2),
+        min(1.0, fallback_diffuse[2] * 1.2),
+        1.0,
+    )
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    nt.links.new(coord.outputs["Generated"], noise.inputs["Vector"])
+    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    m.diffuse_color = fallback_diffuse
+
+
+def _bind_textures_via_nodes(bpy, materials) -> None:
+    """Build a node-graph substitute for each entry in `materials` (a
+    `dict[str, pak.materials.Material]`); leave anything unlisted with
+    `use_nodes=False` so Blender's auto-conversion paints the diffuse
+    flat.  Names not present in `bpy.data.materials` raise -- a silent
+    typo in the bake script's MATERIALS dict would render with the
+    blend's stock colour and only diverge from sibling variants by a
+    fixed offset.
+
+    Must run after `_bake_world_into_meshes` so the `blend_world_pos`
+    attribute the GLOB path samples is in place.
+
+    See CLAUDE.md -> "Building-bake architecture" for the BI->EEVEE
+    substitution context."""
+    if not materials:
+        return
+    available = {m.name for m in bpy.data.materials}
+    missing = set(materials) - available
+    if missing:
+        raise RuntimeError(
+            f"MATERIALS targets unknown blend materials: {sorted(missing)}; "
+            f"have {sorted(available)}"
+        )
+    for name, mat_spec in materials.items():
+        m = bpy.data.materials[name]
+        if mat_spec.image is not None:
+            tex_img = _resolve_image(bpy, mat_spec.image)
+            if tex_img is None:
+                # Image data block referenced by the blend's MTex slot but
+                # whose file 404'd from upstream (e.g. Britain's
+                # `concrete-paving-smalll.jpg` typo'd Pavement path).
+                # Fall back to flat diffuse rather than raising -- the
+                # asset can still ship; tracked in TODO per-material.
+                print(
+                    f"  warning: MATERIALS['{name}'].image="
+                    f"{mat_spec.image!r} did not load; falling back to "
+                    "flat diffuse",
+                    flush=True,
+                )
+                continue
+            _build_image_material(bpy, m, tex_img, mat_spec)
+        elif mat_spec.noise:
+            _build_noise_material(bpy, m)
 
 
 @dataclass
@@ -467,6 +483,20 @@ def _bake_world_into_meshes(bpy, mathutils):
             obj.matrix_parent_inverse = M.Identity(4)
         obj.matrix_basis = M.Identity(4)
         orig = [v.co.copy() for v in obj.data.vertices]
+        # Snapshot blend-frame world position as a vertex attribute so
+        # the shader can sample BI's TEXCO_GLOB coords directly after
+        # `_apply_facing` rewrites v.co per facing.  Per-facing rotation
+        # otherwise wobbles Generated-derived texture coords because the
+        # mesh AABB grows with rotation; reading from this attribute
+        # keeps the texture pinned to the original blend frame, the way
+        # BI did when only the camera moved.
+        mesh = obj.data
+        attr = mesh.attributes.get("blend_world_pos")
+        if attr is None:
+            attr = mesh.attributes.new(
+                name="blend_world_pos", type="FLOAT_VECTOR", domain="POINT",
+            )
+        attr.data.foreach_set("vector", [c for v in orig for c in v])
         records.append((obj, orig))
 
     # Force the matrix_world cache to refresh: assignments to
@@ -572,19 +602,26 @@ def _print_atlas_summary(out_path: Path, cells, cols: int, rows: int) -> None:
 
 def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                  name: str, cols_per_row: int | None = None,
-                 keep_per_facing: bool = False) -> None:
+                 keep_per_facing: bool = False,
+                 materials: dict | None = None) -> None:
     """Render `viewpoint.facings` of the currently loaded blend.  Writes
     `<out_dir>/<name>.png` (atlas).  With `keep_per_facing=True`, also
     writes `<out_dir>/<name>_<label>.png` per facing -- used by the
-    calibration diff against the upstream pak."""
+    calibration diff against the upstream pak.
+
+    `materials` is the per-asset `MATERIALS = {...}` dict from the bake
+    script (a `dict[str, pak.materials.Material]`).  Applied after the
+    world-bake step so the GLOB-coord path can read the
+    `blend_world_pos` vertex attribute it populates."""
     import numpy as np
 
     authored = _strip_scene(bpy)
     if viewpoint.engine == "BLENDER_EEVEE":
         _reload_external_textures(bpy)
-        _bind_textures_via_nodes(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
     records = _bake_world_into_meshes(bpy, mathutils)
+    if viewpoint.engine == "BLENDER_EEVEE" and materials:
+        _bind_textures_via_nodes(bpy, materials)
     fit = _compute_fit(mathutils, records, viewpoint.fit_kind,
                        authored.ortho_scale)
     extrinsic = (mathutils.Matrix(viewpoint.extrinsic) if viewpoint.extrinsic
@@ -642,6 +679,12 @@ def _parse_args(argv):
                     help="X,Y,L,H — footprint (dims_x, dims_y, layouts, "
                          "heights) for viewpoint=hex_building or "
                          "square_building; required for those modes")
+    ap.add_argument("--materials", default="",
+                    help="JSON serialisation of the bake script's "
+                         "`MATERIALS = {...}` dict (see pak.materials).  "
+                         "Per-material image/noise/texco/size descriptions "
+                         "the renderer wires into Principled BSDF node "
+                         "graphs; unlisted materials render flat-diffuse.")
     return ap.parse_args(argv)
 
 
@@ -678,9 +721,18 @@ def main(argv):
         vp = factory(layouts=l, dims_x=dx, dims_y=dy, heights=h)
     else:
         raise SystemExit(f"unknown viewpoint: {args.viewpoint!r}")
+
+    materials = None
+    if args.materials:
+        import json
+
+        from pak.materials import from_jsonable
+        materials = from_jsonable(json.loads(args.materials))
+
     render_atlas(bpy, mathutils, vp, args.out, args.name,
                  cols_per_row=args.cols_per_row,
-                 keep_per_facing=args.keep_per_facing)
+                 keep_per_facing=args.keep_per_facing,
+                 materials=materials)
     return 0
 
 
