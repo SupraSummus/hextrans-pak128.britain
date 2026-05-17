@@ -29,6 +29,8 @@ class TestSunRotationForCamera(unittest.TestCase):
     def test_default_zero_cam(self):
         # cam_z=0 + default az_offset=-90 + default elev=30:
         #   sun_x = 90 - 30 = 60 deg, sun_z = 0 + (-90) = -90 deg
+        # Calibrated EEVEE-substitution direction; literal upstream
+        # values (elev=0, az=+45) give visibly worse dRGB under EEVEE.
         rx, ry, rz = sun_rotation_for_camera(0.0)
         self.assertAlmostEqual(math.degrees(rx), 60.0)
         self.assertAlmostEqual(ry, 0.0)

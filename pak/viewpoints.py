@@ -53,11 +53,13 @@ from pak.render import Facing, Viewpoint
 # Cycles + EEVEE interpret "energy" in W/m^2-ish units where 0.028 ≈ zero.
 _SUN_ENERGY = 0.028
 
-# Sun energy for the EEVEE buildings path; paired with world ambient
-# (0.30 in `pak.render`).  See CLAUDE.md → "Building-bake architecture"
-# for the calibration.  Vehicles keep `_SUN_ENERGY` so their Cycles
-# calibration target isn't disturbed.
-_BUILDING_SUN_ENERGY = 2.0
+# Engine-substitution scale: BI's 0.028 sun energy reads as near-zero
+# under EEVEE's PBR pipeline, so the EEVEE buildings path multiplies
+# the .blend's authored value by this factor.  Empirically 2.0/0.028
+# (= ~71.4) gives a comparable apparent brightness on `res_1600_kg_01`
+# vs the upstream-published PNG; this is the only post-extraction
+# magic number in the building lighting path.
+_BI_TO_EEVEE_SUN_SCALE = 2.0 / _SUN_ENERGY
 
 
 # === Square-dimetric (upstream) ===========================================
@@ -161,8 +163,15 @@ def sun_rotation_for_camera(
     straight-down (90° elev), rotation_x=90° means horizontal (0° elev).
     Sun_z = cam_z + az_offset places the sun screen-relative.
 
-    Defaults calibrated against `1600-detatched-house-2f`; see
-    CLAUDE.md → "Building-bake architecture" for the calibration story."""
+    Defaults are calibrated to EEVEE-substituted output, not literal
+    BI convention.  Upstream's `render_SimutransRender_pak128Britain-65
+    .py` hardcodes (elev=0°, az_offset=+45°) for the BI-era pipeline;
+    that same direction under EEVEE produces a visibly worse match to
+    the upstream PNG (mean |dRGB| 45 vs 34 for `res_1600_kg_01`) because
+    EEVEE's PBR lighting interprets a horizontal sun differently from
+    BI's flat-Lambert model.  The (elev=30°, az=-90°) defaults are
+    the EEVEE-substitution find that best approximates the BI-rendered
+    upstream PNG.  See CLAUDE.md → "Building-bake architecture"."""
     return (radians(90.0 - sun_elev_deg), 0.0,
             radians(cam_z_deg + sun_az_offset_deg))
 
@@ -303,7 +312,10 @@ def building_square_viewpoint(
         # 24); honouring that is what makes the diff align with
         # upstream's actually-published per-blend renders.
         ortho_scale=None,
-        sun_energy=_BUILDING_SUN_ENERGY,
+        # `None` => use the blend's authored sun energy (0.028 in
+        # Britain blends) scaled by `_BI_TO_EEVEE_SUN_SCALE`.
+        sun_energy=None,
+        sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE,
         fit_kind="none",
         extrinsic=None,
         facings=facings,
@@ -366,7 +378,8 @@ def building_hex_viewpoint(
         name="hex_building",
         image_width=DEFAULT_W,
         ortho_scale=2.0 * HEX_TILE_RADIUS,
-        sun_energy=_BUILDING_SUN_ENERGY,
+        sun_energy=None,
+        sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE,
         fit_kind="hex",
         extrinsic=hex_proj_shear(),
         facings=facings,
