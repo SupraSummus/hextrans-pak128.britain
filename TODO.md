@@ -503,6 +503,71 @@ similar machinery to the ways icon/cursor TODO above), then drop
 `pak.fetch_gui_images` and ship committed sibling PNGs.  Soft
 trigger.
 
+**Tree per-season leaf-colour calibration.**  `trees/oak.py`
+ships `seasons=1` (summer only); upstream's `tree.dat` ports
+`seasons=5` (autumn / winter / spring / winter-snow added).
+`tree_square_viewpoint` diff against upstream's summer cells
+lands at IoU 0.95-0.98 on ages 1-3, so the calibration is solid
+for one season -- expanding to five needs per-season material
+recolour applied before each render pass.  Concrete next move:
+sample K-means leaf-colour centroids from upstream's `oak-
+{autumn,winter,spring,winter-snow}-{0..3}_S.png` (magic-pink
+keyed at upstream's transparent colour, same sampling shape
+`ways/<rail>.py` calibrates against — see CLAUDE.md →
+"Per-way material recolour"), thread the per-season MATERIALS
+dict through `bake_tree` as N subprocess renders that stitch
+like the building snow path, bump the SPEC to `seasons=5`.
+Trigger: when seasonal trees matter in-game (or when porting
+Beech, which is also `seasons=5`).
+
+**Tree age-0 silhouette is too wide vs upstream.**  Ours: 32 px
+wide × 30 px tall.  Upstream: 22 px wide × 29 px tall.  Bbox
+height tracks but width is 50 % over.  Ages 1-3 match upstream
+within ±1 px on every edge, so it's not a calibration drift in
+the rendering pipeline -- linear scale-by-`_TREE_AGE_SCALES`
+overshoots at the smallest age, suggesting upstream rendered
+age-0 from a different (thinner) model variant, not the same
+model uniformly scaled.  The oak blend ships duplicate mesh
+trios (`Mesh`+`Mesh.035`, `Mesh.001`+`Mesh.034`, `Mesh.002`+
+`Mesh.033`) and 20 collections most of which carry the same
+geometry under different `hide_render` flags -- candidate for
+where the age variants hid.  Concrete next move: visually
+inspect the unrendered collections (`Collection 2`, `4`...`20`)
+and the two rotated mesh trios via a quick collection-include
+probe in the bake driver to see if any of them carry a thinner
+small-tree silhouette upstream uses for age 0.  Soft trigger;
+the rendered atlas reads fine without it.
+
+**Tree IoU+dRGB metric is duplicated across three diff harnesses.**
+`pak/diff_trees.py`, `pak/diff_upstream.py` and `pak/diff_buildings.py`
+all compute the same per-cell silhouette IoU, XOR pixel count, and
+intersection-mean dRGB; the checker-background grid composition is
+also near-identical.  Not refactoring before a fourth diff harness
+makes the abstraction shape obvious; concrete next move when the
+shape clarifies: extract `_iou_drgb(ours_rgba, up_rgba) ->
+CellMetric` plus a `compose_grid(cells, layout_fn)` to a shared
+`pak.diff_common` module.  Soft trigger.
+
+**Tree blends missing for Pine + NorwaySpruce.**  Upstream
+`trees/tree.dat` ships four species (NorwaySpruce, EnglishOak,
+Beech, Pine).  `Pak128.Britain-blends` only carries `trees/oak.
+blend` and `trees/beech.blend` -- Pine is credited to "The Mav"
+(BlendSwap 77005, public domain) and Norway Spruce isn't in JP's
+blends repo either.  Concrete next move when porting those
+species matters: fetch the BlendSwap originals, add the fetch URL
+to `blends.lock` (or vendor under `trees/<species>.blend` if
+licence-and-size permit), then write the bake scripts.  Triggered
+by anyone wanting the full upstream tree set in-game.
+
+**Tree `Name=` collision between `trees/oak.dat` and
+`trees/tree.dat`.**  Upstream's combined `trees/tree.dat` carries
+`Name=EnglishOak`; our ported `trees/oak.dat` does too.  Today
+both coexist because `trees/` isn't in the Makefile `DIRS128`
+list, so makeobj never sees either.  Concrete next move when
+enabling `trees/` in DIRS128: port the other three species so
+all four bake scripts exist, then `git rm trees/tree.dat` and
+add `trees` to DIRS128.  Trigger: enabling trees in the build.
+
 **Bulk-strip remaining unported upstream dats?**  Each upstream
 dat is deleted once its bake script's SPEC verifies (CLAUDE.md →
 "Bake units" → "Upstream dats get deleted once ported"), but

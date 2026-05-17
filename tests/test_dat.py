@@ -16,10 +16,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from pak.dat import (
+    TREE_AGE_COUNT,
     Building,
+    Tree,
     Vehicle,
     Way,
     emit_building,
+    emit_trees,
     emit_vehicles,
     emit_way,
     iter_building_cells,
@@ -610,6 +613,81 @@ class TestPortBuilding(unittest.TestCase):
     def test_seed_python_renders_building_constructor(self):
         src = seed_python(Building(name="X", type="cur"))
         self.assertTrue(src.startswith("Building("))
+
+
+class TestEmitTrees(unittest.TestCase):
+    def _text(self, *trees: Tree, **kw) -> str:
+        with TemporaryDirectory() as d:
+            return emit_trees(list(trees), out_dir=Path(d), basename="oak",
+                              **kw).read_text()
+
+    def test_emits_five_age_keys_per_season(self):
+        # Engine reads exactly 5 ages.  With seasons=1 that's 5 keys;
+        # with seasons=5 that's 25.  No upstream caller can negotiate
+        # this -- the writer hardcodes the loop bound.
+        for seasons in (1, 2, 5):
+            text = self._text(Tree(name="X", seasons=seasons))
+            for a in range(TREE_AGE_COUNT):
+                for s in range(seasons):
+                    self.assertIn(f"image[{a}][{s}]=./oak.{s}.{a}\n", text)
+
+    def test_age_overrides_redirect_specific_cells(self):
+        # Upstream's "age 4 → winter-3" convention plus our generic
+        # clamp both compose into one `age_overrides` table.
+        text = self._text(
+            Tree(name="X", seasons=5),
+            age_overrides={(4, 0): (3, 2)},
+        )
+        self.assertIn("image[4][0]=./oak.2.3\n", text)
+        # Untouched cells emit their natural mapping.
+        self.assertIn("image[3][0]=./oak.0.3\n", text)
+
+    def test_seasons_scalar_emits_explicitly(self):
+        # `seasons` is the one Tree scalar the engine reads as a
+        # required key even though it has a default; we always emit it.
+        text = self._text(Tree(name="X", seasons=1))
+        self.assertIn("seasons=1\n", text)
+
+    def test_multi_tree_round_trips(self):
+        # Multi-Tree atlas-sharing (upstream's `tree.dat` packs four
+        # species in one file).
+        a = Tree(name="A", seasons=1)
+        b = Tree(name="B", seasons=2, climates="tundra")
+        with TemporaryDirectory() as d:
+            out = emit_trees([a, b], out_dir=Path(d), basename="oak")
+            self.assertEqual([dict(o)["name"] for o in parse(out)], ["A", "B"])
+
+    def test_empty_list_rejected(self):
+        with self.assertRaises(ValueError):
+            emit_trees([], out_dir=Path("/tmp"), basename="oak")
+
+
+class TestClampAgeOverrides(unittest.TestCase):
+    """Engine reads `TREE_AGE_COUNT` (= 5) ages; bakes typically render
+    fewer.  `clamp_age_overrides` builds the fallback dict mapping
+    every unrendered age slot to the last rendered one of the same
+    season -- bake-side and reemit-side both use it so the committed
+    dat round-trips."""
+
+    def test_clamps_above_rendered_ages(self):
+        from pak.bake import clamp_age_overrides
+        overrides = clamp_age_overrides(seasons=1, ages=4)
+        self.assertEqual(overrides, {(4, 0): (3, 0)})
+
+    def test_clamps_every_season(self):
+        from pak.bake import clamp_age_overrides
+        overrides = clamp_age_overrides(seasons=2, ages=3)
+        self.assertEqual(overrides, {
+            (3, 0): (2, 0), (3, 1): (2, 1),
+            (4, 0): (2, 0), (4, 1): (2, 1),
+        })
+
+    def test_empty_when_all_ages_rendered(self):
+        from pak.bake import clamp_age_overrides
+        self.assertEqual(
+            clamp_age_overrides(seasons=5, ages=TREE_AGE_COUNT),
+            {},
+        )
 
 
 if __name__ == "__main__":

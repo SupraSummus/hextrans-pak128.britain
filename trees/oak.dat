@@ -1,0 +1,12 @@
+obj=tree
+name=EnglishOak
+copyright=James
+distribution_weight=180
+climates=temperate,mediterran,tropical
+seasons=1
+image[0][0]=./oak.0.0
+image[1][0]=./oak.0.1
+image[2][0]=./oak.0.2
+image[3][0]=./oak.0.3
+image[4][0]=./oak.0.3
+----------

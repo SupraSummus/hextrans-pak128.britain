@@ -50,13 +50,16 @@ class Facing:
     `model_translation` shifts the rotated mesh in world XY before the
     extrinsic shear — used by multi-tile building bakes to bring one
     footprint cell to world origin per facing so the standard hex
-    camera renders that single cell's content."""
+    camera renders that single cell's content.  `model_scale` scales
+    the mesh uniformly after fit — used by tree bakes to render the
+    same model at successive growth stages."""
     label: str
     camera_location: tuple[float, float, float]
     camera_rotation_euler: tuple[float, float, float]  # radians
     sun_rotation_euler: tuple[float, float, float]  # radians
     model_rot_z_deg: float = 0.0  # rotation applied to the mesh after fit
     model_translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    model_scale: float = 1.0
 
 
 @dataclass
@@ -98,6 +101,13 @@ class Viewpoint:
     # in 2.80) -- see CLAUDE.md -> "Building-bake architecture".
     # "BLENDER_WORKBENCH" available for flat-shading paths (ways).
     engine: str = "CYCLES"
+    # Object names stripped from the scene on entry (in addition to all
+    # Camera and Light objects, which always go).  Default `("Sphere",)`
+    # drops upstream's sun-direction visualizer mesh.  Tree blends add
+    # `"Plane"` -- a large grey ground reference that upstream's
+    # rendered PNGs don't show (presumably hidden via a separate
+    # render-time script that doesn't ship with the blend).
+    strip_meshes: tuple[str, ...] = ("Sphere",)
 
 
 def _reload_external_textures(bpy) -> None:
@@ -300,11 +310,12 @@ class BlendAuthored:
     sun_energy: float | None = None
 
 
-def _strip_scene(bpy) -> BlendAuthored:
+def _strip_scene(bpy, strip_meshes: tuple[str, ...] = ("Sphere",)) -> BlendAuthored:
     """Capture authored Camera/Sun parameters into a BlendAuthored, then
     remove the corresponding scene objects so the Viewpoint can install
-    its own.  `Sphere` is the upstream sun-visualisation parent mesh
-    (Lamp.001 is parented to it); both go."""
+    its own.  `strip_meshes` names extra mesh objects to drop on entry
+    (default `("Sphere",)` -- upstream's sun-visualisation parent mesh;
+    Lamp.001 is parented to it and goes via the LIGHT branch)."""
     authored = BlendAuthored()
     for obj in list(bpy.context.scene.objects):
         if obj.type == "CAMERA":
@@ -316,7 +327,7 @@ def _strip_scene(bpy) -> BlendAuthored:
             if authored.sun_energy is None and la.type == "SUN":
                 authored.sun_energy = float(la.energy)
             bpy.data.objects.remove(obj, do_unlink=True)
-        elif obj.name == "Sphere":
+        elif obj.name in strip_meshes:
             bpy.data.objects.remove(obj, do_unlink=True)
     return authored
 
@@ -634,7 +645,7 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     `blend_world_pos` vertex attribute it populates."""
     import numpy as np
 
-    authored = _strip_scene(bpy)
+    authored = _strip_scene(bpy, viewpoint.strip_meshes)
     if viewpoint.engine == "BLENDER_EEVEE":
         _reload_external_textures(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
@@ -658,8 +669,12 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
             cam.location = facing.camera_location
             cam.rotation_euler = facing.camera_rotation_euler
             sun.rotation_euler = facing.sun_rotation_euler
+            M_scale = mathutils.Matrix.Diagonal((
+                facing.model_scale, facing.model_scale, facing.model_scale, 1.0,
+            ))
             M_target = (extrinsic
                         @ mathutils.Matrix.Translation(facing.model_translation)
+                        @ M_scale
                         @ mathutils.Matrix.Rotation(radians(facing.model_rot_z_deg), 4, "Z")
                         @ fit)
             _apply_facing(records, M_target)
@@ -690,7 +705,12 @@ def _parse_args(argv):
     ap.add_argument("--name", required=True)
     ap.add_argument("--viewpoint", required=True,
                     choices=["hex", "square", "hex_building", "square_building",
-                             "fence_square"])
+                             "fence_square", "tree_hex", "tree_square"])
+    ap.add_argument("--tree-grid", default=None,
+                    help="AGES,SEASONS — grid size for viewpoint=tree_hex/"
+                         "tree_square; SEASONS controls leaf-colour overrides "
+                         "(currently summer only; expand when the rest are "
+                         "calibrated)")
     ap.add_argument("--keep-per-facing", action="store_true",
                     help="write per-facing PNGs alongside the atlas (used by diff)")
     ap.add_argument("--cols-per-row", type=int, default=None)
@@ -717,6 +737,8 @@ def main(argv):
         building_hex_viewpoint,
         building_square_viewpoint,
         fence_square_viewpoint,
+        tree_hex_viewpoint,
+        tree_square_viewpoint,
     )
 
     args = _parse_args(argv)
@@ -738,6 +760,15 @@ def main(argv):
         factory = (building_hex_viewpoint if args.viewpoint == "hex_building"
                    else building_square_viewpoint)
         vp = factory(layouts=l, dims_x=dx, dims_y=dy, heights=h)
+    elif args.viewpoint in ("tree_hex", "tree_square"):
+        if not args.tree_grid:
+            raise SystemExit(
+                f"--viewpoint {args.viewpoint} requires --tree-grid AGES,SEASONS"
+            )
+        ages, seasons = (int(s) for s in args.tree_grid.split(","))
+        factory = (tree_hex_viewpoint if args.viewpoint == "tree_hex"
+                   else tree_square_viewpoint)
+        vp = factory(ages=ages, seasons=seasons)
     else:
         raise SystemExit(f"unknown viewpoint: {args.viewpoint!r}")
 

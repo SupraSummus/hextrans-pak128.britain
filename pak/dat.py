@@ -331,6 +331,46 @@ class Building:
     upgrade: list[str] = field(default_factory=list)
 
 
+@dataclass
+class Tree:
+    """A `obj=tree` definition (`descriptor/writer/tree_writer.cc`).
+
+    The engine reads exactly 5 ages and `seasons` seasonal variants
+    (`seasons` ∈ {1, 2, 4, 5}); `image[age][season]` keys point at one
+    sprite each.  Upstream pak128.Britain conventionally maps age 4
+    (oldest / dormant) to the bare `<stem>-winter-3` image across every
+    non-winter season -- `emit_trees` mirrors that by exposing an
+    optional `age_overrides` map below.
+
+    Order of fields = canonical emit order.  Unset scalars (`None`) are
+    skipped on emit; `seasons` and `distribution_weight` always emit
+    (the engine reads them as required scalars even though it has
+    defaults).
+    """
+    # Required
+    name: str
+
+    # Identity / metadata
+    copyright: str | None = None
+
+    # Engine behaviour
+    distribution_weight: int = 3
+    climates: str | None = None
+    # 1 = no seasons, 2 = summer+winter, 4 = summer/autumn/winter/spring,
+    # 5 = + winter-snow.  See `tree_writer.cc`.
+    seasons: int = 1
+
+
+_TREE_FIELDS_SCALAR: tuple[str, ...] = tuple(
+    f.name for f in fields(Tree) if f.name != "seasons"
+)
+# Engine reads exactly 5 ages (`tree_writer.cc` loops `age in 0..5`);
+# not configurable per asset.  Public so bake-side callers can clamp
+# their rendered-age count against it without re-declaring the magic
+# number.
+TREE_AGE_COUNT: int = 5
+
+
 def layouts_default(dims_x: int, dims_y: int) -> int:
     """Engine default for `layouts` when `dims=` carries only `X,Y`.
 
@@ -497,6 +537,50 @@ def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
         lines.append(f"image[{label}][0]=./{basename}.{row}.{col}")
     lines.append("----------")
 
+    out_path = out_dir / f"{basename}.dat"
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
+def emit_trees(
+    trees: list[Tree], *, out_dir: Path, basename: str,
+    age_overrides: dict[tuple[int, int], tuple[int, int]] | None = None,
+) -> Path:
+    """Write `<out_dir>/<basename>.dat` from one or more Trees.
+
+    Each Tree becomes an `obj=tree` block separated by a row of dashes.
+    Atlas layout: rows = seasons (top = summer = 0), cols = ages (left
+    = youngest = 0).  Image refs follow `image[age][season]=./<basename>
+    .<season>.<age>` per the engine's `image[%d][%d]` writer.
+
+    `age_overrides` redirects specific `(age, season)` cells to a
+    different `(age, season)` source cell -- e.g. upstream's convention
+    of pointing every non-winter age 4 at the bare `winter-3` cell
+    (`{(4, 0): (3, 2), (4, 1): (3, 2), (4, 3): (3, 2)}` for the 5-
+    season oak).  Unspecified cells render their own per-cell sprite.
+
+    Multi-Tree calls (e.g. upstream's `tree.dat` packing 4 species)
+    pack into one combined dat; all blocks share the same atlas.
+    Returns the dat path.
+    """
+    if not trees:
+        raise ValueError("emit_trees requires at least one Tree")
+    overrides = age_overrides or {}
+    lines: list[str] = []
+    for t in trees:
+        lines.append("obj=tree")
+        for name in _TREE_FIELDS_SCALAR:
+            v = getattr(t, name)
+            if v is not None:
+                lines.append(f"{name}={v}")
+        lines.append(f"seasons={t.seasons}")
+        for a in range(TREE_AGE_COUNT):
+            for s in range(t.seasons):
+                src_a, src_s = overrides.get((a, s), (a, s))
+                lines.append(
+                    f"image[{a}][{s}]=./{basename}.{src_s}.{src_a}"
+                )
+        lines.append("----------")
     out_path = out_dir / f"{basename}.dat"
     out_path.write_text("\n".join(lines) + "\n")
     return out_path

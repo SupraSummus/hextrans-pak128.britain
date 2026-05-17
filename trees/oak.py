@@ -1,0 +1,18 @@
+from pak.bake import bake_tree_main
+from pak.dat import Tree
+
+# Upstream declares `seasons=5`; ours is `1` until leaf-colour
+# calibration (TODO.md → tree per-season leaf-colour) makes the other
+# four rows distinguishable from summer.
+SPEC = Tree(
+    name="EnglishOak",
+    copyright="James",
+    distribution_weight=180,
+    climates="temperate,mediterran,tropical",
+    seasons=1,
+)
+BLEND = "trees/oak.blend"
+UPSTREAM_STEM = "trees/oak"
+
+if __name__ == "__main__":
+    bake_tree_main(SPEC, BLEND, __file__)
