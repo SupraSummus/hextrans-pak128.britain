@@ -41,14 +41,8 @@ import numpy as np
 from PIL import Image
 
 from pak import REPO_ROOT
+from pak.diff import MAGIC_PINK, iou, silhouette_mask
 from pak.fetch_pak import fetch as fetch_pak
-
-# Outside-silhouette fill upstream uses on the lightmap (engine reads it
-# as "no climate-texture multiplier here"); the hex baker writes alpha=0
-# at the same locations.  We strip both conventions to a common silhouette
-# mask before comparing.
-UPSTREAM_OUT_RGB = (231, 255, 255)
-
 
 # Each baker family declared here once.  `upstream_png` / `upstream_dat`
 # are the pak.lock-fetched upstream artefacts; `asset_basename` is the
@@ -124,17 +118,6 @@ def slice_cell(atlas: np.ndarray, row: int, col: int,
                  col * cell_w:(col + 1) * cell_w]
 
 
-def silhouette_from_alpha(cell: np.ndarray) -> np.ndarray:
-    """Our convention: RGBA, alpha=0 outside the silhouette."""
-    return cell[..., 3] > 0
-
-
-def silhouette_from_cyan(cell: np.ndarray) -> np.ndarray:
-    """Upstream convention: RGB matches `UPSTREAM_OUT_RGB` outside."""
-    out = np.all(cell[..., :3] == np.array(UPSTREAM_OUT_RGB), axis=-1)
-    return ~out
-
-
 def luminance(cell: np.ndarray) -> np.ndarray:
     """Inside-silhouette grey signal.  Upstream is RGB-tinted but the
     Lambert is carried by the G channel (R drops to ~215 outside the
@@ -143,16 +126,10 @@ def luminance(cell: np.ndarray) -> np.ndarray:
     return cell[..., 1].astype(np.float32)
 
 
-def iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
-    inter = int(np.logical_and(mask_a, mask_b).sum())
-    union = int(np.logical_or(mask_a, mask_b).sum())
-    return 1.0 if union == 0 else inter / union
-
-
 def per_cell_diff(ours: np.ndarray, upstream: np.ndarray) -> dict:
-    """Compare one cell — ours (RGBA, alpha-out) vs upstream (RGB, cyan-out)."""
-    our_sil = silhouette_from_alpha(ours)
-    up_sil = silhouette_from_cyan(upstream)
+    """Compare one cell — ours (RGBA, alpha-out) vs upstream (RGB, magic-pink-out)."""
+    our_sil = silhouette_mask(ours, alpha_threshold=0)
+    up_sil = silhouette_mask(upstream, magic_rgb=MAGIC_PINK)
     sil_iou = iou(our_sil, up_sil)
 
     # Per-region brightness ratio: walk our distinct grey values, compute

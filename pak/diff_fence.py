@@ -29,6 +29,7 @@ import numpy as np
 from PIL import Image
 
 from pak import REPO_ROOT
+from pak.diff import MAGIC_PINK, iou, silhouette_mask
 from pak.fetch_blend import fetch as fetch_blend
 from pak.fetch_pak import fetch as fetch_pak
 
@@ -46,8 +47,6 @@ PAIRINGS: list[tuple[tuple[str, ...], str]] = [
 # Measured: E↔fence-3 0.862, S↔fence-4 0.896, (E|S)↔fence-5 0.844.
 MIN_IOU = 0.80
 
-UPSTREAM_OUT_RGB = (231, 255, 255)
-
 
 def render_fence_blend(out_dir: Path) -> dict[str, np.ndarray]:
     """Run `pak.render` on `grounds/fence.blend` and return per-facing RGBA."""
@@ -63,15 +62,7 @@ def render_fence_blend(out_dir: Path) -> dict[str, np.ndarray]:
 
 def _silhouette(arr: np.ndarray) -> np.ndarray:
     """Boolean mask from RGBA (alpha>0) or RGB+magic-pink (upstream)."""
-    if arr.shape[-1] == 4:
-        return arr[..., 3] > 0
-    return ~np.all(arr[..., :3] == np.array(UPSTREAM_OUT_RGB), axis=-1)
-
-
-def _iou(a: np.ndarray, b: np.ndarray) -> float:
-    inter = int(np.logical_and(a, b).sum())
-    union = int(np.logical_or(a, b).sum())
-    return 1.0 if union == 0 else inter / union
+    return silhouette_mask(arr, alpha_threshold=0, magic_rgb=MAGIC_PINK)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -100,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             our_sil |= _silhouette(a)
             our_rgba = np.maximum(our_rgba, a)
         up = upstreams[up_name]
-        iou_v = _iou(our_sil, _silhouette(up))
+        iou_v = iou(our_sil, _silhouette(up))
         min_iou = min(min_iou, iou_v)
         pair_label = "|".join(labels) + " vs " + up_name
         print(f"  {pair_label:>14}  {iou_v:5.3f}")

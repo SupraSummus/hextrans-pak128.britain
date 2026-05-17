@@ -382,42 +382,72 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     scn.view_settings.exposure = 0.0
     scn.view_settings.gamma = 1.0
     scn.display_settings.display_device = "sRGB"
-    # Pin Cycles knobs that are otherwise non-deterministic across CI
-    # runs even on identical hardware: threads (multi-threaded reduction
-    # order), adaptive sampling (per-pixel termination on a noise
-    # estimate), the denoiser (the blend may save it on), and the
-    # sample seed (the blend may save a non-zero value).
+    # Pin thread count for all engines: multi-threaded reduction order
+    # is otherwise non-deterministic across CI runs even on identical
+    # hardware.  Engine-specific determinism knobs go in
+    # `_ENGINE_CONFIGURERS` below.
     scn.render.threads_mode = "FIXED"
     scn.render.threads = 1
+
+    scn.render.engine = viewpoint.engine
+    _ENGINE_CONFIGURERS[viewpoint.engine](scn)
+
+    return cam, sun
+
+
+def _configure_cycles(scn) -> None:
+    """Pin Cycles knobs that are otherwise non-deterministic across CI
+    runs even on identical hardware: adaptive sampling (per-pixel
+    termination on a noise estimate), the denoiser (the blend may save
+    it on), and the sample seed (the blend may save a non-zero value).
+    Cross-CPU determinism (Intel vs AMD AVX2 transcendentals / embree)
+    is still not guaranteed -- see CLAUDE.md -> CI."""
     scn.cycles.use_denoising = False
     scn.cycles.use_adaptive_sampling = False
     scn.cycles.seed = 0
 
-    scn.render.engine = viewpoint.engine
-    if viewpoint.engine == "BLENDER_WORKBENCH":
-        scn.display.shading.light = "FLAT"
-        scn.display.shading.color_type = "MATERIAL"
-        scn.display.shading.show_specular_highlight = False
-    elif viewpoint.engine == "BLENDER_EEVEE":
-        # taa_render_samples=8 gives proper edge alpha-AA (1 writes
-        # 0-or-255 only and drops the edge ring).  GTAO/bloom/SSR off
-        # for determinism across CI runners.
-        scn.eevee.taa_render_samples = 8
-        scn.eevee.use_gtao = False
-        scn.eevee.use_bloom = False
-        scn.eevee.use_ssr = False
-        scn.eevee.use_volumetric_lights = False
-        scn.eevee.use_soft_shadows = False
-        scn.eevee.use_shadow_high_bitdepth = True
-        # Diffuse fill calibrated against `res_1600_kg_01` upstream.
-        if scn.world is not None:
-            scn.world.use_nodes = False
-            try:
-                scn.world.color = (0.30, 0.30, 0.30)
-            except AttributeError:
-                pass
 
-    return cam, sun
+def _configure_eevee(scn) -> None:
+    """EEVEE substitute for BI: taa_render_samples=8 gives proper edge
+    alpha-AA (1 writes 0-or-255 only and drops the edge ring); GTAO,
+    bloom, SSR, volumetrics off for determinism across CI runners.
+    World ambient at 0.30 grey is calibrated against `res_1600_kg_01`
+    upstream -- see CLAUDE.md -> "Building-bake architecture"."""
+    scn.eevee.taa_render_samples = 8
+    scn.eevee.use_gtao = False
+    scn.eevee.use_bloom = False
+    scn.eevee.use_ssr = False
+    scn.eevee.use_volumetric_lights = False
+    scn.eevee.use_soft_shadows = False
+    scn.eevee.use_shadow_high_bitdepth = True
+    if scn.world is not None:
+        scn.world.use_nodes = False
+        try:
+            scn.world.color = (0.30, 0.30, 0.30)
+        except AttributeError:
+            pass
+
+
+def _configure_workbench(scn) -> None:
+    """Flat-shading substitute: rendered pixel == material's diffuse
+    colour directly.  No path tracing, no embree, no SIMD-sensitive
+    reductions -- byte-stable across CPUs in practice.  Mirrors
+    `pak/bake_way.py::_configure_render`; ways have their own harness
+    for composition reasons (see CLAUDE.md -> "Way-bake architecture")
+    but share the engine-config contract."""
+    shading = scn.display.shading
+    shading.light = "FLAT"
+    shading.color_type = "MATERIAL"
+    shading.show_shadows = False
+    shading.show_cavity = False
+    shading.show_specular_highlight = False
+
+
+_ENGINE_CONFIGURERS = {
+    "CYCLES": _configure_cycles,
+    "BLENDER_EEVEE": _configure_eevee,
+    "BLENDER_WORKBENCH": _configure_workbench,
+}
 
 
 def _exit_edit_mode(bpy) -> None:

@@ -1,0 +1,124 @@
+"""Tests for `pak.diff` -- the shared numerical/image primitives used
+by every per-asset-class diff harness (diff_upstream, diff_buildings,
+diff_trees, diff_grounds, diff_fence).
+
+The Blender-driven render half is exercised end-to-end via
+`python3 -m pak.check <bake_script>`; these tests cover the small
+mask/IoU/dRGB/XOR utilities that every harness composes over.
+
+Run from the repo root:
+
+    python3 -m unittest tests.test_diff
+"""
+
+from __future__ import annotations
+
+import math
+import unittest
+
+import numpy as np
+
+from pak.diff import MAGIC_PINK, drgb_intersection, iou, silhouette_mask, xor_image
+
+
+class TestSilhouetteMask(unittest.TestCase):
+    """Both upstream (RGB + magic-pink) and ours (RGBA) classify
+    pixels via the same helper; the test pins the convention against
+    synthetic atlases."""
+
+    def test_alpha_drives_mask_on_rgba(self):
+        rgba = np.zeros((4, 4, 4), dtype=np.uint8)
+        rgba[1:3, 1:3, 3] = 255
+        m = silhouette_mask(rgba)
+        self.assertEqual(m.sum(), 4)
+
+    def test_magic_pink_excluded_even_at_full_alpha(self):
+        # PIL .convert("RGBA") on a magic-pink RGB pixel emits
+        # (231, 255, 255, 255) -- the mask must strip those out
+        # despite alpha=255, or upstream's whole 128x128 cell
+        # looks like silhouette.
+        rgba = np.zeros((2, 2, 4), dtype=np.uint8)
+        rgba[..., :3] = MAGIC_PINK
+        rgba[..., 3] = 255
+        rgba[0, 0, :3] = (12, 34, 56)
+        m = silhouette_mask(rgba, magic_rgb=MAGIC_PINK)
+        self.assertEqual(m.sum(), 1)
+        self.assertTrue(m[0, 0])
+
+    def test_alpha_threshold_drops_edge_aa(self):
+        # Vehicles & trees calibrate at >16 to drop EEVEE/Cycles edge
+        # AA; buildings & fence at >0 to keep it.  Pin both branches.
+        rgba = np.zeros((1, 3, 4), dtype=np.uint8)
+        rgba[0, 0, 3] = 8   # below 16
+        rgba[0, 1, 3] = 32  # above 16
+        rgba[0, 2, 3] = 255
+        self.assertEqual(silhouette_mask(rgba, alpha_threshold=0).sum(), 3)
+        self.assertEqual(silhouette_mask(rgba, alpha_threshold=16).sum(), 2)
+
+    def test_rgb_input_relies_on_magic_pink(self):
+        # Upstream grounds & fence PNGs are RGB-only -- alpha threshold
+        # is moot, magic_rgb is the only discriminator.
+        rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+        rgb[:, :] = MAGIC_PINK
+        rgb[0, 0] = (10, 20, 30)
+        m = silhouette_mask(rgb, magic_rgb=MAGIC_PINK)
+        self.assertEqual(m.sum(), 1)
+        self.assertTrue(m[0, 0])
+
+
+class TestIoU(unittest.TestCase):
+    def test_full_match(self):
+        m = np.array([[True, True], [True, False]])
+        self.assertEqual(iou(m, m), 1.0)
+
+    def test_disjoint(self):
+        a = np.array([[True, False], [False, False]])
+        b = np.array([[False, True], [False, False]])
+        self.assertEqual(iou(a, b), 0.0)
+
+    def test_empty_union_returns_zero(self):
+        # An empty render reports failure rather than a perfect match;
+        # the mathematical "two empty masks are identical" answer would
+        # mask exactly the bug we want IoU to surface.
+        z = np.zeros((4, 4), dtype=bool)
+        self.assertEqual(iou(z, z), 0.0)
+
+
+class TestDRGBIntersection(unittest.TestCase):
+    def test_mean_abs_delta_over_intersection_only(self):
+        # Two 2x2 RGBA cells: one pixel overlaps with delta (10, 20, 30),
+        # one pixel is ours-only (would inflate naive abs-diff if
+        # counted), one upstream-only.  Only the overlap should drive
+        # the metric.
+        a = np.zeros((2, 2, 4), dtype=np.uint8)
+        b = np.zeros((2, 2, 4), dtype=np.uint8)
+        am = np.zeros((2, 2), dtype=bool)
+        bm = np.zeros((2, 2), dtype=bool)
+        a[0, 0, :3] = (100, 100, 100); am[0, 0] = True
+        b[0, 0, :3] = (110, 120, 130); bm[0, 0] = True
+        a[0, 1, :3] = (200, 200, 200); am[0, 1] = True  # ours-only
+        b[1, 0, :3] = (200, 200, 200); bm[1, 0] = True  # upstream-only
+        # Expected: mean(|10|, |20|, |30|) = 20.0
+        self.assertAlmostEqual(drgb_intersection(a, b, am, bm), 20.0)
+
+    def test_nan_when_intersection_empty(self):
+        z = np.zeros((2, 2, 4), dtype=np.uint8)
+        m = np.zeros((2, 2), dtype=bool)
+        self.assertTrue(math.isnan(drgb_intersection(z, z, m, m)))
+
+
+class TestXORImage(unittest.TestCase):
+    def test_three_colour_regions(self):
+        a = np.array([[True, True, False, False]])
+        b = np.array([[True, False, True, False]])
+        img = xor_image(a, b)
+        # (red, blue, grey, transparent) per definition.
+        self.assertEqual(img.shape, (1, 4, 4))
+        np.testing.assert_array_equal(img[0, 0], (180, 180, 180, 255))  # both
+        np.testing.assert_array_equal(img[0, 1], (230, 60, 60, 255))    # a only
+        np.testing.assert_array_equal(img[0, 2], (60, 90, 230, 255))    # b only
+        np.testing.assert_array_equal(img[0, 3], (0, 0, 0, 0))          # neither
+
+
+if __name__ == "__main__":
+    unittest.main()

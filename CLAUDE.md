@@ -749,6 +749,15 @@ Present:
   +Y at origin, ortho_scale=2R, hex shear baked into mesh via
   `extrinsic`, model rotated per facing).  Same facing labels in
   both so .dat keys port without relabelling.
+- `pak/diff.py` — shared mask/IoU/dRGB/XOR primitives consumed by
+  every per-asset-class harness (`diff_upstream`, `diff_buildings`,
+  `diff_trees`, `diff_grounds`, `diff_fence`).  `MAGIC_PINK` is the
+  single canonical transparency key; `silhouette_mask` handles both
+  RGBA and RGB inputs with caller-tunable alpha threshold (vehicles
+  & trees at `>16`, buildings & fence at `>0` -- soft-AA calibration
+  story in `diff_buildings._silhouette_mask` docstring).  Per-class
+  specialisations (layout permutation, slope→cell parsing, (age,
+  season) grid, multi-facing OR) stay in each harness.
 - `pak/diff_upstream.py` — drives `render.py --viewpoint
   square --keep-per-facing`, fetches the matching upstream PNG via
   `fetch_pak.py`, and reports the contour and colour metrics from
@@ -1347,9 +1356,15 @@ Note on what's intentionally **not** here:
   Topology duplication is **deliberate, deferred**.  The square
   path-dispatch helpers (`_square_between_edges`, `_square_bend`,
   `_square_curve`, `_square_stub`, `square_for_edges_paths`) in
-  `pak/way_proj.py` are line-for-line copies of their hex
-  counterparts in `pak/way_topology.py`.  Consolidating them through
-  a shared `tile`-geom parameter would be the natural next refactor,
+  `pak/way_proj.py` are structural parallels of their hex
+  counterparts in `pak/way_topology.py` -- not literal copies:
+  `_square_bend` normalises `SQUARE_CORNERS` to unit vectors before
+  taking the apex cap normal, where the hex version uses
+  `HEX_CORNERS` directly because the hex tile has unit radius.
+  Consolidating them through a shared `tile`-geom parameter
+  (`corners`, `edges`, `opposite_edge`, `edge_midpoint`,
+  `edge_unit_dir`, `shared_corner`, `edge_unit_normal`) would be
+  the natural next refactor,
   but doing it before the diff harness has bent the API would be
   premature — the right shape will fall out of what the diff harness
   actually needs to swap.  The shared invariants (`cap_plane`,
