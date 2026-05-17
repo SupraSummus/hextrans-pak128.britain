@@ -22,7 +22,17 @@ import subprocess
 from pathlib import Path
 
 from pak import REPO_ROOT
-from pak.dat import Building, Vehicle, Way, emit_building, emit_vehicles, emit_way
+from pak.dat import (
+    TREE_AGE_COUNT,
+    Building,
+    Tree,
+    Vehicle,
+    Way,
+    emit_building,
+    emit_trees,
+    emit_vehicles,
+    emit_way,
+)
 from pak.fetch_blend import fetch
 from pak.materials import Material
 
@@ -311,6 +321,100 @@ def bake_building(
     except ValueError:
         print(f"wrote {out_dat}", flush=True)
     return out_dat
+
+
+def bake_tree(
+    spec: Tree | list[Tree],
+    *,
+    blend: str,
+    basename: str,
+    out_dir: Path,
+    ages: int = 4,
+    viewpoint: str = "tree_hex",
+) -> Path:
+    """Fetch the blend, render `<out_dir>/<basename>.png` (ages × seasons
+    grid driven by the SPEC's `seasons`), emit `<out_dir>/<basename>.dat`.
+
+    `spec` may be a single `Tree` or a list (one combined dat sharing
+    one atlas, matching upstream's `tree.dat` shape).  `ages` defaults
+    to 4 -- upstream pak128.Britain renders ages 0..3 distinctly and
+    points age 4 (the dormant / dying stage) at the bare `winter-3`
+    image rather than rendering separately; `clamp_age_overrides`
+    mirrors that at dat-emit time by pointing every engine age outside
+    `[0, ages)` at the last rendered cell of the same season.
+    `viewpoint` selects `tree_hex` (shipped atlas) or `tree_square`
+    (calibration diff).  Returns the dat path.
+    """
+    specs = [spec] if isinstance(spec, Tree) else list(spec)
+    # All specs must agree on seasons for one shared atlas; emit_trees
+    # walks per-Tree `seasons` independently, but the rendered atlas is
+    # a single grid -- mismatched seasons would need per-Tree atlas
+    # slices, which the upstream `tree.dat` doesn't exercise.
+    seasons = max(t.seasons for t in specs)
+    blend_path = fetch(blend)
+
+    cmd = [
+        "blender", "-b", str(blend_path),
+        "--python-exit-code", "1",
+        "-P", str(_RENDER_SCRIPT),
+        "--",
+        "--out", str(out_dir),
+        "--name", basename,
+        "--viewpoint", viewpoint,
+        "--tree-grid", f"{ages},{seasons}",
+        "--cols-per-row", str(ages),
+    ]
+    print("$", " ".join(cmd), flush=True)
+    subprocess.run(cmd, check=True)
+
+    out_dat = emit_trees(
+        specs, out_dir=out_dir, basename=basename,
+        age_overrides=clamp_age_overrides(seasons=seasons, ages=ages),
+    )
+    try:
+        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
+    except ValueError:
+        print(f"wrote {out_dat}", flush=True)
+    return out_dat
+
+
+def clamp_age_overrides(
+    *, seasons: int, ages: int,
+) -> dict[tuple[int, int], tuple[int, int]]:
+    """Point every engine age `>= ages` at the last rendered cell of
+    the same season.
+
+    The engine reads exactly `TREE_AGE_COUNT` (= 5) ages and fatals on
+    a missing `image[age][season]` key; bakes typically render fewer
+    (upstream pak128.Britain renders 4 distinct stages and reuses the
+    last for age 4, the dormant stage).  Pulled out so `pak.reemit_
+    dats`' regenerated dats match what `bake_tree` writes.
+    """
+    return {
+        (a, s): (ages - 1, s)
+        for a in range(ages, TREE_AGE_COUNT)
+        for s in range(seasons)
+    }
+
+
+def bake_tree_main(
+    spec: Tree | list[Tree], blend: str, file: str, *,
+    ages: int = 4,
+    viewpoint: str = "tree_hex",
+) -> Path:
+    """Convenience for single-tree bake scripts.
+
+    Derives `out_dir` and `basename` from the calling script's
+    `__file__`, so each bake script's bottom collapses to:
+
+        if __name__ == "__main__":
+            bake_tree_main(SPEC, BLEND, __file__)
+    """
+    path = Path(file).resolve()
+    return bake_tree(
+        spec, blend=blend, basename=path.stem, out_dir=path.parent,
+        ages=ages, viewpoint=viewpoint,
+    )
 
 
 def bake_building_main(

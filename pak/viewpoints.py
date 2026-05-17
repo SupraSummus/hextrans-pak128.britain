@@ -355,6 +355,126 @@ def fence_square_viewpoint() -> Viewpoint:
     )
 
 
+# === Tree viewpoints ======================================================
+#
+# Trees are billboard-style single-facing scenery: one camera angle per
+# (age, season) cell, no rotation table.  Upstream pak128.Britain renders
+# every age × season under a fixed S-cardinal normal-alignment camera at
+# the blend's authored ortho_scale (12 for the Britain tree blends); ages
+# are rendered by scaling the model uniformly between cells.
+#
+# Per-age scale factors are sampled from upstream PNG bbox heights —
+# `oak-summer-{0,1,2,3}_S.png` measure 30, 40, 61, 80 px tall on a 128 px
+# image, giving normalised heights 0.375, 0.5, 0.76, 1.0 vs the full-grown
+# tree.  Age 4 is a "dead/dormant" stage upstream maps to `oak-winter-3`
+# rather than rendering separately; we mirror that mapping at dat-emit
+# time, so the bake doesn't render an age-4 cell at all.
+#
+# Per-season leaf-colour overrides are deferred to phase 2 — the v1 probe
+# renders summer only (the .blend's authored Material.001 diffuse) so
+# `seasons=1`; autumn / winter / spring / winter-snow need K-means
+# centroid sampling from the upstream PNGs the way the way-grade catalog
+# was calibrated (see CLAUDE.md → "Per-way material recolour").
+
+_TREE_AGE_SCALES: tuple[float, ...] = (0.375, 0.5, 0.76, 1.0)
+
+
+def _tree_facings(
+    ages: int, seasons: int,
+    camera_location: tuple[float, float, float],
+    camera_rotation_euler: tuple[float, float, float],
+    sun_rotation_euler: tuple[float, float, float],
+    model_rot_z_deg: float = 0.0,
+) -> list[Facing]:
+    """Build one Facing per (season, age) in season-major order.
+
+    Atlas layout (`cols_per_row=ages`): row = season, col = age — matches
+    the dat-side `image[age][season]=./<basename>.<season>.<age>` mapping.
+    """
+    if ages > len(_TREE_AGE_SCALES):
+        raise ValueError(
+            f"ages={ages} exceeds the per-age scale table; only {len(_TREE_AGE_SCALES)} entries"
+        )
+    facings: list[Facing] = []
+    for s in range(seasons):
+        for a in range(ages):
+            facings.append(Facing(
+                label=f"A{a}_S{s}",
+                camera_location=camera_location,
+                camera_rotation_euler=camera_rotation_euler,
+                sun_rotation_euler=sun_rotation_euler,
+                model_rot_z_deg=model_rot_z_deg,
+                model_scale=_TREE_AGE_SCALES[a],
+            ))
+    return facings
+
+
+def tree_square_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
+    """Square-dimetric Viewpoint for the tree calibration diff.
+
+    Renders `seasons × ages` cells under upstream's S-cardinal
+    normal-alignment camera at the blend's authored ortho_scale (12 for
+    Britain trees).  `Plane` is stripped on entry — upstream's rendered
+    PNGs don't show the large grey ground reference the .blend ships
+    with, so whatever the upstream workflow did to hide it, we mirror
+    here by name.  EEVEE engine matches the buildings path's BI
+    substitute.
+    """
+    label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[0]  # S
+    return Viewpoint(
+        name="tree_square",
+        image_width=DEFAULT_W,
+        ortho_scale=None,  # use blend's authored 12.0
+        sun_energy=2.0,
+        sun_energy_scale=1.0,
+        fit_kind="none",
+        extrinsic=None,
+        facings=_tree_facings(
+            ages, seasons,
+            camera_location=loc,
+            camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
+            sun_rotation_euler=sun_rotation_for_camera(cam_z),
+        ),
+        engine="BLENDER_EEVEE",
+        strip_meshes=("Sphere", "Plane"),
+    )
+
+
+def tree_hex_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
+    """Hex Viewpoint for trees.  Single facing (trees are billboards;
+    no rotation table) replicated across `ages × seasons` cells, each
+    scaled per `_TREE_AGE_SCALES`.
+
+    `fit_kind="hex"` converts the blend's authored coords into the
+    pakset's intra-tile system at `2R/blend_ortho` per blend unit; the
+    Britain tree blends are authored at ortho_scale=12, so a full-grown
+    tree (~8 blend units tall) lands ~1.3 intra-tile units tall — about
+    half the image height, matching upstream's pixel coverage.
+    """
+    # Britain tree blends ship a SPOT lamp rather than a SUN, so the
+    # authored-sun-energy extraction (`_strip_scene` -> `BlendAuthored`)
+    # returns None.  Pin sun_energy directly the way `fence_square_
+    # viewpoint` does; 2.0 matches the post-scale value the building
+    # viewpoints resolve to under EEVEE.
+    return Viewpoint(
+        name="tree_hex",
+        image_width=DEFAULT_W,
+        ortho_scale=2.0 * HEX_TILE_RADIUS,
+        sun_energy=2.0,
+        sun_energy_scale=1.0,
+        fit_kind="hex",
+        extrinsic=hex_proj_shear(),
+        facings=_tree_facings(
+            ages, seasons,
+            camera_location=_HEX_CAM_LOC,
+            camera_rotation_euler=_HEX_CAM_ROT,
+            sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
+        ),
+        engine="BLENDER_EEVEE",
+        strip_meshes=("Sphere", "Plane"),
+    )
+
+
 def building_hex_viewpoint(
     layouts: int, dims_x: int, dims_y: int, heights: int = 1,
 ) -> Viewpoint:

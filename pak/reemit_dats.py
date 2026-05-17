@@ -20,9 +20,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from pak import REPO_ROOT
-from pak.bake import _resolve_building_layouts
+from pak.bake import _resolve_building_layouts, clamp_age_overrides
 from pak.bake_units import discover, import_script, specs_of
-from pak.dat import Building, Vehicle, Way, emit_building, emit_vehicles, emit_way
+from pak.dat import Building, Tree, Vehicle, Way, emit_building, emit_trees, emit_vehicles, emit_way
+
+# Rendered-ages count for the Tree reemit path -- matches
+# `pak.bake.bake_tree`'s `ages=4` default.  Both feed the same
+# `clamp_age_overrides` so the committed dat round-trips byte-for-byte
+# through the reemit lint job.
+_REEMIT_TREE_AGES = 4
 
 
 def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
@@ -40,6 +46,14 @@ def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
     if len(specs) == 1 and isinstance(specs[0], Building):
         spec = _resolve_building_layouts(specs[0])
         return emit_building(spec, out_dir=out_dir, basename=basename)
+    if specs and all(isinstance(s, Tree) for s in specs):
+        seasons = max(t.seasons for t in specs)
+        return emit_trees(
+            specs, out_dir=out_dir, basename=basename,
+            age_overrides=clamp_age_overrides(
+                seasons=seasons, ages=_REEMIT_TREE_AGES,
+            ),
+        )
     raise RuntimeError(
         f"unsupported spec list (got {[type(s).__name__ for s in specs]})"
     )
