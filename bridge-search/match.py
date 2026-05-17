@@ -178,7 +178,6 @@ def main() -> int:
                 bg = Image.new("RGB", (CELL, CELL), (255, 255, 255))
                 bg.paste(Image.fromarray(cand), mask=Image.fromarray(cand).split()[3])
                 out.paste(bg, ((k + 1) * CELL, r * CELL))
-        out = out.resize((out.width * 4, out.height * 4), Image.NEAREST)
         out.save(args.out_grid)
         print(f"\n# wrote grid: {args.out_grid}  ({len(grid_rows)} upstream cells, top-{args.top_k})")
     return 0
