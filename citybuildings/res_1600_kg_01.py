@@ -24,13 +24,29 @@ MATERIALS = {
 # their flemish-bond textures in favour of CLOUDS, picking up the
 # snow blend's grey diffuse via flat colour + noise.
 MATERIALS_WINTER = {
+    # Brick / Brick.003 stay at the .blend's authored dark red-brown
+    # diffuse — these are the half-timbered wall's timber frames, not
+    # snow surfaces.  Brick.002 (plaster) and Roof get `color=` overrides
+    # sampled from the upstream winter atlas (mean RGB inside the
+    # silhouette per region): plaster → near-white, roof tile dusted
+    # with snow → warm brown-pink.  BI's default CLOUDS slot at fac=1.0
+    # paints `mix(diffuse, white, noise)`; we don't have the .blend's
+    # Tex datablock so the renderer can't infer the snow tint, hence
+    # the per-asset override.
     "Brick":          Material(noise=True),
-    "Brick.002":      Material(noise=True),
+    "Brick.002":      Material(noise=True, color=(0.78, 0.78, 0.77)),
     "Brick.003":      Material(noise=True),
-    "Hedge":          Material(image="scratched_bricks_9271", size=(4.0, 4.0, 1.0)),
+    # Hedge / Pavement: image+color tint came out brown because the
+    # underlying image (dark brick / grey concrete) multiplied by a
+    # near-white tint still reads dark.  BI composites image + CLOUDS
+    # additively (lerp toward white), which we don't model.  Trade-off:
+    # noise+white gives the right snow tint but flattens the bush vs
+    # lawn silhouettes upstream gets from the image structure under
+    # the snow overlay.  Snow tint wins on dRGB; bush detail lost.
+    "Hedge":          Material(noise=True, color=(0.82, 0.82, 0.80)),
     "MainColour1":    Material(noise=True),
-    "Pavement":       Material(image="concrete-paving-small", size=(2.105, 1.89, 1.0), ofs=(0.0, 0.02, 0.0)),
-    "Roof":           Material(noise=True),
+    "Pavement":       Material(noise=True, color=(0.85, 0.85, 0.83)),
+    "Roof":           Material(noise=True, color=(0.60, 0.50, 0.46)),
     "RoofSide":       Material(image="flemish-bond-impr", size=(3.0, 1.0, 2.0)),
     "Shop3":          Material(image="scratched_bricks_", size=(4.0, 4.0, 1.0)),
     "WindowFrame":    Material(image="scratched_bricks_", size=(4.0, 4.0, 1.0)),
