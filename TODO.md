@@ -244,22 +244,6 @@ that uses node-graph alpha -- a fresh-eyes test confirmed
 is a no-op under EEVEE 4.0, so any alpha integration has to build
 a real Principled BSDF graph with the Alpha socket wired.
 
-**Pixel-perfect building match needs UVs (or new materials).**
-The ~30 dRGB floor on `res_1600_kg_01` is set by BI's lost UVs --
-slot data via `pak.blend_slots` recovers per-axis size/ofs/texco
-but not per-vertex UV coords.  Three ways to close it if it
-becomes a goal: (1) re-author every Britain blend with proper
-UVs + node-based image textures (~500 blends, content work);
-(2) sidecar Blender 2.79b with BI in the bake sandbox (breaks
-cross-renderer determinism); (3) ship new hex-native materials
-authored from scratch (artistic divergence from upstream).
-Today's `_bind_textures_via_nodes` gets the per-region mean
-right via slot-driven `blend_world_pos` (GLOB) or `Generated`
-(ORCO) coords + the slot's authored `size`, and per-asset
-material color via `MixRGB(MULTIPLY, diffuse_color)` -- the
-remaining gap is per-vertex UV detail.  No concrete next move
-unless one of the three is chosen.
-
 **Multi-tile vehicle overflow.**  `HEX_VIEWPOINT`'s `fit_kind="hex"`
 applies a single pakset-wide scale (`2R / upstream_ortho_scale = 2R/24`)
 under the calibration contract documented in CLAUDE.md, so a long loco
@@ -300,28 +284,23 @@ override on the cardinal-zero angle, calibrated by inspection; or
 (b) accept the upstream's per-blend orientation as authored.
 Closes the original "rotation sign" probe.
 
-**Building square-projection diff: multi-tile + heights coverage.**
-`building_square_viewpoint` errors on `dims_x*dims_y > 1` or
-`heights > 1`; only layout permutation diffing works today.  Adding
-multi-tile diff needs a square tile lattice mirroring
-`HEX_KOORD_Q_WORLD` / `HEX_KOORD_R_WORLD` — pak128's
-square-dimetric tile spans 128 px on screen, so the world-space
-inter-tile offset is `(±SQUARE_TILE_HALF, ±SQUARE_TILE_HALF)`
-along the screen diagonal.  Trigger: first 2x1+ building port.
-Heights coverage triggers on the first port with rendered
-silhouette overflowing one cell vertically.
-
-**Multi-tile centring** — `fit_kind="hex"` centres on the model's
+**Multi-tile building port.**  `res_1600_kg_01` is 1×1×4 — the
+multi-tile axis (`dims_x>1` or `dims_y>1`) is unit-tested via
+`iter_building_cells` but unverified end-to-end.  Concrete next
+move: pick a 1×2 or 2×1 upstream building with a matching blend
+(`town-house`, `terrace-row-house-2f`, or similar in
+`citybuildings/`), port it, observe whether the two cells' content
+correctly stitches at the shared tile edge in-engine.  Three known
+gaps surface together: (a) `fit_kind="hex"` centres on the model's
 XY bbox, which may not match upstream's per-tile-anchor convention
-for multi-tile blends; first 2x1+ building port surfaces this.
-
-**Multi-tile building bake.**  `res_1600_kg_01` is 1×1×4 — the
-multi-tile axis (`dims_x>1` or `dims_y>1`) of `building_hex_viewpoint`
-is unit-tested via `iter_building_cells` but unverified end-to-end.
-Concrete next move: pick a 1×2 or 2×1 upstream building with a
-matching blend (`town-house`, `terrace-row-house-2f`, or similar
-in `citybuildings/`), port it, observe whether the two cells'
-content correctly stitches at the shared tile edge in-engine.
+— a `fit_kind="hex_building"` variant in `render.py::_compute_fit`
+anchored on a known footprint reference is the fix if it surfaces
+as "every cell renders the same part of the model"; (b)
+`building_square_viewpoint` errors on `dims_x*dims_y > 1` so the
+diff harness needs a square tile lattice (world-space inter-tile
+offset `(±SQUARE_TILE_HALF, ±SQUARE_TILE_HALF)` along the screen
+diagonal); (c) heights coverage triggers on the first port whose
+rendered silhouette overflows one cell vertically.
 
 **Building schema gaps.**  `pak.dat.Building` covers attractions,
 monuments, city buildings (res/com/ind), townhalls, HQs, stops,
@@ -443,7 +422,7 @@ diff is the right tool to drive each of those calibrations.
 
 Once the diff lands and forces a real second consumer of the
 `Projection` accessors, the topology-duplication consolidation
-called out in CLAUDE.md → "Way-bake architecture" becomes the
+called out in `docs/bake-way.md` becomes the
 natural follow-up: collapse `_square_*` helpers in `pak/way_proj.py`
 back into `pak/way_topology.py` parametrised on a `tile`-geom arg.
 
@@ -502,7 +481,7 @@ the same reason cssr's old values were.  Concrete next move per
 script: fetch upstream's `ways/images/<name>.png` through
 `pak.fetch_pak`, K-means k=4 with magic-pink masked, paste the
 luminance-ordered centroids into `MATERIALS`, bake.  Same pattern
-as cssr (see CLAUDE.md → "Per-way material recolour").
+as cssr (see `docs/bake-way.md` → "Per-way material recolour").
 
 **Waggonway and plateway have no upstream blend.**  `ways/waggonway.dat`
 (10 kph, wooden) and `ways/plateway.dat` (12 kph, iron-plated
@@ -639,13 +618,6 @@ move when makeobj-on-tree first matters: either let the
 incremental per-port deletes drive it, or strip them all up
 front and fetch via `pak.lock` when seeding new ports.  Soft
 trigger.
-
-**Atlas commit vs. CI-artefact-only.**  Default is commit (per
-`CLAUDE.md` → "Per-asset directory layout") but reversible.
-Switching to CI-artefact-only saves repo bytes at the cost of
-"see the change in the PR".  Concrete next move: measure committed
-atlas size after the first ~10 asset bakes; if the cumulative is
-under 10 MB this question retires.  Trigger: ten assets baked.
 
 After the spine: expand by asset family (rail vehicles, road
 vehicles, buildings, industries).  Per-family progress is
