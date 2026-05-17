@@ -16,13 +16,13 @@ SPEC = Way(
     wear_capacity=32500000,
     cost=40000,
     maintenance=400,
+    blend="ways/tarmac/standard-city-base.blend",
+    materials={
+        "Dirt": (64, 64, 64),
+        "MainColour1": (80, 80, 80),
+    },
 )
-BLEND = "ways/tarmac/standard-city-base.blend"
-MATERIALS = {
-    "Dirt": (64, 64, 64),
-    "MainColour1": (80, 80, 80),
-}
 
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)
+    bake_way_main(SPEC, __file__)

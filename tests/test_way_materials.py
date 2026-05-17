@@ -1,4 +1,4 @@
-"""Structural shape check on `MATERIALS` dicts in `ways/<name>.py`.
+"""Structural shape check on each way SPEC's `materials=` dict.
 
 Catches malformed RGB entries (wrong arity, non-int, out-of-range)
 without invoking Blender.  Material-name correctness is left to the
@@ -17,14 +17,15 @@ from types import ModuleType
 from pak import REPO_ROOT
 
 
-def _ways_modules_with_materials() -> list[tuple[str, ModuleType]]:
+def _ways_specs_with_materials() -> list[tuple[str, ModuleType]]:
     out: list[tuple[str, ModuleType]] = []
     for path in sorted((REPO_ROOT / "ways").glob("*.py")):
         if path.name == "__init__.py":
             continue
         mod_name = f"ways.{path.stem}"
         mod = importlib.import_module(mod_name)
-        if hasattr(mod, "MATERIALS"):
+        spec = getattr(mod, "SPEC", None)
+        if getattr(spec, "materials", None):
             out.append((mod_name, mod))
     return out
 
@@ -32,18 +33,18 @@ def _ways_modules_with_materials() -> list[tuple[str, ModuleType]]:
 class TestWayScriptMaterials(unittest.TestCase):
 
     def test_at_least_one_script_exists(self):
-        # Guard against an "all MATERIALS got deleted" silent pass.
-        self.assertGreater(len(_ways_modules_with_materials()), 0)
+        # Guard against an "all materials got deleted" silent pass.
+        self.assertGreater(len(_ways_specs_with_materials()), 0)
 
     def test_every_materials_dict_is_well_formed(self):
-        for name, mod in _ways_modules_with_materials():
+        for name, mod in _ways_specs_with_materials():
             with self.subTest(script=name):
-                materials = mod.MATERIALS
+                materials = mod.SPEC.materials
                 self.assertIsInstance(materials, dict)
                 for material, rgb in materials.items():
                     self.assertIsInstance(material, str)
                     self.assertEqual(len(rgb), 3,
-                                     f"{name}.MATERIALS[{material!r}] "
+                                     f"{name}.SPEC.materials[{material!r}] "
                                      "isn't a 3-tuple")
                     for ch in rgb:
                         self.assertIsInstance(ch, int)

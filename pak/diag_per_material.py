@@ -182,17 +182,18 @@ def _resolve_season(mod, season: str):
     bake script's attributes.  Returns None when the asset doesn't
     declare the requested season (e.g. `season="winter"` but spec.seasons
     is 1)."""
-    blend = getattr(mod, "BLEND", None)
-    stem = getattr(mod, "UPSTREAM_STEM", None)
     spec = getattr(mod, "SPEC", None)
-    if blend is None or stem is None or not isinstance(spec, Building):
+    if not isinstance(spec, Building):
+        return None
+    blend = spec.blend
+    stem = spec.upstream_stem
+    if blend is None or stem is None:
         return None
     if season == "winter":
-        blend_winter = getattr(mod, "BLEND_WINTER", None)
-        if not (spec.seasons >= 2 and blend_winter):
+        if not (spec.seasons >= 2 and spec.blend_winter):
             return None
-        return blend_winter, getattr(mod, "MATERIALS_WINTER", None), 1, stem
-    return blend, getattr(mod, "MATERIALS", None), 0, stem
+        return spec.blend_winter, spec.materials_winter, 1, stem
+    return blend, spec.materials, 0, stem
 
 
 def _collect_stats(bake_path: Path, season: str) -> tuple[list[dict], int] | None:

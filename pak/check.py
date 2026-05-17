@@ -1,9 +1,10 @@
 """Run the upstream calibration diff for one or more baked vehicles.
 
 Each bake script (e.g. `trains/_4wheel_1850s_first.py`) declares
-`BLEND` and `UPSTREAM_STEM` next to its `SPEC`; this driver imports
-the module and hands those to `diff_upstream.run`, so the only
-thing a caller needs to remember is the bake-script path.
+`blend=` and `upstream_stem=` on its `SPEC`; this driver imports
+the module, reads those fields off the SPEC, and hands them to
+`diff_upstream.run`.  The only thing a caller needs to remember
+is the bake-script path.
 
 Usage::
 
@@ -11,9 +12,9 @@ Usage::
     python3 -m pak.check --all
 
 `--all` walks the repo for bake scripts (anything that imports
-`pak.bake`) and runs the diff for each one that declares
-`UPSTREAM_STEM`.  Scripts without the constant are skipped with a
-notice -- fill them in when the upstream sprite stem is known.
+`pak.bake`) and runs the diff for each one whose SPEC declares
+`upstream_stem`.  Scripts missing the field are skipped with a
+notice -- fill it in when the upstream sprite stem is known.
 A summary line per asset reports worst-facing IoU and total XOR
 pixel count, so contour drift is easy to compare across the fleet.
 """
@@ -61,13 +62,13 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
     yet); `drgb_mean` is None for vehicles (printed in the per-facing
     table instead, no need to duplicate in the summary)."""
     mod = _load(script)
-    blend = getattr(mod, "BLEND", None)
-    stem = getattr(mod, "UPSTREAM_STEM", None)
     specs = specs_of(mod)
     spec = specs[0] if specs else None
+    blend = getattr(spec, "blend", None) if spec is not None else None
+    stem = getattr(spec, "upstream_stem", None) if spec is not None else None
     if blend is None or stem is None:
-        missing = "BLEND" if blend is None else "UPSTREAM_STEM"
-        print(f"{script.name}: no {missing}, skipping (add one to enable diff)")
+        missing = "blend=" if blend is None else "upstream_stem="
+        print(f"{script.name}: no SPEC.{missing}, skipping (add one to enable diff)")
         return None
 
     out_dir = REPO_ROOT / "out" / "diff" / script.stem
@@ -88,24 +89,23 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             up_w = im.size[0]
         layouts = min(up_w // 128, 4)
         if spec.seasons >= 2:
-            blend_winter = getattr(mod, "BLEND_WINTER", None)
-            if blend_winter is None:
+            if spec.blend_winter is None:
                 raise SystemExit(
                     f"{script.name}: spec.seasons={spec.seasons} but "
-                    f"BLEND_WINTER not declared in the bake script"
+                    f"blend_winter= not declared on SPEC"
                 )
             seasons = diff_buildings.run_seasonal(
                 blend, stem, layouts=layouts, out_dir=out_dir,
-                materials=getattr(mod, "MATERIALS", None),
-                blend_winter=blend_winter,
-                materials_winter=getattr(mod, "MATERIALS_WINTER", None),
-                lighting=getattr(mod, "LIGHTING", None),
+                materials=spec.materials,
+                blend_winter=spec.blend_winter,
+                materials_winter=spec.materials_winter,
+                lighting=spec.lighting,
             )
         else:
             mat, perm, drgb = diff_buildings.run(
                 blend, stem, layouts=layouts, out_dir=out_dir,
-                materials=getattr(mod, "MATERIALS", None),
-                lighting=getattr(mod, "LIGHTING", None),
+                materials=spec.materials,
+                lighting=spec.lighting,
             )
             seasons = [("summer", mat, perm, drgb)]
 

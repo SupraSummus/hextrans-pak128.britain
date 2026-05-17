@@ -31,10 +31,11 @@ SPEC = Building(
     needs_ground=1,
     population_and_visitor_demand_capacity=38,
     class_proportion=[0, 20, 65, 15, 0],
+    blend="citybuildings/1870-townhouse-3f.blend",
+    upstream_stem="citybuildings/images/res/1870-townhouse-3f.png",
+    materials=MATERIALS,
 )
-BLEND = "citybuildings/1870-townhouse-3f.blend"
-UPSTREAM_STEM = "citybuildings/images/res/1870-townhouse-3f.png"
 
 
 if __name__ == "__main__":
-    bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)
+    bake_building_main(SPEC, __file__)

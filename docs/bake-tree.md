@@ -3,10 +3,11 @@
 Companion to `CLAUDE.md` (engine facts, calibration contract,
 bake-unit conventions).
 
-Trees (`Obj=tree`) port via a `Tree` SPEC + `BLEND` + `bake_tree_main
-(SPEC, BLEND, __file__)`, same per-asset shape as vehicles/ways/
-buildings.  The render side is a single-facing billboard expanded
-over an `ages × seasons` grid -- one cell per (age, season) tuple.
+Trees (`Obj=tree`) port via a `Tree` SPEC with inline
+`blend=` / `upstream_stem=` bake-meta and a `bake_tree_main(SPEC,
+__file__)` call, same per-asset shape as vehicles/ways/buildings.
+The render side is a single-facing billboard expanded over an
+`ages × seasons` grid -- one cell per (age, season) tuple.
 
 **Engine schema** (`descriptor/writer/tree_writer.cc`).  Five ages
 (0..4) and 1/2/4/5 seasonal variants -- writer hardcodes the age loop

@@ -18,15 +18,15 @@ SPEC = Way(
     wear_capacity=3564000000,
     cost=90000,
     maintenance=450,
+    blend="ways/ns-cssr.blend",
+    materials={
+        "Ballast": (88, 80, 78),
+        "Wood": (117, 111, 109),
+        "Rail": (130, 125, 125),
+        "RailTop": (180, 177, 172),
+    },
 )
-BLEND = "ways/ns-cssr.blend"
-MATERIALS = {
-    "Ballast": (88, 80, 78),
-    "Wood": (117, 111, 109),
-    "Rail": (130, 125, 125),
-    "RailTop": (180, 177, 172),
-}
 
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, BLEND, __file__, materials=MATERIALS)
+    bake_way_main(SPEC, __file__)

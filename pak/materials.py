@@ -9,17 +9,19 @@ recover what BI saw, but that's a heavyweight one-shot operation
 and the slot data sometimes needs hand-tuning (BI authoring quirks
 that have to be lived with by overriding per-asset).
 
-The shape that survived for ways -- per-asset `MATERIALS = {...}`
-declared inline next to the SPEC, serialised to JSON on the
+The shape that survived for ways -- a per-asset `materials={...}`
+dict declared inline on the SPEC, serialised to JSON on the
 subprocess command line, applied in the Blender bake driver --
-generalises here.  Per-building `MATERIALS` carries one
-`Material` per blend material name, declaring whether it's image-
-textured (and which image, at what BI texco / size / ofs) or
-procedural noise.  Materials missing from the dict render flat-
-diffuse, matching Blender 4.0's `use_nodes=False` auto-conversion.
+generalises here.  Each building's `Building.materials` (and
+each way's `Way.materials`) carries one `Material` per blend
+material name, declaring whether it's image-textured (and which
+image, at what BI texco / size / ofs) or procedural noise.
+Materials missing from the dict render flat-diffuse, matching
+Blender 4.0's `use_nodes=False` auto-conversion.
 
-Seeded once by `python3 -m pak.extract_materials <blend>`; review
-and paste into the bake script.
+Seeded once by `python3 -m pak.extract_materials <blend>`
+(emits a `MATERIALS = {...}` block ready to paste into the SPEC's
+`materials=` field); review before pasting.
 """
 from __future__ import annotations
 
@@ -49,9 +51,9 @@ class Slot:
     """One BI texture slot's rendering description.
 
     Mirrors `pak.blend_slots.TextureSlot` but in the Material spec form
-    that survives JSON round-trip and lives in a bake script's
-    `MATERIALS = {...}` dict.  Either `image` is set (image-textured)
-    or `procedural` is set (one of `_PROC_VALID`); not both.
+    that survives JSON round-trip and lives in a SPEC's
+    `materials={...}` dict.  Either `image` is set (image-textured) or
+    `procedural` is set (one of `_PROC_VALID`); not both.
 
     `blend` is the BI slot blend mode mapped onto Blender's MixRGB
     `blend_type` (see `_BLEND_BI_TO_SHADER`).  `fac` is the BI slot
@@ -184,7 +186,8 @@ class Material:
         if self.image is None and not self.noise:
             raise ValueError(
                 "Material needs either image=... or noise=True or slots=[...]; "
-                "omit the material name from MATERIALS to render flat-diffuse"
+                "omit the material name from the SPEC's materials= dict to "
+                "render flat-diffuse"
             )
         if self.image is not None and self.noise:
             raise ValueError(
@@ -203,12 +206,11 @@ class Lighting:
     The EEVEE building viewpoint defaults (world ambient grey 0.30, sun
     energy scale 2.0 over the .blend's BI-authored 0.028, sun elevation
     30°, sun azimuth offset -90° from camera) were grid-searched
-    against the heuristic MATERIALS path on one pilot; under the slot-
+    against the heuristic materials path on one pilot; under the slot-
     form / hybrid path and the alpha-premultiplied blurred dRGB metric
-    the optimum shifts per asset.  Declare a `LIGHTING = Lighting(...)`
-    alongside `MATERIALS` to override.  Buildings without a LIGHTING
-    block fall back to the globals in `pak.viewpoints` and
-    `pak.render._configure_eevee`.
+    the optimum shifts per asset.  Set `lighting=Lighting(...)` on the
+    SPEC to override.  Buildings without a `lighting=` value fall back
+    to the globals in `pak.viewpoints` and `pak.render._configure_eevee`.
 
     `world_ambient`: replaces `scn.world.color`; modern EEVEE uses
         this as the constant ambient term BI's `world.amb` field
