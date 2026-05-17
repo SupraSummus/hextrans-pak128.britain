@@ -67,6 +67,17 @@ class TestParse(unittest.TestCase):
         keys = [k for k, _ in obj]
         self.assertEqual(keys, ["obj", "name"])
 
+    def test_strips_trailing_inline_comment(self):
+        # Upstream ships values followed by ` # ...` comments
+        # (way_constraint_prohibitive[6]=6 # Large ship); without
+        # stripping, port_vehicle's _coerce keeps the comment in
+        # the value as a string.
+        with TemporaryDirectory() as d:
+            p = Path(d) / "x.dat"
+            p.write_text("obj=vehicle\nspeed=12 # knots\nname=x\t# tab\n")
+            (obj,) = parse(p)
+        self.assertEqual(dict(obj), {"obj": "vehicle", "speed": "12", "name": "x"})
+
 
 class TestVehicleConstruction(unittest.TestCase):
     def test_rejects_unknown_kwarg(self):

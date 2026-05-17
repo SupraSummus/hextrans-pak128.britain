@@ -81,11 +81,12 @@ constraint category, the value is the per-category flag.
 `Vehicle.way_constraint_permissive` is currently a dense `list[str]`
 which can only emit `[0]=, [1]=, …` densely, and there's no
 `way_constraint_prohibitive` field at all.  `blackpool_brush`
-drops both keys on port (see its comment).  Concrete next move
-when the second tram/road vehicle that uses these ports: model
-the field as `dict[int, int]` (or similar), add
-`way_constraint_prohibitive` back, and teach `emit_vehicle` to
-walk dict items.  Soft trigger.
+and the first two ship ports (`boats/dogger`, `boats/secr_queen`)
+drop both keys on port; every other boat dat will too, since
+water vehicles always gate on the Ship / Large-ship water-class
+indices (5, 6).  Concrete next move: model the field as
+`dict[int, int]` (or similar), add `way_constraint_prohibitive`
+back, and teach `emit_vehicle` to walk dict items.  Triggered.
 
 **Aircraft alpha-blend materials render too transparent.**
 `air/dragon_rapide` lands at IoU 0.84-0.92 across facings —
@@ -106,6 +107,24 @@ translucent glass), gate it behind a Viewpoint flag.  Soft
 trigger — `check.py` isn't CI-gated, so the failure sits in
 local-run output until somebody wires `--all` into the lint
 workflow.
+
+**Dogger calibration drift — facing-orientation mismatch.**
+`boats/dogger` lands at IoU 0.117-0.927 — NW alone is healthy
+(0.927), the other seven facings drift to 0.12-0.46.  The one-
+facing-fits / others-don't pattern is the signature of the
+upstream model not honouring the contributing-graphics "long-axis
+Y, centred on origin" contract that the `vehicles` alignment
+assumes (see CLAUDE.md → "Upstream blend calibration contract").
+`boats/secr_queen` on the same alignment lands worst-IoU 0.938
+across all 8 facings, so the alignment itself isn't broken — it's
+per-blend.  Concrete next move: load `boats/dogger.blend` in
+Blender, check the model's bbox vs origin and which axis the hull
+runs along; if the authoring is off, either fix the blend
+upstream (out of repo scope) or add per-asset
+`model_rotation`/`model_translation` bake-meta on `Vehicle` (the
+buildings pipeline already has `model_translation` for multi-tile
+placement — extend the pattern).  Trigger: next sailing-vessel
+port (they may share the issue).
 
 **Engine facing count cutover.**  Vehicles currently bake under
 the engine's 4-or-8-direction convention with hex-heading

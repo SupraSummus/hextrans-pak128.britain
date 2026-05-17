@@ -52,6 +52,10 @@ if TYPE_CHECKING:
 
 _INDEX_RE = re.compile(r"\[([^\]]*)\]")
 _TERMINATOR_RE = re.compile(r"^-+\s*$")
+# Trailing comment after a value: any whitespace + `#` + rest of line.
+# Upstream uses ` # …` (e.g. `way_constraint_prohibitive[6]=6 # Large
+# ship`) and tab-prefixed (e.g. `Image[0][1]=basement.0.0\t# wall=…`).
+_TRAILING_COMMENT_RE = re.compile(r"\s+#.*$")
 
 # Single-row 8-facing atlas; column i corresponds to facings[i]
 # in render.py / viewpoints.py HEX_VIEWPOINT.  Match exactly or
@@ -517,6 +521,7 @@ def parse(path: Path) -> list[list[tuple[str, str]]]:
         if "=" not in line:
             continue
         key, _, value = line.partition("=")
+        value = _TRAILING_COMMENT_RE.sub("", value)
         objects[-1].append((key.strip(), value.strip()))
     if not objects[-1]:
         objects.pop()
