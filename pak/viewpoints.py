@@ -323,6 +323,39 @@ def building_square_viewpoint(
     )
 
 
+def fence_square_viewpoint() -> Viewpoint:
+    """4-cardinal Viewpoint for `grounds/fence.blend` rendered against
+    the upstream square cells (`pak/diff_fence.py`).
+
+    Same camera positions as `building_square_viewpoint` (normal
+    alignment), but `sun_energy` is pinned directly: the fence blend
+    ships a SPOT lamp rather than a SUN, so `_strip_scene`'s authored-
+    SUN extraction has nothing to scale.  2.0 matches the post-scale
+    value the building viewpoint resolves to under EEVEE.
+    """
+    facings = [
+        Facing(
+            label=label,
+            camera_location=loc,
+            camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
+            sun_rotation_euler=sun_rotation_for_camera(cam_z),
+            model_rot_z_deg=0.0,
+        )
+        for label, cam_z, loc in _UPSTREAM_NORMAL_CARDINAL
+    ]
+    return Viewpoint(
+        name="fence_square",
+        image_width=DEFAULT_W,
+        ortho_scale=None,   # use blend's authored 12.0
+        sun_energy=2.0,
+        sun_energy_scale=1.0,
+        fit_kind="none",
+        extrinsic=None,
+        facings=facings,
+        engine="BLENDER_EEVEE",
+    )
+
+
 def building_hex_viewpoint(
     layouts: int, dims_x: int, dims_y: int, heights: int = 1,
 ) -> Viewpoint:

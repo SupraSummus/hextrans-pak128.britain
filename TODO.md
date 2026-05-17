@@ -252,31 +252,46 @@ to yield `(l, y, x, h, p, s)` and the viewpoint to multiply
 facings accordingly.  Height-stacking (the `h` axis) is already
 plumbed end-to-end and tested.
 
-**Ground bake gaps: way_ground, fence.**  Eight parametric ground
-families port from pak128 live under `grounds/*.py` now
-(light_texture, back_wall → slopes + basement, marker, borders,
-water, sidewalk, shore_trans, slope_trans); `climate_texture` is
+**Climate texture not yet hex-native.**  `climate_texture` is
 vendored from upstream pak128.Britain verbatim (see
 `grounds/climate_texture.{png,dat}`) as biome-art-without-tile-
 geometry — replace with a Britain-flavoured hex-native palette when
-in-game appearance warrants.  Two pieces still missing.  `way_ground` is
-the per-`(axis, slope)` ground lightmap for tiles carrying a way — a
-parametric per-slope shading bake, not a way render.  Concrete next
-move: port pak128's `landscape/grounds/way_ground/` directly into
-`grounds/way_ground.py`, expressing the three faces via
-`pak.hex_synth.fill_polygon` in the engine's screen-space Lambert
-frame (the same path the existing `grounds/light_texture.py` /
-`grounds/borders.py` bakers use).  Don't re-port a Model / Camera
-mini-rasterizer for this — the engine-space Lambert frame is
-sufficient.  `grounds/fences.dat`
-(`Obj=ground Name=Fence`) is the boundary fence at climate
-transitions; the upstream stub references photographic
-`images/fence-*.png` stripped from history, same un-ported state as
-the train / building dats waiting on per-asset bakes.  Concrete next
-move: write `grounds/fence.py` as a small procedural baker (low-side
-hex edges under a simple wood-rail palette), keyed by slope,
-mirroring the marker / borders shape; delete the upstream stub once
-the baker emits a real `fence.{png,dat}`.
+in-game appearance warrants.
+
+**way_ground is v1 only.**  Reuses `light_texture`'s per-region
+Lambert pass without per-axis differentiation (no chord-band
+flattening, no ballast-edge shading).  Concrete next move when
+in-game readability surfaces a gap: give the chord band under the
+way its own brightness term (lift the chord midpoints, render the
+way's running surface as a distinct face).
+
+**fence bake is parametric posts+rails, not from the blend.**
+`grounds/fence.blend` ships in the upstream blends repo — a full
+3D fence model with white pickets, wire mesh and corner poles
+across four quadrants (`pak/diff_fence.py` proves it: rendering
+the blend through the upstream cardinal-S camera matches
+fence-4 at IoU 0.896, the cardinal-E camera matches fence-3 at
+0.862, and the OR composite matches fence-5 at 0.844).  Our
+`grounds/fence.py` ignores all of that and traces brown polylines
+parametrically.  Concrete next move when fidelity matters:
+rewrite `grounds/fence.py` as a Blender-driven bake mirroring the
+way/building bakers — hex-camera render of the same blend at one
+facing per back-wall.  The blend's 4 fence quadrants map naturally
+onto the 3 hex back-edges (NW, N, NE) via per-facing model
+rotation, same pattern as `building_hex_viewpoint`.  Then drop
+the polyline path entirely.
+
+**Fence wall-2 cases render IMG_EMPTY.**  Engine `FENCE_IMAGE_COUNT = 3`
+in `grund.h` caps the per-set sprite count at 3, so `fence_offset`
+values 4..7 (any combo involving the rightmost back-wall, wall 2)
+either index past the artificial set (rendering the wrong sprite)
+or fall off the end (IMG_EMPTY).  Matches upstream Britain's shape —
+their fences.dat also ships 6 entries — but is genuinely under-
+specified for the 3-back-edge hex.  Concrete next move when it
+bites in-game: bump `FENCE_IMAGE_COUNT` to 7 in `grund.h`, extend
+`grounds/fence.py`'s `_WALL_MASKS` to cover all seven non-zero
+masks × {natural, artificial}, and rebake.  Engine-side change,
+not just a pak edit.
 
 **Lightmap multiplier scale mismatch.**  The square-bake diff
 against upstream `grounds/images/texture-lightmap.png` shows a
@@ -459,15 +474,6 @@ matters: per-skin re-bake pass (most are cursor / icon strips,
 similar machinery to the ways icon/cursor TODO above), then drop
 `pak.fetch_gui_images` and ship committed sibling PNGs.  Soft
 trigger.
-
-**Hex re-bake of `grounds/fences`.**  The other engine-required
-ground descriptor still without a hex bake — pulled in via the
-same staging pattern as GUI (`$(FENCES_STAGED)/`, fetching
-`grounds/images/fence-{3,4,5}.png` from the upstream pak).  Fence
-sprites are short edge-decorations at climate boundaries; the hex
-re-bake would mirror `grounds/borders.py`'s parametric approach
-rather than try to reproject the upstream sprites.  Trigger: when
-climate-boundary fences look obviously wrong in-game.
 
 **Bulk-strip remaining unported upstream dats?**  Each upstream
 dat is deleted once its bake script's SPEC verifies (CLAUDE.md →
