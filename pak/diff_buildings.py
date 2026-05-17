@@ -135,6 +135,18 @@ def _iou_matrix(our_masks, up_masks):
     return mat
 
 
+def _drgb_intersection(our_rgba, up_rgba, our_mask, up_mask) -> float:
+    """Mean abs(RGB-delta) over the silhouette intersection -- mirrors
+    `diff_upstream.py`'s `drgb`.  Returns NaN if intersection is empty."""
+    import numpy as np
+    inter = our_mask & up_mask
+    if not inter.any():
+        return float("nan")
+    a = our_rgba[..., :3].astype(np.int16)
+    b = up_rgba[..., :3].astype(np.int16)
+    return float(np.abs(a[inter] - b[inter]).mean())
+
+
 def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
                   perm: list[int], out_path: Path) -> None:
     """Three-row grid (ours / upstream-best-match / silhouette XOR) so
@@ -225,9 +237,14 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path):
     up_masks = [_silhouette_mask(c) for c in up_cells]
     mat = _iou_matrix(our_masks, up_masks)
     perm = _best_permutation(mat)
+    drgb_per_layout = [
+        _drgb_intersection(our_rgba[l], up_cells[perm[l]],
+                           our_masks[l], up_masks[perm[l]])
+        for l in range(len(our_rgba))
+    ]
     _compose_grid(our_rgba, up_cells, our_masks, up_masks, perm,
                   out_dir / "grid.png")
-    return mat, perm
+    return mat, perm, drgb_per_layout
 
 
 def format_matrix(mat, perm) -> str:
@@ -268,11 +285,15 @@ def main(argv) -> int:
     args = _parse(argv)
     stem = Path(args.blend).stem
     out_dir = Path(args.out) if args.out else REPO_ROOT / "out" / "diff" / stem
-    mat, perm = run(args.blend, args.upstream_png, layouts=args.layouts, out_dir=out_dir)
+    mat, perm, drgb = run(args.blend, args.upstream_png, layouts=args.layouts, out_dir=out_dir)
     worst, best, diag = summarise(mat, perm)
     print(format_matrix(mat, perm))
     print(f"\nmean IoU identity: {diag:.3f}  best perm: {best:.3f}  perm={perm}")
     print(f"worst-of-best: {worst:.3f}  (FAIL_IOU={FAIL_IOU:.2f})")
+    drgb_mean = sum(drgb) / len(drgb)
+    drgb_max = max(drgb)
+    print(f"dRGB (intersection mean): mean={drgb_mean:.2f}  max={drgb_max:.2f}  "
+          f"per-layout={[round(v, 2) for v in drgb]}")
     return 0 if worst >= FAIL_IOU else 1
 
 
