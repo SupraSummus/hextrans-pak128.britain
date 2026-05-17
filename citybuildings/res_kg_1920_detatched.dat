@@ -16,9 +16,9 @@ class_proportion[2]=40
 class_proportion[3]=50
 class_proportion[4]=5
 backimage[0][0][0][0][0][0]=./res_kg_1920_detatched.0.0
-backimage[1][0][0][0][0][0]=./res_kg_1920_detatched.1.0
-backimage[2][0][0][0][0][0]=./res_kg_1920_detatched.2.0
-backimage[3][0][0][0][0][0]=./res_kg_1920_detatched.3.0
-backimage[4][0][0][0][0][0]=./res_kg_1920_detatched.4.0
-backimage[5][0][0][0][0][0]=./res_kg_1920_detatched.5.0
+backimage[1][0][0][0][0][0]=./res_kg_1920_detatched.0.1
+backimage[2][0][0][0][0][0]=./res_kg_1920_detatched.0.2
+backimage[3][0][0][0][0][0]=./res_kg_1920_detatched.0.3
+backimage[4][0][0][0][0][0]=./res_kg_1920_detatched.0.4
+backimage[5][0][0][0][0][0]=./res_kg_1920_detatched.0.5
 ----------

@@ -22,9 +22,9 @@ class_proportion_jobs[2]=80
 class_proportion_jobs[3]=8
 class_proportion_jobs[4]=2
 backimage[0][0][0][0][0][0]=./com_kg_1970_small_office.0.0
-backimage[1][0][0][0][0][0]=./com_kg_1970_small_office.1.0
-backimage[2][0][0][0][0][0]=./com_kg_1970_small_office.2.0
-backimage[3][0][0][0][0][0]=./com_kg_1970_small_office.3.0
-backimage[4][0][0][0][0][0]=./com_kg_1970_small_office.4.0
-backimage[5][0][0][0][0][0]=./com_kg_1970_small_office.5.0
+backimage[1][0][0][0][0][0]=./com_kg_1970_small_office.0.1
+backimage[2][0][0][0][0][0]=./com_kg_1970_small_office.0.2
+backimage[3][0][0][0][0][0]=./com_kg_1970_small_office.0.3
+backimage[4][0][0][0][0][0]=./com_kg_1970_small_office.0.4
+backimage[5][0][0][0][0][0]=./com_kg_1970_small_office.0.5
 ----------

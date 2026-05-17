@@ -275,6 +275,14 @@ class Building:
     # "Building-bake architecture" for the world-z per height-level.
     heights: int = 1
 
+    # Seasonal variants — number of `backimage[…][season]` slots the
+    # engine reads (0 = summer, 1 = winter, …).  Default 1 = summer
+    # only; set 2 to opt in to a winter render.  The atlas grows a
+    # season-major top half (summer) / bottom half (winter) row layout
+    # — see `emit_building` / `iter_building_cells` for the formula and
+    # CLAUDE.md -> "Building-bake architecture" for the snow pass.
+    seasons: int = 1
+
     # Type-specific
     level: int | None = None
     chance: int | None = None
@@ -336,11 +344,10 @@ def layouts_default(dims_x: int, dims_y: int) -> int:
 
 # `[layout][y][x][height][phase][season]` bracket order — fixed by
 # `building_writer.cc::write_obj` (the hex engine reads only this
-# order).  Phase and season default to 0 for an asset bake without
-# animation and single-season; revisit when a bake script first needs
-# either of those.  Height varies per (l,y,x,h) cell.
+# order).  Phase defaults to 0 for an asset bake without animation;
+# season is loop-driven from `Building.seasons` (1 = summer only, 2 =
+# +winter).  Height varies per (l,y,x,h) cell.
 _BUILDING_IMAGE_PHASE = 0
-_BUILDING_IMAGE_SEASON = 0
 
 
 # dims_x / dims_y / layouts emit together as a single `dims=X,Y,Z`
@@ -351,7 +358,7 @@ _BUILDING_IMAGE_SEASON = 0
 _BUILDING_FIELDS_SCALAR: tuple[str, ...] = tuple(
     f.name for f in fields(Building)
     if f.default_factory is MISSING
-    and f.name not in ("dims_x", "dims_y", "layouts", "heights")
+    and f.name not in ("dims_x", "dims_y", "layouts", "heights", "seasons")
 )
 _BUILDING_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
     (f.name, f.metadata.get("dat_key", f.name))
@@ -361,28 +368,40 @@ _BUILDING_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
 
 
 def iter_building_cells(b: Building):
-    """Yield `(layout, y, x, height)` quadruples in canonical emit order.
+    """Yield `(season, layout, y, x, height)` quintuples in canonical emit
+    order.
 
-    For each layout in `[0, layouts)`, iterate `(y, x)` matching the
-    engine's loops in `building_writer.cc`: even layouts iterate
-    `y in [0, size.y), x in [0, size.x)`; odd layouts swap to
-    `y in [0, size.x), x in [0, size.y)`.  Then inner-most, iterate
-    `height in [0, heights)` — height stacking, painted by the engine
-    at `ypos -= raster_width` per level (see `obj/gebaeude.cc`).
-    The engine reads height levels by incrementing until the key
-    returns empty, so heights is implicit in the emitted refs (no
-    `heights=N` scalar).  Bake scripts use this to drive per-cell
-    renders; emit_building uses it to wire image refs."""
+    Iteration order: `s, h, l, y, x` — season outermost, height next,
+    then layout, then the per-layout `(y, x)` cells.  Matches the
+    atlas layout `row = s * heights + h`, `col = l * dims_x*dims_y +
+    y * w + x` (each season is a `heights`-row stripe; within a
+    stripe, each row is one height; each row's columns walk the
+    layout blocks left-to-right).  For 1x1xN-layout single-height
+    buildings with seasons=2 the result is the upstream
+    `1600-detatched-house-2f.png` shape: row 0 = summer layouts,
+    row 1 = winter layouts.
+
+    Per-layout `(y, x)` follows the engine's loops in
+    `building_writer.cc`: even layouts iterate `y in [0, size.y),
+    x in [0, size.x)`; odd layouts swap to `y in [0, size.x),
+    x in [0, size.y)`.  Heights stack via the engine's
+    `ypos -= raster_width` per level (see `obj/gebaeude.cc`); the
+    engine reads height levels by incrementing until the key returns
+    empty, so heights / seasons are implicit in the emitted refs (no
+    `heights=N` / `seasons=N` scalars).  Bake scripts use this to
+    drive per-cell renders; emit_building uses it to wire image
+    refs."""
     layouts = b.layouts if b.layouts is not None else layouts_default(b.dims_x, b.dims_y)
-    for l in range(layouts):
-        if l & 1:
-            yh, xw = b.dims_x, b.dims_y
-        else:
-            yh, xw = b.dims_y, b.dims_x
-        for y in range(yh):
-            for x in range(xw):
-                for h in range(b.heights):
-                    yield l, y, x, h
+    for s in range(b.seasons):
+        for h in range(b.heights):
+            for l in range(layouts):
+                if l & 1:
+                    yh, xw = b.dims_x, b.dims_y
+                else:
+                    yh, xw = b.dims_y, b.dims_x
+                for y in range(yh):
+                    for x in range(xw):
+                        yield s, l, y, x, h
 
 
 def parse(path: Path) -> list[list[tuple[str, str]]]:
@@ -488,17 +507,25 @@ def emit_building(b: Building, *, out_dir: Path, basename: str) -> Path:
 
     Emits set scalars, then `dims=X,Y,Z` (with layouts filled in from
     `layouts_default` when the SPEC left it `None`), then indexed
-    lists, then `backimage[l][y][x][h][0][0]=./<basename>.<row>.<col>`
-    per cell — `row = l*heights + h` (layout-major, height inner),
-    `col = y*w + x` within the layout's engine-determined bounds
-    (see `iter_building_cells`).  The PNG must live at
-    `<out_dir>/<basename>.png` and match that layout exactly — drift
-    surfaces in-engine as the wrong sprite per tile/level.
+    lists, then `backimage[l][y][x][h][0][s]=./<basename>.<row>.<col>`
+    per cell.
 
-    FrontImage, animation phase and season variants are not yet
-    emitted; revisit when a bake script needs any of them (occlusion-
-    correct foreground, animated effects, snowed-over winters).
-    Returns the dat path.
+    Atlas shape: `seasons * heights` rows × `layouts * dims_x*dims_y`
+    cols.  Row formula: `row = s * heights + h` — each season is a
+    `heights`-row stripe (summer on top, winter under it).  Col
+    formula: `col = l * dims_x*dims_y + y * w + x` — layouts span
+    horizontally, with each layout's per-tile cells occupying a
+    `dims_x*dims_y`-wide block; `w` swaps between `dims_x` and
+    `dims_y` per the engine's `h = (l&1) ? size.x : size.y` rule (see
+    `iter_building_cells`).  For 1x1xN-layout single-height buildings
+    with seasons=2 the result is upstream's two-row atlas
+    (summer/winter).  The PNG must live at `<out_dir>/<basename>.png`
+    and match that layout exactly — drift surfaces in-engine as the
+    wrong sprite per tile/level.
+
+    FrontImage and animation phase variants are not yet emitted;
+    revisit when a bake script needs them (occlusion-correct
+    foreground, animated effects).  Returns the dat path.
     """
     lines: list[str] = ["obj=building"]
     for name in _BUILDING_FIELDS_SCALAR:
@@ -511,14 +538,15 @@ def emit_building(b: Building, *, out_dir: Path, basename: str) -> Path:
         for i, v in enumerate(getattr(b, attr)):
             lines.append(f"{dat_key}[{i}]={v}")
 
-    for l, y, x, h in iter_building_cells(b):
+    footprint = b.dims_x * b.dims_y
+    for s, l, y, x, h in iter_building_cells(b):
         w = b.dims_y if l & 1 else b.dims_x
-        col = y * w + x
-        row = l * b.heights + h
+        row = s * b.heights + h
+        col = l * footprint + y * w + x
         lines.append(
             f"backimage[{l}][{y}][{x}][{h}]"
             f"[{_BUILDING_IMAGE_PHASE}]"
-            f"[{_BUILDING_IMAGE_SEASON}]"
+            f"[{s}]"
             f"=./{basename}.{row}.{col}"
         )
     lines.append("----------")
@@ -612,17 +640,24 @@ def port_building(object_entries: list[tuple[str, str]]) -> Building:
     scalars = set(_BUILDING_FIELDS_SCALAR)
     kwargs: dict = {}
     max_height = 0
+    max_season = 0
     for k, v in object_entries:
         kl = k.lower()
-        # Image refs: parse out the height index before dropping the
-        # value, so we can set `heights` from the upstream stack depth.
+        # Image refs: parse out the height and season indices before
+        # dropping the value, so we can set `heights` / `seasons` from
+        # the upstream stack depth and seasonal-variant count.
         prefix = kl.split("[", 1)[0]
         if prefix in _BUILDING_PORT_DROP:
-            # backimage[L][Y][X][H][P][S] — height is index 3
+            # backimage[L][Y][X][H][P][S] — height idx 3, season idx 5
             indices = [s.rstrip("]") for s in kl.split("[")[1:]]
             if len(indices) >= 4:
                 try:
                     max_height = max(max_height, int(indices[3]))
+                except ValueError:
+                    pass
+            if len(indices) >= 6:
+                try:
+                    max_season = max(max_season, int(indices[5]))
                 except ValueError:
                     pass
             continue
@@ -645,6 +680,8 @@ def port_building(object_entries: list[tuple[str, str]]) -> Building:
 
     if max_height > 0:
         kwargs["heights"] = max_height + 1
+    if max_season > 0:
+        kwargs["seasons"] = max_season + 1
 
     return Building(**kwargs)
 

@@ -357,11 +357,13 @@ class TestBuildingFootprint(unittest.TestCase):
         self.assertEqual(_resolve_building_layouts(pinned).layouts, 4)
 
     def test_iter_cells_square_footprint(self):
-        # 2x2 with default layouts=1, heights=1: 4 cells, (y, x) row-major.
+        # 2x2 with default layouts=1, heights=1, seasons=1: 4 cells,
+        # (y, x) row-major.  Tuple shape is (s, l, y, x, h).
         b = Building(name="X", type="mon", dims_x=2, dims_y=2)
         cells = list(iter_building_cells(b))
         self.assertEqual(cells, [
-            (0, 0, 0, 0), (0, 0, 1, 0), (0, 1, 0, 0), (0, 1, 1, 0),
+            (0, 0, 0, 0, 0), (0, 0, 0, 1, 0),
+            (0, 0, 1, 0, 0), (0, 0, 1, 1, 0),
         ])
 
     def test_iter_cells_rectangular_swaps_on_odd_layouts(self):
@@ -371,8 +373,8 @@ class TestBuildingFootprint(unittest.TestCase):
         b = Building(name="X", type="cur", dims_x=2, dims_y=1)
         cells = list(iter_building_cells(b))
         self.assertEqual(cells, [
-            (0, 0, 0, 0), (0, 0, 1, 0),  # layout 0: y in [0,1), x in [0,2)
-            (1, 0, 0, 0), (1, 1, 0, 0),  # layout 1: y in [0,2), x in [0,1)
+            (0, 0, 0, 0, 0), (0, 0, 0, 1, 0),  # l=0: y in [0,1), x in [0,2)
+            (0, 1, 0, 0, 0), (0, 1, 1, 0, 0),  # l=1: y in [0,2), x in [0,1)
         ])
 
     def test_iter_cells_explicit_four_layouts(self):
@@ -381,26 +383,40 @@ class TestBuildingFootprint(unittest.TestCase):
         # asset packed into one tile).
         b = Building(name="X", type="cur", dims_x=1, dims_y=1, layouts=4)
         cells = list(iter_building_cells(b))
-        self.assertEqual(cells, [(l, 0, 0, 0) for l in range(4)])
+        self.assertEqual(cells, [(0, l, 0, 0, 0) for l in range(4)])
 
     def test_iter_cells_height_stack(self):
-        # 1x1x1 with heights=2: each (l,y,x) yields 2 heights (h=0, h=1).
+        # 1x1x1 with heights=2: each height yields one cell.  Height is
+        # outer to layout, so consecutive cells are (h=0, then h=1).
         b = Building(name="X", type="res", dims_x=1, dims_y=1, heights=2)
         cells = list(iter_building_cells(b))
-        # Single layout (square default), single tile, two heights.
-        self.assertEqual(cells, [(0, 0, 0, 0), (0, 0, 0, 1)])
+        self.assertEqual(cells, [(0, 0, 0, 0, 0), (0, 0, 0, 0, 1)])
 
     def test_iter_cells_layouts_x_heights(self):
-        # Layouts and heights compose: 4 layouts × 2 heights = 8 cells,
-        # height inner (height varies fastest after layout fixes l/y/x).
+        # Layouts and heights compose: 4 layouts × 2 heights = 8 cells.
+        # Height is outer to layout — each (s, h) is one atlas row,
+        # layouts span columns within the row.  Order: (h=0, l=0..3),
+        # (h=1, l=0..3).
         b = Building(name="X", type="res",
                      dims_x=1, dims_y=1, layouts=4, heights=2)
         cells = list(iter_building_cells(b))
         self.assertEqual(cells, [
-            (0, 0, 0, 0), (0, 0, 0, 1),
-            (1, 0, 0, 0), (1, 0, 0, 1),
-            (2, 0, 0, 0), (2, 0, 0, 1),
-            (3, 0, 0, 0), (3, 0, 0, 1),
+            (0, 0, 0, 0, 0), (0, 1, 0, 0, 0),  # h=0: l=0..3
+            (0, 2, 0, 0, 0), (0, 3, 0, 0, 0),
+            (0, 0, 0, 0, 1), (0, 1, 0, 0, 1),  # h=1: l=0..3
+            (0, 2, 0, 0, 1), (0, 3, 0, 0, 1),
+        ])
+
+    def test_iter_cells_seasons_outermost(self):
+        # seasons=2 doubles cells; season is outermost so summer block
+        # comes first, then winter block.  1x1x2 layouts: 2 cells per
+        # season → 4 total.
+        b = Building(name="X", type="res", dims_x=1, dims_y=1,
+                     layouts=2, seasons=2)
+        cells = list(iter_building_cells(b))
+        self.assertEqual(cells, [
+            (0, 0, 0, 0, 0), (0, 1, 0, 0, 0),  # summer: l=0, l=1
+            (1, 0, 0, 0, 0), (1, 1, 0, 0, 0),  # winter: l=0, l=1
         ])
 
 
@@ -444,34 +460,48 @@ class TestEmitBuilding(unittest.TestCase):
         self.assertNotIn("backimage[1]", text)
 
     def test_emits_four_layouts_for_1x1_rotation_variant(self):
-        # 1x1x4 — four rotations of a single tile.  One cell per
-        # layout, atlased as `.<layout>.0`.
+        # 1x1x4 — four rotations of a single tile.  One row × four
+        # columns: layouts span the columns left-to-right.
         b = Building(name="A", type="cur", dims_x=1, dims_y=1, layouts=4)
         text = self._emit(b)
         for l in range(4):
             self.assertIn(
-                f"backimage[{l}][0][0][0][0][0]=./x.{l}.0\n", text)
+                f"backimage[{l}][0][0][0][0][0]=./x.0.{l}\n", text)
 
     def test_emits_rectangular_swaps_y_x_on_odd_layouts(self):
-        # 2x1x2: layout 0 cells (y=0,x=0) (y=0,x=1); layout 1 (swap)
-        # cells (y=0,x=0) (y=1,x=0).
+        # 2x1x2: layout 0 cells at cols 0..1, layout 1 cells at cols 2..3.
+        # `col = l * dims_x*dims_y + y*w + x`.
         b = Building(name="A", type="cur", dims_x=2, dims_y=1)
         text = self._emit(b)
         self.assertIn("backimage[0][0][0][0][0][0]=./x.0.0\n", text)
         self.assertIn("backimage[0][0][1][0][0][0]=./x.0.1\n", text)
-        self.assertIn("backimage[1][0][0][0][0][0]=./x.1.0\n", text)
-        self.assertIn("backimage[1][1][0][0][0][0]=./x.1.1\n", text)
+        self.assertIn("backimage[1][0][0][0][0][0]=./x.0.2\n", text)
+        self.assertIn("backimage[1][1][0][0][0][0]=./x.0.3\n", text)
 
     def test_emits_height_stack_row_index(self):
-        # heights=2 — atlas row = layout * heights + height.
-        # 1x1, layouts=2, heights=2: rows 0..3 = (l,h) = (0,0),(0,1),(1,0),(1,1).
+        # heights=2 — each height is its own atlas row, layouts span
+        # columns.  1x1, layouts=2, heights=2 → 2 rows × 2 cols.
+        # Row = s*heights + h = h; col = l.
         b = Building(name="A", type="res",
                      dims_x=1, dims_y=1, layouts=2, heights=2)
         text = self._emit(b)
-        self.assertIn("backimage[0][0][0][0][0][0]=./x.0.0\n", text)  # l=0 h=0 -> row 0
-        self.assertIn("backimage[0][0][0][1][0][0]=./x.1.0\n", text)  # l=0 h=1 -> row 1
-        self.assertIn("backimage[1][0][0][0][0][0]=./x.2.0\n", text)  # l=1 h=0 -> row 2
-        self.assertIn("backimage[1][0][0][1][0][0]=./x.3.0\n", text)  # l=1 h=1 -> row 3
+        self.assertIn("backimage[0][0][0][0][0][0]=./x.0.0\n", text)  # h=0 l=0
+        self.assertIn("backimage[1][0][0][0][0][0]=./x.0.1\n", text)  # h=0 l=1
+        self.assertIn("backimage[0][0][0][1][0][0]=./x.1.0\n", text)  # h=1 l=0
+        self.assertIn("backimage[1][0][0][1][0][0]=./x.1.1\n", text)  # h=1 l=1
+
+    def test_emits_seasons_top_summer_bottom_winter(self):
+        # 1x1x4 layouts, seasons=2 → 2 rows × 4 cols.  Summer cells
+        # (season=0) land on row 0; winter cells (season=1) land on
+        # row 1.  Matches upstream `1600-detatched-house-2f.png`.
+        b = Building(name="A", type="res",
+                     dims_x=1, dims_y=1, layouts=4, seasons=2)
+        text = self._emit(b)
+        for l in range(4):
+            self.assertIn(
+                f"backimage[{l}][0][0][0][0][0]=./x.0.{l}\n", text)  # summer
+            self.assertIn(
+                f"backimage[{l}][0][0][0][0][1]=./x.1.{l}\n", text)  # winter
 
     def test_emits_set_scalars_in_field_order(self):
         b = Building(name="A", type="mon", copyright="Kieron",

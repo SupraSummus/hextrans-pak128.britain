@@ -388,14 +388,19 @@ def building_hex_viewpoint(
     """
     step = 360.0 / layouts
     facings: list[Facing] = []
-    for l in range(layouts):
-        if l & 1:
-            yh, xw = dims_x, dims_y
-        else:
-            yh, xw = dims_y, dims_x
-        for y in range(yh):
-            for x in range(xw):
-                for h in range(heights):
+    # Iteration order `h, l, y, x` mirrors `pak.dat.iter_building_cells`
+    # within a single season — each (h) becomes one atlas row, with
+    # layouts spanning columns left-to-right (each layout block is a
+    # `dims_x*dims_y`-wide footprint).  See `emit_building`'s col
+    # formula `l * dims_x*dims_y + y * w + x`.
+    for h in range(heights):
+        for l in range(layouts):
+            if l & 1:
+                yh, xw = dims_x, dims_y
+            else:
+                yh, xw = dims_y, dims_x
+            for y in range(yh):
+                for x in range(xw):
                     wx, wy = hex_tile_world_offset(qx=x, ry=y)
                     facings.append(Facing(
                         label=f"L{l}_Y{y}_X{x}_H{h}",

@@ -15,9 +15,9 @@ class_proportion[2]=65
 class_proportion[3]=15
 class_proportion[4]=0
 backimage[0][0][0][0][0][0]=./res_kg_1870_townhouse.0.0
-backimage[1][0][0][0][0][0]=./res_kg_1870_townhouse.1.0
-backimage[2][0][0][0][0][0]=./res_kg_1870_townhouse.2.0
-backimage[3][0][0][0][0][0]=./res_kg_1870_townhouse.3.0
-backimage[4][0][0][0][0][0]=./res_kg_1870_townhouse.4.0
-backimage[5][0][0][0][0][0]=./res_kg_1870_townhouse.5.0
+backimage[1][0][0][0][0][0]=./res_kg_1870_townhouse.0.1
+backimage[2][0][0][0][0][0]=./res_kg_1870_townhouse.0.2
+backimage[3][0][0][0][0][0]=./res_kg_1870_townhouse.0.3
+backimage[4][0][0][0][0][0]=./res_kg_1870_townhouse.0.4
+backimage[5][0][0][0][0][0]=./res_kg_1870_townhouse.0.5
 ----------

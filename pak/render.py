@@ -466,6 +466,25 @@ def _bake_world_into_meshes(bpy, mathutils):
 
     rendered = [o for o in scn.objects if o.type == "MESH" and renders(o)]
 
+    # Several upstream `-snow.blend` siblings (e.g. `citybuildings/
+    # 1600-detatched-house-2f-snow.blend`) ship with their geometry
+    # collection set to `hide_render=True` — JP toggles visibility
+    # manually before rendering interactively, and the saved state
+    # carries the off-toggle.  When the per-collection filter rejects
+    # every mesh, lift `hide_render` on every collection containing a
+    # mesh whose own `hide_render` is False — Blender's renderer
+    # itself respects collection.hide_render regardless of our vertex
+    # transforms, so we have to flip the flag, not just the filter.
+    # Same principle as the film_transparent / RGBA forcing in
+    # `_install_camera_and_sun`: don't trust the blend's saved state
+    # when it's the engine-substitute-default we know is wrong.
+    if not rendered:
+        for c in bpy.data.collections:
+            if any(o.type == "MESH" and not o.hide_render for o in c.objects):
+                c.hide_render = False
+        cache.clear()
+        rendered = [o for o in scn.objects if o.type == "MESH" and renders(o)]
+
     # Snapshot every matrix_world before any mutation: mutating a
     # parent's transform mid-loop silently shifts its children's
     # effective world position.

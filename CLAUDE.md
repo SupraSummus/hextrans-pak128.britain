@@ -952,14 +952,41 @@ default when Z is omitted: `layouts = (size.x == size.y) ? 1
 `h = (l & 1) ? size.x : size.y`.  `pak.dat.layouts_default` and
 `pak.dat.iter_building_cells` mirror this.
 
-**Atlas layout.**  `emit_building` writes one atlas row per
-layout with `dims_x * dims_y` cells per row.  Cell `(l, y, x)`
-lands at `./<basename>.<l>.<col>` where `col = y * w + x` and
-`w = (l & 1) ? dims_y : dims_x` (the layout's *width* under the
-engine's swap rule).  The `iter_building_cells` order is
-canonical for both the dat-side emit and the renderer-side
-facing list — keep them in sync or the wrong sprite paints per
-tile.
+**Atlas layout.**  `seasons*heights` rows × `layouts*dims_x*dims_y`
+cols.  Row formula `s * heights + h` — each season is a
+`heights`-row stripe (summer on top, winter under).  Col formula
+`l * dims_x*dims_y + y * w + x` — layouts span columns
+left-to-right; within a layout block, `w = (l & 1) ? dims_y :
+dims_x` per the engine's swap rule.  For the 1x1xN-layout
+single-height single-season case (most current ports) the result
+is one row × N cols.  The `iter_building_cells` order
+(`s, h, l, y, x`) is canonical for both the dat-side emit and the
+renderer-side facing list — keep them in sync or the wrong
+sprite paints per tile.
+
+**Seasons.**  Buildings opt in to winter via `SPEC.seasons = 2`
+plus a sibling `BLEND_WINTER` + `MATERIALS_WINTER` pair in the
+bake script.  The upstream `-snow.blend` convention is JP's
+own: each blend-sourced building that has winter art ships an
+adjacent `<name>-snow.blend` with the same geometry but
+reshuffled materials (Roof texture dropped for procedural snow
+noise, brick desaturated, ground textured for snow, etc.); the
+upstream render script has no season logic, just feeds the snow
+blend through the same pipeline.  We mirror this:
+`bake_building` runs two `blender -b -P render.py` subprocesses
+when `seasons >= 2`, one per blend, and `_stitch_seasons`
+vertically concatenates the per-season PNGs (summer on top).
+Seed `MATERIALS_WINTER` via `python3 -m pak.extract_materials
+<winter-blend>`.
+
+A landmine specific to the `-snow.blend` siblings: many ship
+with their geometry collection saved at `hide_render=True` (JP
+toggles visibility interactively before rendering, and the saved
+state carries the off-toggle).  `pak.render._bake_world_into_meshes`
+falls back to lifting `collection.hide_render` on every collection
+holding a non-hidden mesh when the per-collection filter yields
+zero meshes — Blender's renderer respects the collection flag
+regardless of our vertex transforms.
 
 **Per-cell rendering.**  `viewpoints.building_hex_viewpoint
 (layouts, dims_x, dims_y)` returns a Viewpoint with one Facing
