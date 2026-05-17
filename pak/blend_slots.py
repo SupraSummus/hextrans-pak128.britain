@@ -25,7 +25,6 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 # DNA_texture_types.h constants.  TEXCO_ORCO/_GLOB/_UV are the three the
 # Britain blends actually use; full enum is wider.
 TEXCO_ORCO = 1
@@ -153,7 +152,6 @@ class _Parser:
         assert b.read(4) == b"STRC"
         ns = struct.unpack(self.endian + "I", b.read(4))[0]
         self.structs: dict[str, _StructDef] = {}
-        type_index = {t: i for i, t in enumerate(types)}
         for _ in range(ns):
             type_idx, n_fields = struct.unpack(self.endian + "HH", b.read(4))
             type_name = types[type_idx]

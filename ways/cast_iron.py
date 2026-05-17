@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # As invented by William Jessop.
 # https://en.wikipedia.org/wiki/Wagonway#Metal_rails_introduced
 SPEC = Way(

@@ -1,0 +1,21 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".cache", "out"]
+
+[tool.ruff.lint]
+# F: real bugs (undefined names, unused imports).
+# E/W: pycodestyle, with stylistic-only rules dropped (E501 line length,
+# E702 intentional terse `a; b` pairs, E741 `l` matches the engine's
+# layout-loop convention -- see CLAUDE.md "Building-bake architecture").
+# I: import sorting (subsumes isort).
+# UP: pyupgrade -- modernise typing.Optional, quoted annotations, etc.
+select = ["F", "E", "W", "I", "UP"]
+ignore = ["E501", "E702", "E741"]
+
+[tool.ruff.lint.isort]
+# Preserve the codebase's existing dense multi-symbol-per-line imports
+# (`from .way import (HEX_CORNERS, HEX_EDGES, edge_midpoint, ...)`) instead
+# of expanding to one symbol per line on every trailing comma.
+combine-as-imports = true
+split-on-trailing-comma = false

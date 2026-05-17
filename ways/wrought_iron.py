@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # Ahrons p. 95 suggests 55 lb/yard, but axle loading is too low at
 # that figure -- 60 lb/yard fits better.
 SPEC = Way(

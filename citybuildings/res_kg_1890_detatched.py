@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_building_main
 from pak.dat import Building
 
-
 # Low density townhouses.
 SPEC = Building(
     name="RES_KG_1890_00_02",

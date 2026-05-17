@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 97 1/2 lb/yard as on the GWR -- for 20 t axle loads.
 SPEC = Way(
     name='wssri_intermediate',

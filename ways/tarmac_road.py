@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 0.5 msa.
 SPEC = Way(
     name="tarmac_road",

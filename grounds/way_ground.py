@@ -30,7 +30,9 @@ import numpy as np
 
 from pak import hex_synth
 from pak.hex_synth import (
-    NS, NE_SW, NW_SE,
+    NE_SW,
+    NS,
+    NW_SE,
     HexGeom,
     axis_h_way,
     fill_polygon,
@@ -39,7 +41,6 @@ from pak.hex_synth import (
     seal_horizontal_edges,
 )
 from pak.lightmap import brightness_to_grey_rgb
-
 
 _AXIS_LABELS = {NS: "NS", NE_SW: "NE_SW", NW_SE: "NW_SE"}
 

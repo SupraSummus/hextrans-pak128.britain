@@ -16,7 +16,6 @@ from typing import Any
 
 from pak import REPO_ROOT
 
-
 _SKIP_DIRS = {"pak", "tests", "grounds", "pak1file", "simutranslator",
               ".cache", "build", "__pycache__"}
 

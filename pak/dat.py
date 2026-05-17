@@ -47,7 +47,6 @@ from typing import Any
 
 from pak.way import HEX_ENTRIES
 
-
 _INDEX_RE = re.compile(r"\[([^\]]*)\]")
 _TERMINATOR_RE = re.compile(r"^-+\s*$")
 

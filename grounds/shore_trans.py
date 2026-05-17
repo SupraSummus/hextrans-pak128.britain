@@ -36,7 +36,6 @@ import numpy as np
 
 from pak import hex_synth
 
-
 # ALPHA_RED-keyed two-colour palette.  Engine reads only the red
 # channel as alpha; blue's RGB doesn't matter beyond `R == 0`.
 SHORE_RED  = np.array([255, 0,   0,   255], dtype=np.uint8)

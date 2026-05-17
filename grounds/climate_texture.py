@@ -20,7 +20,6 @@ from pathlib import Path
 
 from pak.fetch_pak import fetch
 
-
 UPSTREAM = "grounds/images/texture-climate.png"
 CLIMATES = (
     "sea", "desert", "tropic", "mediterran",

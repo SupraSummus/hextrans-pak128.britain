@@ -40,7 +40,6 @@ from pathlib import Path
 
 from pak import REPO_ROOT
 
-
 HERE = Path(__file__).resolve().parent
 # Worst-of-best across `res_1600_kg_01`'s four layouts measures 0.905;
 # the residual is a Cycles-vs-Blender-internal renderer interior shading
@@ -66,7 +65,6 @@ def _silhouette_mask(rgba):
     cutoff lost ~6% of our silhouette to its own edge AA and dragged
     measured IoU from 0.94 down to 0.92 even though bboxes match
     upstream within ±1 px."""
-    import numpy as np
     a = rgba[..., 3] > 0
     r, g, b = rgba[..., 0], rgba[..., 1], rgba[..., 2]
     pink = ((r == _TRANSPARENT_RGB[0])

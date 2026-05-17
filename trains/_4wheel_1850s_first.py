@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_main
 from pak.dat import Vehicle
 
-
 SPEC = Vehicle(
     name="4-wheel-1850s-first",
     waytype="track",

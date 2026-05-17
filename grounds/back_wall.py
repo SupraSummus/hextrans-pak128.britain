@@ -33,7 +33,6 @@ import numpy as np
 
 from pak import hex_synth
 
-
 WALL_COUNT = 3
 IMAGE_COUNT = hex_synth.CLIFF_IMAGE_COUNT
 

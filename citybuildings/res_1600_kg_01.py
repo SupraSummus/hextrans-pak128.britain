@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_building_main
 from pak.dat import Building
 
-
 # Artisan's cottage, perhaps: large, double-fronted.
 # Population: estimate 12 per house (including servants) x 5 (low
 # density, large gardens) yields 75, / 16 hours * 6.4 hours = 30;

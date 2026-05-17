@@ -44,7 +44,6 @@ from pak.hex_synth import (
 )
 from pak.render import Facing, Viewpoint
 
-
 # Upstream sun lamp energy, from Lamp.001 in the Britain blends.  Matching
 # this keeps the calibration diff's mean|dRGB| meaningful -- a different
 # energy would shift every rendered pixel and inflate the residual without

@@ -13,8 +13,11 @@ import unittest
 
 from pak.hex_synth import find_min_partition
 from pak.square_synth import (
-    NE, NW, SE, SW,
+    NE,
+    NW,
+    SE,
     SQUARE_SLOPE_COUNT,
+    SW,
     SquareGeom,
     square_decode_corner_heights,
     square_iter_valid_slopes,

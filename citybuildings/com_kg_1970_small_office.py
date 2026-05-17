@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_building_main
 from pak.dat import Building
 
-
 # Two-storey office block.
 SPEC = Building(
     name="COM_KG_1970_00_08",

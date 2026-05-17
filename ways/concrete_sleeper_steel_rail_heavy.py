@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 130 lb/yard.  For heavy wagons and general duties, not high speed.
 SPEC = Way(
     name='cssr_heavy',

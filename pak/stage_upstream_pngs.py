@@ -31,7 +31,6 @@ from pathlib import Path
 from . import REPO_ROOT
 from .fetch_pak import fetch
 
-
 # Captures `<basename>` from `Image[...]=<basename>.<row>.<col>` with
 # optional layer brackets, optional leading `>` or `./`, and an
 # optional `.<z>` suffix.  Covers gui flat refs

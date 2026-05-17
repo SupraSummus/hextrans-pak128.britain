@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 95 lb/yard -- the standard weight of rail for many years.
 SPEC = Way(
     name='wssri',

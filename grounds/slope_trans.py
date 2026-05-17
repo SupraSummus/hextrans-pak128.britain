@@ -42,7 +42,6 @@ import numpy as np
 
 from pak import hex_synth
 
-
 SLOPE_RED   = np.array([255, 0,   0,   255], dtype=np.uint8)
 SLOPE_GREEN = np.array([0,   255, 0,   255], dtype=np.uint8)
 SLOPE_BLUE  = np.array([0,   0,   255, 255], dtype=np.uint8)

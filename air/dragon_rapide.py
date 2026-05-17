@@ -11,7 +11,6 @@ from __future__ import annotations
 from pak.bake import bake_main
 from pak.dat import Vehicle
 
-
 # https://en.wikipedia.org/wiki/De_Havilland_Dragon_Rapide
 # http://www.aviacaocomercial.net/english/frotavarig.htm
 PASSENGER = Vehicle(

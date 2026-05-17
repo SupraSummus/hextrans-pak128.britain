@@ -22,9 +22,8 @@ or, without pytest installed:
 
 from __future__ import annotations
 
-import unittest
-
 import math
+import unittest
 
 from pak.way import (
     HEX_ENTRIES,
@@ -33,11 +32,11 @@ from pak.way import (
     SLOPE_HEX_ENTRIES,
     SLOPE_HEX_HALF_DOUBLE_ENTRIES,
     SLOPE_HEX_HALF_ENTRIES,
+    edge_midpoint,
     hex_clip_planes,
     ribi_edges,
     ribi_label,
 )
-from pak.way import edge_midpoint
 from pak.way_topology import (
     atom_offsets_along_path,
     cap_plane,
@@ -261,8 +260,7 @@ class _ProjectionInvariants:
 
     def _paths(self):
         for _, edges in self.entries:
-            for path in self.for_edges_paths(edges):
-                yield path
+            yield from self.for_edges_paths(edges)
 
     def test_chord_length_matches_endpoints(self):
         for path in self._paths():

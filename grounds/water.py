@@ -22,7 +22,6 @@ import numpy as np
 
 from pak import hex_synth
 
-
 N_DEPTHS = 6
 N_STAGES = 32
 

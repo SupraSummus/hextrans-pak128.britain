@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 80 lb/yard.  Original steel rails from the 1870s onwards should
 # be 80 lb/yard -- see Ahrons p. 185.
 SPEC = Way(

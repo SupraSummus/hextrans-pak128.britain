@@ -32,7 +32,6 @@ from pak import REPO_ROOT
 from pak.fetch_blend import fetch as fetch_blend
 from pak.fetch_pak import fetch as fetch_pak
 
-
 # Each pairing: which facing(s) of our render get composited (via
 # silhouette OR for multi-facing entries) and which upstream basename
 # they diff against.

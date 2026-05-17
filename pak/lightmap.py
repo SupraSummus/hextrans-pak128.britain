@@ -21,7 +21,6 @@ stay in lockstep.
 """
 from __future__ import annotations
 
-
 # Engine reserved palette (engine `descriptor/image.cc::rgbtab`).  Any
 # opaque pixel whose RGB888 matches one of these is encoded by makeobj
 # (`descriptor/writer/image_writer.cc::pixrgb_to_pixval`) as a

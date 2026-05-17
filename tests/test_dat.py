@@ -31,7 +31,6 @@ from pak.dat import (
     seed_python,
 )
 
-
 SAMPLE_MULTI_OBJ = """\
 # A header comment.
 obj=vehicle

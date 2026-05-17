@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 82 lb/yard.
 # http://www.archive.org/stream/steelrailstheir02sellgoog/steelrailstheir02sellgoog_djvu.txt
 SPEC = Way(

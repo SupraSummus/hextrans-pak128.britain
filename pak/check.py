@@ -29,7 +29,6 @@ from pak import REPO_ROOT, diff_buildings, diff_upstream
 from pak.bake_units import specs_of
 from pak.dat import Building
 
-
 _SKIP_DIRS = {"pak", "tests", "out", ".cache", ".git"}
 
 
@@ -83,6 +82,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
         # (e.g. an upstream-8 atlas would still diff against our 4
         # cardinals -- diagonals are deferred until they ship).
         from PIL import Image
+
         from pak.fetch_pak import fetch as fetch_pak
         with Image.open(fetch_pak(stem)) as im:
             up_w = im.size[0]

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # Necessary for the larger steam locomotives of 21--22 t axle loads.
 # 22 t axle loads need at least 110 lb/yard, but set to 109 here to
 # distinguish from later flat-bottomed 110 lb/yard rail.

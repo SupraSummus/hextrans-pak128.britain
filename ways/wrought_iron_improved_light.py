@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # ~75 lb/yard -- see Ahrons p. 95.
 SPEC = Way(
     name='wrought_iron_improved_light_track',

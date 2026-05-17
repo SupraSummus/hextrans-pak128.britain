@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # As used on the original Liverpool & Manchester Railway.  35 lb/yard.
 # Rainhill suggests a 27 km/h limit, but higher speeds on the LMR
 # (laid with this track initially until 1835) are recorded in many
