@@ -39,6 +39,7 @@ import sys
 from pathlib import Path
 
 from pak import REPO_ROOT
+from pak.diff import MAGIC_PINK, drgb_intersection, iou, silhouette_mask
 
 HERE = Path(__file__).resolve().parent
 # Worst-of-best across `res_1600_kg_01`'s four layouts measures 0.905;
@@ -47,30 +48,16 @@ HERE = Path(__file__).resolve().parent
 # the investigation).  Floor at 0.88 gives a ~0.025-IoU margin matching
 # `diff_upstream.FAIL_IOU = 0.90`'s relation to the 0.93 vehicle band.
 FAIL_IOU = 0.88
-_TRANSPARENT_RGB = (231, 255, 255)
 
 
 def _silhouette_mask(rgba):
-    """Boolean (H, W) mask of opaque-and-non-transparent-key pixels.
-
-    Our renders carry alpha; upstream PNGs are RGB with magic-pink.
-    Both arrive after `.convert('RGBA')` (so the shape is always (h, w,
-    4)), but PIL fills alpha=255 across the board when converting from
-    RGB -- so for upstream the magic-pink check is what actually
-    discriminates silhouette from background.
-
-    Alpha threshold is `> 0` (not the previous `> 16`) so EEVEE-rendered
-    edges with soft anti-aliasing don't get dropped while upstream's
-    matching AA pixels (non-magic-pink RGB) stay in.  The previous
-    cutoff lost ~6% of our silhouette to its own edge AA and dragged
-    measured IoU from 0.94 down to 0.92 even though bboxes match
-    upstream within ±1 px."""
-    a = rgba[..., 3] > 0
-    r, g, b = rgba[..., 0], rgba[..., 1], rgba[..., 2]
-    pink = ((r == _TRANSPARENT_RGB[0])
-            & (g == _TRANSPARENT_RGB[1])
-            & (b == _TRANSPARENT_RGB[2]))
-    return a & ~pink
+    """Buildings calibrate at `alpha_threshold=0` (not the historical
+    16 used by vehicles): EEVEE soft-AA edges otherwise lose ~6% of
+    the silhouette and drag IoU from 0.94 to 0.92 even though bboxes
+    match upstream within +-1 px.  Upstream building PNGs key
+    transparency by `MAGIC_PINK` rather than alpha, so we pass that
+    too -- our renders carry alpha and won't match the key colour."""
+    return silhouette_mask(rgba, alpha_threshold=0, magic_rgb=MAGIC_PINK)
 
 
 def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
@@ -108,13 +95,6 @@ def _split_upstream(up_png: Path, layouts: int):
     return [full[0:128, c * 128:(c + 1) * 128] for c in range(layouts)]
 
 
-def _iou(mask_a, mask_b) -> float:
-    """Silhouette intersection-over-union."""
-    inter = (mask_a & mask_b).sum()
-    union = (mask_a | mask_b).sum()
-    return float(inter) / max(int(union), 1)
-
-
 def _load_our_renders(our_dir: Path, name: str, layouts: int):
     """Per-layout RGBA arrays produced by `_render`."""
     import numpy as np
@@ -131,24 +111,13 @@ def _load_our_renders(our_dir: Path, name: str, layouts: int):
 def _iou_matrix(our_masks, up_masks):
     """N x N silhouette IoU matrix (rows = our layout, cols = upstream col)."""
     import numpy as np
+
     n = len(our_masks)
     mat = np.zeros((n, n), dtype=np.float64)
     for l in range(n):
         for c in range(n):
-            mat[l, c] = _iou(our_masks[l], up_masks[c])
+            mat[l, c] = iou(our_masks[l], up_masks[c])
     return mat
-
-
-def _drgb_intersection(our_rgba, up_rgba, our_mask, up_mask) -> float:
-    """Mean abs(RGB-delta) over the silhouette intersection -- mirrors
-    `diff_upstream.py`'s `drgb`.  Returns NaN if intersection is empty."""
-    import numpy as np
-    inter = our_mask & up_mask
-    if not inter.any():
-        return float("nan")
-    a = our_rgba[..., :3].astype(np.int16)
-    b = up_rgba[..., :3].astype(np.int16)
-    return float(np.abs(a[inter] - b[inter]).mean())
 
 
 def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
@@ -156,20 +125,14 @@ def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
     """Three-row grid (ours / upstream-best-match / silhouette XOR) so
     contour drift is visible at a glance.  Same shape as
     `diff_upstream.py::_compose`'s output."""
-    import numpy as np
     from PIL import Image, ImageDraw
+
+    from pak.diff import checker, xor_image
 
     CELL, PAD, LH = 128, 8, 18
     cols, rows = len(our_rgba), 3
     W = cols * (CELL + PAD) + PAD
     H = rows * (CELL + PAD) + PAD + LH
-
-    def checker(sz, c1=(210, 210, 210), c2=(180, 180, 180), step=8):
-        a = np.zeros((sz, sz, 3), dtype=np.uint8)
-        ys, xs = np.indices((sz, sz))
-        mask = ((xs // step + ys // step) % 2 == 0)
-        a[mask] = c1; a[~mask] = c2
-        return Image.fromarray(a, "RGB").convert("RGBA")
 
     bg = checker(CELL)
     grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
@@ -181,9 +144,9 @@ def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
         # Strip magic-pink before pasting upstream cell so the
         # checker background reads through.
         up_cell = up_cells[up_idx].copy()
-        pink = ((up_cell[..., 0] == _TRANSPARENT_RGB[0])
-                & (up_cell[..., 1] == _TRANSPARENT_RGB[1])
-                & (up_cell[..., 2] == _TRANSPARENT_RGB[2]))
+        pink = ((up_cell[..., 0] == MAGIC_PINK[0])
+                & (up_cell[..., 1] == MAGIC_PINK[1])
+                & (up_cell[..., 2] == MAGIC_PINK[2]))
         up_cell[pink, 3] = 0
         x = PAD + i * (CELL + PAD)
         grid.paste(Image.alpha_composite(bg, Image.fromarray(ours, "RGBA")),
@@ -191,16 +154,8 @@ def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
         grid.paste(Image.alpha_composite(bg, Image.fromarray(up_cell, "RGBA")),
                    (x, LH + PAD + CELL + PAD))
 
-        # Silhouette XOR: red = ours-only, blue = upstream-only,
-        # grey = intersection.
-        inter = our_masks[i] & up_masks[up_idx]
-        only_ours = our_masks[i] & ~up_masks[up_idx]
-        only_up = up_masks[up_idx] & ~our_masks[i]
-        xor_img = np.zeros((CELL, CELL, 4), dtype=np.uint8)
-        xor_img[only_ours] = (230, 60, 60, 255)
-        xor_img[only_up] = (60, 90, 230, 255)
-        xor_img[inter] = (180, 180, 180, 255)
-        grid.paste(Image.fromarray(xor_img, "RGBA"),
+        grid.paste(Image.fromarray(xor_image(our_masks[i], up_masks[up_idx]),
+                                   "RGBA"),
                    (x, LH + PAD + 2 * (CELL + PAD)))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,8 +198,8 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
     mat = _iou_matrix(our_masks, up_masks)
     perm = _best_permutation(mat)
     drgb_per_layout = [
-        _drgb_intersection(our_rgba[l], up_cells[perm[l]],
-                           our_masks[l], up_masks[perm[l]])
+        drgb_intersection(our_rgba[l], up_cells[perm[l]],
+                          our_masks[l], up_masks[perm[l]])
         for l in range(len(our_rgba))
     ]
     _compose_grid(our_rgba, up_cells, our_masks, up_masks, perm,

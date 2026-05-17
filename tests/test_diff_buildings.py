@@ -1,9 +1,10 @@
-"""Tests for `pak.diff_buildings` -- the building calibration harness.
+"""Tests for `pak.diff_buildings` -- the building-specific calibration
+logic (atlas slicing, IoU matrix, permutation discovery, summary
+stats).
 
-The Blender-driven render half is exercised end-to-end manually
-via `python3 -m pak.check citybuildings/res_1600_kg_01.py`; these
-tests cover the slicing + mask + matrix + permutation logic that
-runs after the render.
+Shared mask/IoU primitives are tested in `tests/test_diff.py`.  The
+Blender-driven render half is exercised end-to-end via `python3 -m
+pak.check citybuildings/<asset>.py`.
 
 Run from the repo root:
 
@@ -18,39 +19,7 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 from PIL import Image
 
-from pak.diff_buildings import (
-    _best_permutation,
-    _iou,
-    _iou_matrix,
-    _silhouette_mask,
-    _split_upstream,
-    summarise,
-)
-
-
-class TestSilhouetteMask(unittest.TestCase):
-    """Both upstream (RGB + magic-pink) and ours (RGBA) classify
-    pixels via the same `_silhouette_mask`; the test pins the
-    convention against synthetic atlases."""
-
-    def test_alpha_drives_mask_for_rendered_output(self):
-        rgba = np.zeros((4, 4, 4), dtype=np.uint8)
-        rgba[1:3, 1:3, 3] = 255
-        m = _silhouette_mask(rgba)
-        self.assertEqual(m.sum(), 4)
-
-    def test_magic_pink_treated_as_transparent_even_at_full_alpha(self):
-        # PIL .convert("RGBA") on a magic-pink RGB pixel emits
-        # (231, 255, 255, 255) -- the mask must strip those out
-        # despite alpha=255, or upstream's whole 128x128 cell
-        # looks like silhouette.
-        rgba = np.zeros((2, 2, 4), dtype=np.uint8)
-        rgba[..., :3] = [231, 255, 255]
-        rgba[..., 3] = 255
-        rgba[0, 0, :3] = [12, 34, 56]
-        m = _silhouette_mask(rgba)
-        self.assertEqual(m.sum(), 1)
-        self.assertTrue(m[0, 0])
+from pak.diff_buildings import _best_permutation, _iou_matrix, _split_upstream, summarise
 
 
 class TestSplitUpstream(unittest.TestCase):
@@ -79,24 +48,6 @@ class TestSplitUpstream(unittest.TestCase):
             Image.fromarray(arr, "RGB").save(fp.name)
             with self.assertRaisesRegex(SystemExit, "needs at least"):
                 _split_upstream(fp.name, layouts=4)
-
-
-class TestIoU(unittest.TestCase):
-    def test_full_match(self):
-        m = np.array([[True, True], [True, False]])
-        self.assertEqual(_iou(m, m), 1.0)
-
-    def test_disjoint(self):
-        a = np.array([[True, False], [False, False]])
-        b = np.array([[False, True], [False, False]])
-        self.assertEqual(_iou(a, b), 0.0)
-
-    def test_empty_returns_zero_not_nan(self):
-        # The silhouette IoU maxes the union to 1 so we never
-        # divide by zero (diff_upstream's colour metric returns
-        # nan for empty intersection; this one stays defined).
-        z = np.zeros((4, 4), dtype=bool)
-        self.assertEqual(_iou(z, z), 0.0)
 
 
 class TestBestPermutation(unittest.TestCase):

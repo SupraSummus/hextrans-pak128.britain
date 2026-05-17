@@ -93,17 +93,12 @@ def _compose(ours_dir: Path, up_paths: dict[str, Path], name: str, views: list[s
     import numpy as np
     from PIL import Image, ImageDraw
 
+    from pak.diff import checker, drgb_intersection, iou, silhouette_mask, xor_image
+
     CELL, PAD, LH = 128, 8, 18
     cols, rows = len(views), 3
     W = cols * (CELL + PAD) + PAD
     H = rows * (CELL + PAD) + PAD + LH
-
-    def checker(sz, c1=(210, 210, 210), c2=(180, 180, 180), step=8):
-        a = np.zeros((sz, sz, 3), dtype=np.uint8)
-        ys, xs = np.indices((sz, sz))
-        mask = ((xs // step + ys // step) % 2 == 0)
-        a[mask] = c1; a[~mask] = c2
-        return Image.fromarray(a, "RGB").convert("RGBA")
 
     bg = checker(CELL)
     grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
@@ -120,26 +115,17 @@ def _compose(ours_dir: Path, up_paths: dict[str, Path], name: str, views: list[s
         a = np.asarray(ours, dtype=np.int16)
         b = np.asarray(up, dtype=np.int16)
 
-        am = a[:, :, 3] > 16; bm = b[:, :, 3] > 16
-        inter = am & bm
-        union = am | bm
-        only_ours = am & ~bm
-        only_up = bm & ~am
-        iou = float(inter.sum()) / max(int(union.sum()), 1)
-        xor_px = int(only_ours.sum() + only_up.sum())
-        if inter.any():
-            drgb = float(np.abs(a[inter][:, :3] - b[inter][:, :3]).mean())
-        else:
-            drgb = float("nan")
-        metrics.append(FacingMetric(facing=v, iou=iou, xor_px=xor_px, drgb=drgb))
-
-        # Contour-XOR visualisation: red = ours-only, blue = upstream-only,
-        # grey = silhouette intersection (so geometry drift pops out cleanly).
-        xor_img = np.zeros((CELL, CELL, 4), dtype=np.uint8)
-        xor_img[only_ours] = (230, 60, 60, 255)
-        xor_img[only_up] = (60, 90, 230, 255)
-        xor_img[inter] = (180, 180, 180, 255)
-        grid.paste(Image.fromarray(xor_img, "RGBA"), (x, LH + PAD + 2 * (CELL + PAD)))
+        am = silhouette_mask(a, alpha_threshold=16)
+        bm = silhouette_mask(b, alpha_threshold=16)
+        xor_px = int((am ^ bm).sum())
+        metrics.append(FacingMetric(
+            facing=v,
+            iou=iou(am, bm),
+            xor_px=xor_px,
+            drgb=drgb_intersection(a, b, am, bm),
+        ))
+        grid.paste(Image.fromarray(xor_image(am, bm), "RGBA"),
+                   (x, LH + PAD + 2 * (CELL + PAD)))
 
     out_grid.parent.mkdir(parents=True, exist_ok=True)
     grid.save(out_grid)

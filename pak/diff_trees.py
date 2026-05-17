@@ -78,17 +78,12 @@ def _compose(
     import numpy as np
     from PIL import Image, ImageDraw
 
+    from pak.diff import checker, drgb_intersection, iou, silhouette_mask, xor_image
+
     CELL, PAD, LH = 128, 8, 18
     cols, rows = ages, seasons * 3  # ours / upstream / XOR per season
     W = cols * (CELL + PAD) + PAD
     H = rows * (CELL + PAD) + PAD + LH
-
-    def checker(sz, c1=(210, 210, 210), c2=(180, 180, 180), step=8):
-        a = np.zeros((sz, sz, 3), dtype=np.uint8)
-        ys, xs = np.indices((sz, sz))
-        mask = ((xs // step + ys // step) % 2 == 0)
-        a[mask] = c1; a[~mask] = c2
-        return Image.fromarray(a, "RGB").convert("RGBA")
 
     bg = checker(CELL)
     grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
@@ -109,23 +104,15 @@ def _compose(
 
             a_arr = np.asarray(ours, dtype=np.int16)
             b_arr = np.asarray(up, dtype=np.int16)
-            am = a_arr[..., 3] > 16
-            bm = b_arr[..., 3] > 16
-            inter = am & bm
-            union = am | bm
-            only_ours = am & ~bm
-            only_up = bm & ~am
-            iou = float(inter.sum()) / max(int(union.sum()), 1)
-            xor_px = int(only_ours.sum() + only_up.sum())
-            drgb = (float(np.abs(a_arr[inter][:, :3] - b_arr[inter][:, :3]).mean())
-                    if inter.any() else float("nan"))
-            metrics.append(CellMetric(age=a, season=s, iou=iou, xor_px=xor_px, drgb=drgb))
-
-            xor_img = np.zeros((CELL, CELL, 4), dtype=np.uint8)
-            xor_img[only_ours] = (230, 60, 60, 255)
-            xor_img[only_up] = (60, 90, 230, 255)
-            xor_img[inter] = (180, 180, 180, 255)
-            grid.paste(Image.fromarray(xor_img, "RGBA"),
+            am = silhouette_mask(a_arr, alpha_threshold=16)
+            bm = silhouette_mask(b_arr, alpha_threshold=16)
+            metrics.append(CellMetric(
+                age=a, season=s,
+                iou=iou(am, bm),
+                xor_px=int((am ^ bm).sum()),
+                drgb=drgb_intersection(a_arr, b_arr, am, bm),
+            ))
+            grid.paste(Image.fromarray(xor_image(am, bm), "RGBA"),
                        (col_x, row_y0 + 2 * (CELL + PAD)))
 
     out_grid.parent.mkdir(parents=True, exist_ok=True)
