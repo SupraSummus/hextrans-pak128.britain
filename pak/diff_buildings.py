@@ -61,7 +61,7 @@ def _silhouette_mask(rgba):
 
 
 def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
-            materials: dict | None = None) -> None:
+            materials: dict | None = None, lighting=None) -> None:
     script = HERE / "render.py"
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
@@ -75,6 +75,9 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
 
         from pak.materials import to_jsonable
         cmd += ["--materials", json.dumps(to_jsonable(materials))]
+    if lighting is not None:
+        import json
+        cmd += ["--lighting", json.dumps(lighting.to_jsonable())]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
 
@@ -184,7 +187,8 @@ def _best_permutation(mat) -> list[int]:
 
 def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
         materials: dict | None = None, season_row: int = 0,
-        grid_name: str = "grid.png"):
+        grid_name: str = "grid.png", blur_sigma: float = 3.0,
+        lighting=None):
     """Render `blend` through `square_building`, diff each layout
     against `upstream_png`'s columns, return (matrix, permutation, drgb).
 
@@ -200,7 +204,8 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)
     render_name = Path(blend).stem
-    _render(blend_path, out_dir, render_name, layouts, materials=materials)
+    _render(blend_path, out_dir, render_name, layouts,
+            materials=materials, lighting=lighting)
     up_path = fetch_pak(upstream_png)
     up_cells = _split_upstream(up_path, layouts, season_row=season_row)
     our_rgba = _load_our_renders(out_dir, render_name, layouts)
@@ -210,7 +215,8 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
     perm = _best_permutation(mat)
     drgb_per_layout = [
         drgb_intersection(our_rgba[l], up_cells[perm[l]],
-                          our_masks[l], up_masks[perm[l]])
+                          our_masks[l], up_masks[perm[l]],
+                          blur_sigma=blur_sigma)
         for l in range(len(our_rgba))
     ]
     _compose_grid(our_rgba, up_cells, our_masks, up_masks, perm,
@@ -222,6 +228,7 @@ def run_seasonal(
     blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
     materials: dict | None = None,
     blend_winter: str, materials_winter: dict | None = None,
+    lighting=None,
 ):
     """Run `run()` once per season and return a list of
     `(season_label, mat, perm, drgb)` — `("summer", ...)` first, then
@@ -230,10 +237,12 @@ def run_seasonal(
     summer = run(
         blend, upstream_png, layouts=layouts, out_dir=out_dir,
         materials=materials, season_row=0, grid_name="grid_summer.png",
+        lighting=lighting,
     )
     winter = run(
         blend_winter, upstream_png, layouts=layouts, out_dir=out_dir,
         materials=materials_winter, season_row=1, grid_name="grid_winter.png",
+        lighting=lighting,
     )
     return [("summer", *summer), ("winter", *winter)]
 
@@ -283,7 +292,7 @@ def main(argv) -> int:
     print(f"worst-of-best: {worst:.3f}  (FAIL_IOU={FAIL_IOU:.2f})")
     drgb_mean = sum(drgb) / len(drgb)
     drgb_max = max(drgb)
-    print(f"dRGB (intersection mean): mean={drgb_mean:.2f}  max={drgb_max:.2f}  "
+    print(f"dRGB (blurred all-pixel): mean={drgb_mean:.2f}  max={drgb_max:.2f}  "
           f"per-layout={[round(v, 2) for v in drgb]}")
     return 0 if worst >= FAIL_IOU else 1
 

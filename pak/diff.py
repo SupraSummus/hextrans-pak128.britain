@@ -83,17 +83,42 @@ def iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
 
 
 def drgb_intersection(rgba_a: np.ndarray, rgba_b: np.ndarray,
-                      mask_a: np.ndarray, mask_b: np.ndarray) -> float:
-    """Mean abs(RGB-delta) over the silhouette intersection.  NaN if
-    intersection is empty.  Restricting to the intersection isolates
-    colour drift from geometry drift -- pixels only one side has
-    can't contribute to a meaningful delta."""
-    inter = mask_a & mask_b
-    if not inter.any():
+                      mask_a: np.ndarray, mask_b: np.ndarray,
+                      blur_sigma: float = 0.0) -> float:
+    """Mean abs(RGB-delta) over the whole image.  The two renders are
+    first composited onto a common background (`MAGIC_PINK`, matching
+    upstream's keying) using each side's silhouette mask, then
+    optionally Gaussian-blurred by `blur_sigma`, then diffed across
+    every pixel (silhouette XOR regions included).
+
+    Common-background composite removes the "ours-zero vs upstream-pink
+    transparent region" gap that would otherwise dominate any all-pixel
+    metric, and means a naive RGB blur is safe -- both sides have the
+    same out-of-silhouette colour so blur kernels don't smear different
+    backgrounds into each side's edge pixels asymmetrically.
+
+    The all-pixel coverage (vs the previous intersection-only) means
+    silhouette XOR pixels contribute to the metric: where one side has
+    surface and the other has background, the per-pixel delta is the
+    surface-vs-pink gap.  Treats colour drift and modest geometry drift
+    as the same problem -- both shift pixels off-target -- which is the
+    right framing for the calibration-target metric we use here."""
+    if not (mask_a.any() or mask_b.any()):
         return float("nan")
-    a = rgba_a[..., :3].astype(np.int16)
-    b = rgba_b[..., :3].astype(np.int16)
-    return float(np.abs(a[inter] - b[inter]).mean())
+    bg = np.array(MAGIC_PINK, dtype=np.float32)
+    a = np.where(mask_a[..., None],
+                 rgba_a[..., :3].astype(np.float32),
+                 bg[None, None, :])
+    b = np.where(mask_b[..., None],
+                 rgba_b[..., :3].astype(np.float32),
+                 bg[None, None, :])
+    if blur_sigma > 0:
+        from scipy.ndimage import gaussian_filter
+        a = np.stack([gaussian_filter(a[..., c], sigma=blur_sigma)
+                      for c in range(3)], axis=-1)
+        b = np.stack([gaussian_filter(b[..., c], sigma=blur_sigma)
+                      for c in range(3)], axis=-1)
+    return float(np.abs(a - b).mean())
 
 
 def xor_image(mask_a: np.ndarray, mask_b: np.ndarray) -> np.ndarray:

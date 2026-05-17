@@ -206,6 +206,7 @@ def bake_way_main(
 def _render_building_season(
     *, blend: str, name: str, out_dir: Path, spec: Building,
     materials: dict[str, Material] | None,
+    lighting=None,
 ) -> Path:
     """Render one season's atlas to `<out_dir>/<name>.png` and return
     the path.  One blender subprocess per call."""
@@ -229,6 +230,8 @@ def _render_building_season(
     if materials:
         from pak.materials import to_jsonable
         cmd += ["--materials", json.dumps(to_jsonable(materials))]
+    if lighting is not None:
+        cmd += ["--lighting", json.dumps(lighting.to_jsonable())]
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
     return out_dir / f"{name}.png"
@@ -262,6 +265,7 @@ def bake_building(
     materials: dict[str, Material] | None = None,
     blend_winter: str | None = None,
     materials_winter: dict[str, Material] | None = None,
+    lighting=None,
 ) -> Path:
     """Fetch the blend(s), render the multi-tile atlas, emit the dat.
 
@@ -301,7 +305,7 @@ def bake_building(
     if len(season_inputs) == 1:
         _render_building_season(
             blend=blend, name=basename, out_dir=out_dir,
-            spec=spec, materials=materials,
+            spec=spec, materials=materials, lighting=lighting,
         )
     else:
         tmp_paths: list[Path] = []
@@ -309,7 +313,7 @@ def bake_building(
             tmp_name = f"{basename}__s{s}"
             tmp_paths.append(_render_building_season(
                 blend=b, name=tmp_name, out_dir=out_dir,
-                spec=spec, materials=m,
+                spec=spec, materials=m, lighting=lighting,
             ))
         _stitch_seasons(tmp_paths, out_dir / f"{basename}.png")
         for p in tmp_paths:
@@ -422,6 +426,7 @@ def bake_building_main(
     materials: dict[str, Material] | None = None,
     blend_winter: str | None = None,
     materials_winter: dict[str, Material] | None = None,
+    lighting=None,
 ) -> Path:
     """Convenience for single-building bake scripts.
 
@@ -439,4 +444,5 @@ def bake_building_main(
         spec, blend=blend, basename=path.stem, out_dir=path.parent,
         materials=materials,
         blend_winter=blend_winter, materials_winter=materials_winter,
+        lighting=lighting,
     )

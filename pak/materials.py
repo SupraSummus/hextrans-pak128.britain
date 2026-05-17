@@ -56,7 +56,23 @@ class Slot:
     `blend` is the BI slot blend mode mapped onto Blender's MixRGB
     `blend_type` (see `_BLEND_BI_TO_SHADER`).  `fac` is the BI slot
     influence factor in [0, 1] — every Britain slot extracted to date
-    ships at 1.0 (full influence)."""
+    ships at 1.0 (full influence).
+
+    `color` carries the per-slot RGB BI uses as the procedural slot's
+    constant output when neither a colour band nor an stype=COLOR
+    texture supplies RGB.  Hedge's CLOUDS slot ships `(0.10, 0.06,
+    0.04)` (dark brown dirt-tint over a green diffuse); MainColour1's
+    ships `(0.60, 0.60, 0.60)` (mid-gray); etc.  Read from MTex.r/g/b.
+    Meaningful only for `procedural=` slots; on `image=` slots it
+    carries the magenta-default sentinel and is ignored.
+
+    `color_band`, when set, replaces the constant `color` with an
+    intensity-mapped gradient (each entry `(pos, r, g, b, a)`).  Read
+    from the Tex's ColorBand when `Tex.flag & TEX_COLORBAND` is set —
+    rare in the Britain pak (handful of materials) but the BI-faithful
+    path when present.  Currently consumed for procedural slots only;
+    extending to IMAGE slots (where BI overrides the image pixel with
+    band-of-intensity) is open if a per-asset audit surfaces one."""
     image: str | None = None
     procedural: str | None = None
     texco: str = "GLOB"
@@ -64,6 +80,8 @@ class Slot:
     ofs: tuple[float, float, float] = (0.0, 0.0, 0.0)
     blend: str = "MIX"
     fac: float = 1.0
+    color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    color_band: list[tuple[float, float, float, float, float]] | None = None
 
     def __post_init__(self):
         if (self.image is None) == (self.procedural is None):
@@ -94,9 +112,10 @@ class Material:
 
     1. `slots=[Slot(...), ...]` — full BI slot stack, composed in order
        (see `Slot`).  The BI-faithful form, seeded by
-       `pak.extract_materials`.  Procedural slots without a per-Tex
-       colour band currently substitute grayscale noise (real fix is
-       parsing the Tex datablock — TODO).
+       `pak.extract_materials`.  Procedural slots emit a constant
+       `Slot.color` (the per-slot MTex RGB) or, when the Tex carries
+       an active `TEX_COLORBAND`, the band mapped through the noise
+       intensity — same data the BI renderer reads at run time.
     2. `image=...` (+ optional `size`, `ofs`, `texco`) — legacy single
        image slot, mixed `image × diffuse` over the BSDF.  Equivalent
        to a one-Slot list at Mix fac=1.0 but with the extra diffuse
@@ -177,6 +196,44 @@ class Material:
             )
 
 
+@dataclass
+class Lighting:
+    """Per-asset world + sun lighting overrides.
+
+    The EEVEE building viewpoint defaults (world ambient grey 0.30, sun
+    energy scale 2.0 over the .blend's BI-authored 0.028, sun elevation
+    30°, sun azimuth offset -90° from camera) were grid-searched
+    against the heuristic MATERIALS path on one pilot; under the slot-
+    form / hybrid path and the alpha-premultiplied blurred dRGB metric
+    the optimum shifts per asset.  Declare a `LIGHTING = Lighting(...)`
+    alongside `MATERIALS` to override.  Buildings without a LIGHTING
+    block fall back to the globals in `pak.viewpoints` and
+    `pak.render._configure_eevee`.
+
+    `world_ambient`: replaces `scn.world.color`; modern EEVEE uses
+        this as the constant ambient term BI's `world.amb` field
+        played in the legacy pipeline.
+    `sun_energy_scale`: replaces `viewpoints._BI_TO_EEVEE_SUN_SCALE`;
+        multiplied against the .blend's authored sun energy (BI's
+        0.028) to compensate for BI vs EEVEE energy unit conventions.
+    `sun_elev_deg`, `sun_az_offset_deg`: replace the defaults of
+        `viewpoints.sun_rotation_for_camera`."""
+    world_ambient: tuple[float, float, float] | None = None
+    sun_energy_scale: float | None = None
+    sun_elev_deg: float | None = None
+    sun_az_offset_deg: float | None = None
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+    @classmethod
+    def from_jsonable(cls, d: dict[str, Any]) -> Lighting:
+        kw: dict[str, Any] = {}
+        for k, v in d.items():
+            kw[k] = tuple(v) if isinstance(v, list) else v
+        return cls(**kw)
+
+
 _DEFAULTS = {f.name: f.default for f in fields(Material)}
 
 
@@ -200,10 +257,15 @@ def _slot_to_jsonable(s: Slot) -> dict[str, Any]:
 
 
 def _slot_from_jsonable(d: dict[str, Any]) -> Slot:
-    return Slot(**{
-        k: tuple(v) if isinstance(v, list) else v
-        for k, v in d.items()
-    })
+    kw: dict[str, Any] = {}
+    for k, v in d.items():
+        if k == "color_band":
+            kw[k] = [tuple(stop) for stop in v]
+        elif isinstance(v, list):
+            kw[k] = tuple(v)
+        else:
+            kw[k] = v
+    return Slot(**kw)
 
 
 def to_jsonable(materials: dict[str, Material]) -> dict[str, dict[str, Any]]:

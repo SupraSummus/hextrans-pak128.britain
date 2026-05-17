@@ -4,19 +4,44 @@ from __future__ import annotations
 
 from pak.bake import bake_building_main
 from pak.dat import Building
-from pak.materials import Material
+from pak.materials import Lighting, Material
 
+# `color=` overrides converged by `pak.tune_materials` against the
+# blurred-all-pixel dRGB metric (`pak.diff.drgb_intersection` at
+# sigma=3) under the current LIGHTING; converged value 6.9.  The
+# metric averages over all 128*128 pixels including the magic-pink
+# background that matches between ours and upstream, so the absolute
+# number is suppressed -- per-silhouette-pixel error is ~5x higher.
+# Use as a relative optimisation target, not a "we're 6.9 RGB off
+# everywhere" claim.  Only `color=`-bearing materials are tuned;
+# image-only materials stay at the heuristic `image x blend_diffuse`
+# path (which lands closer to upstream by accident, see TODO
+# "BI-faithful slot composition replaces, heuristic multiplies").
 MATERIALS = {
     "Brick":          Material(image="flemish-bond-improved", size=(0.5, 0.5, 0.5)),
     "Hedge":          Material(image="scratched_bricks_9271", size=(4.0, 4.0, 1.0)),
-    "MainColour1":    Material(noise=True),
+    "MainColour1":    Material(noise=True, color=(0.956, 1.0, 0.994)),
     "Pavement":       Material(image="concrete-paving-small", size=(2.105, 1.89, 1.0), ofs=(0.0, 0.02, 0.0)),
-    "Roof":           Material(image="flemish-bond-impr.001", size=(3.0, 1.0, 2.0)),
-    "RoofSide":       Material(image="flemish-bond-impr.001", size=(3.0, 1.0, 2.0)),
+    "Roof":           Material(image="flemish-bond-impr.001", size=(3.0, 1.0, 2.0), color=(0.357, 0.107, 0.019)),
+    "RoofSide":       Material(image="flemish-bond-impr.001", size=(3.0, 1.0, 2.0), color=(0.45, 0.22, 0.18)),
     "Shop3":          Material(image="scratched_bricks_", size=(4.0, 4.0, 1.0)),
     "WindowFrame":    Material(image="scratched_bricks_", size=(4.0, 4.0, 1.0)),
-    "WindowSurround": Material(noise=True),
+    "WindowSurround": Material(noise=True, color=(0.18, 0.18, 0.18)),
+    "Interior":       Material(noise=True, color=(0.283, 0.328, 0.362)),
 }
+
+# Pilot-specific world + sun tune.  Hand-grid-searched against the
+# blurred-all-pixel dRGB metric; ambient at 0.55 lifts EEVEE's dark-
+# diffuse floor to match upstream's BI ambient term, sun elev 45deg
+# better aligns the side-wall shading.  sun_energy scale 2.0/0.028
+# is the existing global default kept explicit so the asset's
+# lighting recipe is self-contained.
+LIGHTING = Lighting(
+    world_ambient=(0.55, 0.55, 0.55),
+    sun_energy_scale=2.0 / 0.028,
+    sun_elev_deg=45.0,
+    sun_az_offset_deg=-90.0,
+)
 
 # Seeded by `python3 -m pak.extract_materials
 # citybuildings/1600-detatched-house-2f-snow.blend` — the upstream
@@ -82,4 +107,5 @@ if __name__ == "__main__":
         SPEC, BLEND, __file__,
         materials=MATERIALS,
         blend_winter=BLEND_WINTER, materials_winter=MATERIALS_WINTER,
+        lighting=LIGHTING,
     )

@@ -84,24 +84,26 @@ class TestIoU(unittest.TestCase):
         self.assertEqual(iou(z, z), 0.0)
 
 
-class TestDRGBIntersection(unittest.TestCase):
-    def test_mean_abs_delta_over_intersection_only(self):
-        # Two 2x2 RGBA cells: one pixel overlaps with delta (10, 20, 30),
-        # one pixel is ours-only (would inflate naive abs-diff if
-        # counted), one upstream-only.  Only the overlap should drive
-        # the metric.
+class TestDRGB(unittest.TestCase):
+    def test_mean_abs_delta_over_all_pixels_common_bg(self):
+        # Two 2x2 RGBA cells, composited onto MAGIC_PINK (231, 255, 255):
+        # - (0,0): both in mask; delta = (10, 20, 30), |sum| = 60
+        # - (0,1): ours-only -> ours (200,200,200) vs pink (231,255,255);
+        #          per-channel |31, 55, 55|, |sum| = 141
+        # - (1,0): upstream-only -> pink vs (200,200,200); same |sum| = 141
+        # - (1,1): both transparent -> both pink, delta = 0
+        # Mean over 4 pixels * 3 channels = (60 + 141 + 141 + 0) / 12 = 28.5
         a = np.zeros((2, 2, 4), dtype=np.uint8)
         b = np.zeros((2, 2, 4), dtype=np.uint8)
         am = np.zeros((2, 2), dtype=bool)
         bm = np.zeros((2, 2), dtype=bool)
         a[0, 0, :3] = (100, 100, 100); am[0, 0] = True
         b[0, 0, :3] = (110, 120, 130); bm[0, 0] = True
-        a[0, 1, :3] = (200, 200, 200); am[0, 1] = True  # ours-only
-        b[1, 0, :3] = (200, 200, 200); bm[1, 0] = True  # upstream-only
-        # Expected: mean(|10|, |20|, |30|) = 20.0
-        self.assertAlmostEqual(drgb_intersection(a, b, am, bm), 20.0)
+        a[0, 1, :3] = (200, 200, 200); am[0, 1] = True
+        b[1, 0, :3] = (200, 200, 200); bm[1, 0] = True
+        self.assertAlmostEqual(drgb_intersection(a, b, am, bm), 28.5)
 
-    def test_nan_when_intersection_empty(self):
+    def test_nan_when_both_masks_empty(self):
         z = np.zeros((2, 2, 4), dtype=np.uint8)
         m = np.zeros((2, 2), dtype=bool)
         self.assertTrue(math.isnan(drgb_intersection(z, z, m, m)))

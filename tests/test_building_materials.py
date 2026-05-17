@@ -16,7 +16,7 @@ import unittest
 from types import ModuleType
 
 from pak import REPO_ROOT
-from pak.materials import Material, Slot, from_jsonable, seed_python, to_jsonable
+from pak.materials import Lighting, Material, Slot, from_jsonable, seed_python, to_jsonable
 
 
 def _building_modules_with_materials() -> list[tuple[str, ModuleType]]:
@@ -110,7 +110,14 @@ class TestJsonRoundTrip(unittest.TestCase):
             "Stack": Material(slots=[
                 Slot(image="brick", size=(4.0, 4.0, 1.0)),
                 Slot(image="brick", texco="ORCO"),
-                Slot(procedural="CLOUDS", blend="ADD", fac=0.7),
+                Slot(procedural="CLOUDS", blend="ADD", fac=0.7,
+                     color=(0.1, 0.06, 0.04)),
+            ]),
+            "Band":  Material(slots=[
+                Slot(procedural="CLOUDS", color_band=[
+                    (0.0, 0.0, 0.0, 0.0, 0.0),
+                    (1.0, 0.2, 0.4, 0.1, 1.0),
+                ]),
             ]),
         }
 
@@ -141,6 +148,79 @@ class TestJsonRoundTrip(unittest.TestCase):
         ns: dict = {"Material": Material, "Slot": Slot}
         exec(src, ns)
         self.assertEqual(ns["MATERIALS"], mats)
+
+
+class TestLighting(unittest.TestCase):
+
+    def test_empty_lighting_is_all_none(self):
+        # Every field defaults to None so a `Lighting()` block carries
+        # no overrides -- the renderer falls back to globals.  The
+        # wire form drops them all.
+        self.assertEqual(Lighting().to_jsonable(), {})
+
+    def test_jsonable_drops_none_fields(self):
+        # Only set fields ride through the subprocess command line;
+        # None means "fall back to global" and shouldn't override.
+        L = Lighting(world_ambient=(0.55, 0.55, 0.55), sun_elev_deg=45.0)
+        wire = L.to_jsonable()
+        self.assertEqual(set(wire), {"world_ambient", "sun_elev_deg"})
+        self.assertEqual(wire["world_ambient"], (0.55, 0.55, 0.55))
+        self.assertEqual(wire["sun_elev_deg"], 45.0)
+
+    def test_round_trip_preserves_tuples(self):
+        # JSON turns tuples into lists; from_jsonable must re-tuple
+        # the RGB triplet so equality with in-process Lighting holds.
+        L = Lighting(world_ambient=(0.55, 0.55, 0.55),
+                     sun_energy_scale=71.4,
+                     sun_elev_deg=45.0, sun_az_offset_deg=-90.0)
+        import json
+        self.assertEqual(
+            Lighting.from_jsonable(json.loads(json.dumps(L.to_jsonable()))),
+            L,
+        )
+
+
+class TestProposedColor(unittest.TestCase):
+    """`pak.tune_materials.proposed_color` is pure numpy.  The
+    iterative loop driving it needs Blender, but the per-step solver
+    is testable without one."""
+
+    def test_pushes_toward_target(self):
+        import numpy as np
+
+        from pak.tune_materials import proposed_color
+        # Current declared (1,1,1), ours renders (100,100,100),
+        # target upstream (200,100,100) -- R should scale up.
+        new = proposed_color((1.0, 1.0, 1.0),
+                             np.array([100, 100, 100]),
+                             np.array([200, 100, 100]),
+                             damping=1.0)
+        self.assertGreater(new[0], 1.5)  # R nudged up
+        self.assertAlmostEqual(new[1], 1.0, places=2)
+        self.assertAlmostEqual(new[2], 1.0, places=2)
+
+    def test_damping_shrinks_step(self):
+        import numpy as np
+
+        from pak.tune_materials import proposed_color
+        ours = np.array([100, 100, 100])
+        up = np.array([200, 100, 100])
+        aggressive = proposed_color((1.0,) * 3, ours, up, damping=1.0)
+        timid = proposed_color((1.0,) * 3, ours, up, damping=0.2)
+        # Timid step lands closer to the no-change point (1.0).
+        self.assertLess(abs(timid[0] - 1.0), abs(aggressive[0] - 1.0))
+
+    def test_gain_clamp_bounds_runaway(self):
+        import numpy as np
+
+        from pak.tune_materials import proposed_color
+        # Ours near-zero -- raw gain would be huge; clamp protects.
+        new = proposed_color((1.0, 1.0, 1.0),
+                             np.array([1, 1, 1]),
+                             np.array([200, 200, 200]),
+                             damping=1.0, gain_clamp=(0.5, 2.0))
+        for c in new:
+            self.assertLessEqual(c, 2.0)
 
 
 if __name__ == "__main__":

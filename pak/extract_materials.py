@@ -57,6 +57,10 @@ def materials_from_blend(blend_path: Path) -> dict[str, Material]:
             blend_name = _BLEND_NAME.get(s.blendtype, "MIX")
             texco = _TEXCO_NAME.get(s.texco, "GLOB")
             if s.tex_type == "IMAGE" and s.image_name:
+                # MTex.r/g/b is meaningful only for procedural slots where
+                # the texture supplies no RGB; IMAGE slots ship the magenta
+                # sentinel `(1.0, 0.0, 1.0)` which BI ignores.  Drop it from
+                # the seeded slot to keep the bake script readable.
                 slots.append(Slot(
                     image=s.image_name,
                     texco=texco,
@@ -73,6 +77,11 @@ def materials_from_blend(blend_path: Path) -> dict[str, Material]:
                     ofs=tuple(round(v, 4) for v in s.ofs),
                     blend=blend_name,
                     fac=round(s.colfac, 3),
+                    color=tuple(round(v, 4) for v in s.color),
+                    color_band=(
+                        [tuple(round(c, 4) for c in stop) for stop in s.color_band]
+                        if s.color_band else None
+                    ),
                 ))
         if slots:
             out[name] = Material(slots=slots)
