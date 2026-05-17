@@ -4,6 +4,19 @@ from __future__ import annotations
 
 from pak.bake import bake_building_main
 from pak.dat import Building
+from pak.materials import Material
+
+MATERIALS = {
+    "Brick":          Material(image="flemish-bond-improved", size=(0.5, 0.5, 0.5)),
+    "Hedge":          Material(image="scratched_bricks_9271", size=(4.0, 4.0, 1.0)),
+    "MainColour1":    Material(noise=True),
+    "Pavement":       Material(image="concrete-paving-small", size=(2.105, 1.89, 1.0), ofs=(0.0, 0.02, 0.0)),
+    "Roof":           Material(image="flemish-bond-impr.001", size=(3.0, 1.0, 2.0)),
+    "RoofSide":       Material(image="flemish-bond-impr.001", size=(3.0, 1.0, 2.0)),
+    "Shop3":          Material(image="scratched_bricks_", size=(4.0, 4.0, 1.0)),
+    "WindowFrame":    Material(image="scratched_bricks_", size=(4.0, 4.0, 1.0)),
+    "WindowSurround": Material(noise=True),
+}
 
 # Artisan's cottage, perhaps: large, double-fronted.
 # Population: estimate 12 per house (including servants) x 5 (low
@@ -28,4 +41,4 @@ UPSTREAM_STEM = "citybuildings/images/res/1600-detatched-house-2f.png"
 
 
 if __name__ == "__main__":
-    bake_building_main(SPEC, BLEND, __file__)
+    bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)

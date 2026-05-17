@@ -89,6 +89,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
         layouts = min(up_w // 128, 4)
         mat, perm, drgb = diff_buildings.run(
             blend, stem, layouts=layouts, out_dir=out_dir,
+            materials=getattr(mod, "MATERIALS", None),
         )
         worst, best, diag = diff_buildings.summarise(mat, perm)
         print(diff_buildings.format_matrix(mat, perm))

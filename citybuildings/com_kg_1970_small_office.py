@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from pak.bake import bake_building_main
 from pak.dat import Building
+from pak.materials import Material
+
+MATERIALS = {
+    "FeltRoof":    Material(noise=True),
+    "Pavement":    Material(image="concrete-paving-small", size=(2.105, 1.89, 1.0), ofs=(0.0, 0.02, 0.0)),
+    "WindowFrame": Material(image="scratched_bricks_", size=(4.0, 4.0, 1.0)),
+}
 
 # Two-storey office block.
 SPEC = Building(
@@ -26,4 +33,4 @@ UPSTREAM_STEM = "citybuildings/images/com/70-small-office.png"
 
 
 if __name__ == "__main__":
-    bake_building_main(SPEC, BLEND, __file__)
+    bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)

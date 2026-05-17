@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from pak.bake import bake_building_main
 from pak.dat import Building
+from pak.materials import Material
+
+MATERIALS = {
+    "FeltRoof":    Material(noise=True),
+    "MainColour1": Material(noise=True),
+    "Pavement":    Material(image="concrete-paving-small", size=(2.105, 1.89, 1.0), ofs=(0.0, 0.02, 0.0)),
+    "Stone":       Material(noise=True),
+    "Tiles":       Material(image="concrete-paving-small", size=(3.0, 3.0, 3.0)),
+}
 
 # Low density townhouses.
 SPEC = Building(
@@ -23,4 +32,4 @@ UPSTREAM_STEM = "citybuildings/images/res/1890-detatched-house-3f.png"
 
 
 if __name__ == "__main__":
-    bake_building_main(SPEC, BLEND, __file__)
+    bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)
