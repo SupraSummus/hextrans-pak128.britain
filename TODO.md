@@ -135,26 +135,27 @@ a small `explicit_map` (Pavement→Pavings, Roof/RoofSide→Brick) and
 `procedural_noise_mats = {"hedge"}` for materials BI bound to CLOUDS
 procedurals.  `_TEX_TILE` is a parallel name-keyed table picking
 how many cycles per object bbox each texture tiles at.  All three
-are calibrated to `res_1600_kg_01`'s material names; the second
-building port will silently render flat for any material that
-doesn't match those exact strings.  Concrete next move when a
-second building ports: extend the three tables in lockstep, OR
-(better) move the per-asset binding into `Building` SPEC as a
-`materials={"Brick": {...}}` dict declared in each bake script
-mirroring the way ways already declare `MATERIALS = {...}`.
+are calibrated to `res_1600_kg_01`'s material names.  Status across
+the seven current building ports: bakes complete without errors
+(material names happen to overlap enough — Brick, Wood, Roof, Tile
+recur), but residual flat regions on unmatched materials aren't
+audited.  Concrete next move (now overdue): move the per-asset
+binding into `Building` SPEC as a `materials={"Brick": {...}}`
+dict declared in each bake script mirroring the way ways already
+declare `MATERIALS = {...}`, then delete the global tables.
 
 **Building lighting is calibrated to one asset.**  Three EEVEE-
 substitution knobs (`_BI_TO_EEVEE_SUN_SCALE` ≈ 71.4, sun direction
 elev=30°/az_offset=-90°, world ambient 0.30 grey) came out of
 grid+line search against `res_1600_kg_01`.  Sun energy itself is
 no longer a free knob — it's `authored × scale`, so a future blend
-authoring a non-0.028 sun would pick that up automatically.
-The second building port may still need direction/ambient
-re-tuning, especially for warehouses / industrial (different
-material palette, flatter walls).  Concrete next move when the
-second building lands at noticeably-higher dRGB: re-run
-`pak/diff_buildings.py`, and either find shared values that work
-for both or move the knobs into `Building` SPEC.
+authoring a non-0.028 sun would pick that up automatically.  Six
+new ports inherit these knobs unchanged and look acceptable by
+eye; per-asset dRGB hasn't been measured (diff is geometry-only
+on best-perm).  Concrete next move when one of the new ports
+needs better lighting: run `pak/diff_buildings.py` on it, and
+either find shared values that work across all seven or move the
+knobs into `Building` SPEC.
 
 **Pixel-perfect building match needs UVs (or new materials).**
 The 26.6 dRGB floor on `res_1600_kg_01` is set by BI's lost
@@ -190,19 +191,26 @@ footprint), add a `vehicle_hex_viewpoint(n_cells)` factory beside
 the building one, and wire the resulting cell layout into the dat.
 Soft trigger.
 
-**Building-bake layout rotation sign needs asymmetric asset.**
-Square-projection diff against `res_1600_kg_01` lands at mean IoU
-0.94 best perm / 0.90 identity perm — small gap, dominated by
-near-mirror symmetry of a generic 2-storey detached house (every
-our-cardinal scores marginally higher against the opposite-
-cardinal upstream cell than against the matching one).  Can't
-disambiguate the engine's layout-to-rotation convention from this
-asset.  Concrete next move: pick an asymmetric upstream building
-(distinctive chimney, off-centre door — e.g. a townhall or stop)
-with a matching blend, port it, and re-run the diff; the
-permutation either lands on identity (current `+(360°/layouts)·l`
-CCW is right) or on an off-diagonal that survives the symmetry
-test (then flip the sign in `building_hex_viewpoint`).
+**Per-blend layout-to-cardinal authoring isn't uniform upstream.**
+Square-projection diff across the six new asymmetric ports lands
+at best-perm IoU ~0.93 (pipeline renders correctly) but the
+permutation differs per blend: 1890/1920 detached houses + 1970
+office land on `[2,3,0,1]` (matches upstream when read through
+upstream's own `[2,1,0,3]` L→col mapping), while 1870 pub +
+1870 townhouse land on `[1,2,3,0]` — i.e. our L0 == upstream's
+L1, one cardinal off.  Survey of 47 upstream dats: 68 entries use
+L→col `(2,1,0,3)`, 19 use identity `(0,1,2,3)`, 27 use degenerate
+`(0,0,0,0)` (one-layout dats), plus three smaller outliers — no
+single global convention to flip a sign against.  The L assignment
+in upstream's `BackImage[L]=...0.col` lines records *which
+direction the artist drew the blend's "front" facing*, not a
+pipeline-side rotation.  Under the hex 6-layout policy with
+uniform `simrand` placement the per-L mismatch is gameplay-
+invisible, but artistically inconsistent across the pak.  Concrete
+next moves if uniformity matters: (a) per-script `LAYOUT_OFFSET`
+override on the cardinal-zero angle, calibrated by inspection; or
+(b) accept the upstream's per-blend orientation as authored.
+Closes the original "rotation sign" probe.
 
 **Building square-projection diff: multi-tile + heights coverage.**
 `building_square_viewpoint` errors on `dims_x*dims_y > 1` or

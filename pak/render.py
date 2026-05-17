@@ -125,6 +125,8 @@ def _reload_external_textures(bpy) -> None:
     for img in bpy.data.images:
         if img.size[0] != 0:
             continue
+        if img.type != "IMAGE":
+            continue  # skip RENDER_RESULT / COMPOSITING / UV_TEST built-ins
         base = img.filepath.rsplit("/", 1)[-1] if img.filepath else img.name
         if not base:
             continue
