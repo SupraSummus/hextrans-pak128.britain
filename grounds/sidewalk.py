@@ -27,7 +27,6 @@ from pak.hex_synth import (
     seal_horizontal_edges,
 )
 
-
 # Single source of truth for the city-pavement grey.  Road bakers
 # (sidewalk slabs, kerbs) key off the same value so seams between a
 # city road and a sidewalk-only neighbour read as one continuous grey.

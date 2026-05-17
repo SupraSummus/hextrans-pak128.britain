@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_building_main
 from pak.dat import Building
 
-
 # Middling semi-detached houses.
 SPEC = Building(
     name="RES_KG_1870_00_06",

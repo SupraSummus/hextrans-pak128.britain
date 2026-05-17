@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 import tempfile
 from pathlib import Path
@@ -35,7 +34,6 @@ import bmesh
 import bpy
 import mathutils
 import numpy as np
-
 
 HERE = Path(__file__).resolve().parent
 # Put the repo root on sys.path so `pak.<module>` imports resolve.
@@ -47,8 +45,12 @@ from pak.fetch_blend import fetch as fetch_blend  # noqa: E402
 from pak.hex_synth import DEFAULT_W  # noqa: E402
 from pak.way_proj import PROJECTIONS, Projection  # noqa: E402
 from pak.way_topology import (  # noqa: E402
-    atom_offsets_along_path, cap_plane, path_chord_angle,
-    path_chord_length, path_chord_midpoint, path_chord_unit,
+    atom_offsets_along_path,
+    cap_plane,
+    path_chord_angle,
+    path_chord_length,
+    path_chord_midpoint,
+    path_chord_unit,
 )
 
 

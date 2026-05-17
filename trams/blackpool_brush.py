@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_main
 from pak.dat import Vehicle
 
-
 # http://en.wikipedia.org/wiki/Blackpool_tramway#Boat_cars
 # http://blackpool-trams.yolasite.com/brush-trams.php
 # Capacity: http://www.britishtramsonline.co.uk/blackpoolfleet.doc

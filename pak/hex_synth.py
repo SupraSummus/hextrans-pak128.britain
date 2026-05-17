@@ -33,7 +33,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 # ---- Engine constants (from `src/simutrans/descriptor/synth_geometry.h`) ----
 
 # Tile raster width (output image pixel width for a single hex cell).
@@ -326,7 +325,7 @@ def decode_cliff_index(index: int) -> tuple[int, int]:
 
 
 def render_cliff_cell(wall: int, h1: int, h2: int, color,
-                      geom: HexGeom | None = None) -> "np.ndarray":
+                      geom: HexGeom | None = None) -> np.ndarray:
     """Render one cliff-face cell into a HxWx4 RGBA buffer."""
     if geom is None:
         geom = HexGeom()

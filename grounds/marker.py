@@ -24,7 +24,6 @@ import numpy as np
 
 from pak import hex_synth
 
-
 OUTLINE_COLOR_RGB = (255, 128, 0)
 
 

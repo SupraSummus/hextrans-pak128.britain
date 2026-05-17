@@ -22,11 +22,8 @@ import subprocess
 from pathlib import Path
 
 from pak import REPO_ROOT
-from pak.dat import (
-    Building, Vehicle, Way, emit_building, emit_vehicles, emit_way,
-)
+from pak.dat import Building, Vehicle, Way, emit_building, emit_vehicles, emit_way
 from pak.fetch_blend import fetch
-
 
 _RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
 _BAKE_WAY_SCRIPT = Path(__file__).resolve().parent / "bake_way.py"

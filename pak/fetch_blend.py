@@ -14,7 +14,6 @@ from pathlib import Path
 
 from pak._fetch import Source, fetch as _fetch, load_lock
 
-
 SOURCE = Source(
     repo="jamespetts/Pak128.Britain-blends",
     lock_name="blends.lock",

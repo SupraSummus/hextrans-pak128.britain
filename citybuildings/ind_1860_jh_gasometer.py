@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_building_main
 from pak.dat import Building
 
-
 # Gasometer.  Rotationally symmetric — keep upstream's single layout.
 SPEC = Building(
     name="IND_JH_1860_00_10",

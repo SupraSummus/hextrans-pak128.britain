@@ -35,8 +35,6 @@ import sys
 from dataclasses import dataclass
 from math import radians
 from pathlib import Path
-from typing import Optional
-
 
 HERE = Path(__file__).resolve().parent
 # Put the repo root on sys.path so `pak.<module>` imports resolve.
@@ -74,19 +72,19 @@ class Viewpoint:
     scale)."""
     name: str
     image_width: int
-    ortho_scale: Optional[float]
+    ortho_scale: float | None
     # `None` means "use the blend's authored sun energy, scaled by the
     # engine-substitution factor declared in `sun_energy_scale`".  A
     # float pins the value directly -- used by SQUARE_VIEWPOINT and
     # HEX_VIEWPOINT to assert the upstream 0.028 verbatim under Cycles
     # (the empirical vehicle/way substitute for the lost BI authoring
     # engine; not literally what upstream rendered with).
-    sun_energy: Optional[float]
+    sun_energy: float | None
     # "hex": centre + z_floor + INTRA_TILE_PER_BLEND_UNIT scale.
     # "none": identity (used by SQUARE_VIEWPOINT — operates in blend
     # coords so it can pixel-diff against upstream's published cells).
     fit_kind: str
-    extrinsic: Optional[tuple]  # 4x4 row-major tuple, or None for identity
+    extrinsic: tuple | None  # 4x4 row-major tuple, or None for identity
     facings: list[Facing]
     # Engine-substitution multiplier applied to the authored sun energy
     # when `sun_energy is None`.  BI-authored 0.028 reads as near-zero
@@ -170,7 +168,7 @@ def _bind_textures_via_nodes(bpy) -> None:
     data from the .blend binary (`pak/blend_slots.py`) -- is staged
     but not wired in; see TODO."""
 
-    tex_by_name: dict[str, "bpy.types.Texture"] = {}
+    tex_by_name: dict[str, bpy.types.Texture] = {}
     for t in bpy.data.textures:
         if t.type == "IMAGE" and t.image and t.image.size[0] > 0:
             tex_by_name[t.name.lower()] = t
@@ -282,8 +280,8 @@ class BlendAuthored:
     `world.color` was the BI background sky, not the ambient term,
     and modern EEVEE's `world.color` IS the ambient term — so the
     authored value would be the wrong thing to plug in."""
-    ortho_scale: Optional[float] = None
-    sun_energy: Optional[float] = None
+    ortho_scale: float | None = None
+    sun_energy: float | None = None
 
 
 def _strip_scene(bpy) -> BlendAuthored:
@@ -480,7 +478,7 @@ def _bake_world_into_meshes(bpy, mathutils):
 
 
 def _compute_fit(mathutils, records, fit_kind: str,
-                 blend_ortho: Optional[float] = None):
+                 blend_ortho: float | None = None):
     """Build the world->fitted-frame 4x4 the per-facing transform composes
     over.  `fit_kind="none"` is identity (model renders at its native
     blend-coord scale).  `fit_kind="hex"` centres the XY bounding box
@@ -573,7 +571,7 @@ def _print_atlas_summary(out_path: Path, cells, cols: int, rows: int) -> None:
 
 
 def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
-                 name: str, cols_per_row: Optional[int] = None,
+                 name: str, cols_per_row: int | None = None,
                  keep_per_facing: bool = False) -> None:
     """Render `viewpoint.facings` of the currently loaded blend.  Writes
     `<out_dir>/<name>.png` (atlas).  With `keep_per_facing=True`, also
@@ -650,9 +648,12 @@ def _parse_args(argv):
 def main(argv):
     import bpy
     import mathutils
+
     from pak.viewpoints import (
-        HEX_VIEWPOINT, SQUARE_VIEWPOINT,
-        building_hex_viewpoint, building_square_viewpoint,
+        HEX_VIEWPOINT,
+        SQUARE_VIEWPOINT,
+        building_hex_viewpoint,
+        building_square_viewpoint,
         fence_square_viewpoint,
     )
 

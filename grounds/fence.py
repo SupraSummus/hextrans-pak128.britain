@@ -32,7 +32,6 @@ import numpy as np
 
 from pak import hex_synth
 
-
 # Dark-wood brown for posts and rails.  Single palette across all
 # three back-walls — upstream Britain ships two-tone (left fence-3
 # grey-wood, right fence-4 whitewash) but extending that to three

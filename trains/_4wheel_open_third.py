@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_main
 from pak.dat import Vehicle
 
-
 # Early third-class open wagon from a time when second class was
 # becoming routinely enclosed and third-class passengers first
 # started to be conveyed.  Reference photo:

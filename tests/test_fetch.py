@@ -17,7 +17,6 @@ import unittest
 
 from pak._fetch import emit_lock, parse_lock, validate_or_record
 
-
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 SHA_C = "c" * 64

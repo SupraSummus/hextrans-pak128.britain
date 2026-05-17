@@ -22,11 +22,13 @@ CLAUDE.md → "Way-bake architecture" for the design contract.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 from .hex_synth import (
-    HEX_TILE_RADIUS, INTRA_TILE_PER_BLEND_UNIT, UPSTREAM_ORTHO_SCALE,
+    HEX_TILE_RADIUS,
+    INTRA_TILE_PER_BLEND_UNIT,
+    UPSTREAM_ORTHO_SCALE,
     hex_proj_shear,
 )
 from .way import (
@@ -36,7 +38,6 @@ from .way import (
     hex_clip_planes,
 )
 from .way_topology import StraightPath, for_edges_paths as hex_for_edges_paths
-
 
 # ---- Square tile geometry -------------------------------------------------
 #
@@ -249,7 +250,7 @@ class Projection:
     # Projection extrinsic baked into every clone's mesh data after
     # caps + outline clip.  `None` for square (the camera does the
     # projection); a 4x4 row-major tuple for hex (`hex_proj_shear()`).
-    extrinsic: Optional[tuple]
+    extrinsic: tuple | None
     # Uniform scale factor applied to every atom mesh before
     # composition, or `None` to keep the blend's native scale.  Hex
     # uses `INTRA_TILE_PER_BLEND_UNIT` (= 1/12) to convert from blend
@@ -259,7 +260,7 @@ class Projection:
     # bake driver tiles `ceil(chord_length / atom_y_extent)` atoms
     # along each `StraightPath` so the rail stays continuous when one
     # atom is shorter than the chord.
-    atom_scale: Optional[float]
+    atom_scale: float | None
     # Atlas column count for the output stitch.
     atlas_cols: int
 

@@ -43,7 +43,6 @@ from PIL import Image
 from pak import REPO_ROOT
 from pak.fetch_pak import fetch as fetch_pak
 
-
 # Outside-silhouette fill upstream uses on the lightmap (engine reads it
 # as "no climate-texture multiplier here"); the hex baker writes alpha=0
 # at the same locations.  We strip both conventions to a common silhouette

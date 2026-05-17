@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_main
 from pak.dat import Vehicle
 
-
 # https://en.wikipedia.org/wiki/BR_Standard_Class_9F
 SPEC = Vehicle(
     name="BR-9F",

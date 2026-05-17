@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # As used on the original Stockton & Darlington Railway.  28 lb/yard.
 # https://books.google.co.uk/books?id=WBI1AAAAMAAJ&pg=PA275
 # http://myweb.tiscali.co.uk/gansg/2-track/02track1.htm

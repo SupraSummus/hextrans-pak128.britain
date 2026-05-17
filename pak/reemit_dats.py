@@ -22,9 +22,7 @@ from pathlib import Path
 from pak import REPO_ROOT
 from pak.bake import _resolve_building_layouts
 from pak.bake_units import discover, import_script, specs_of
-from pak.dat import (
-    Building, Vehicle, Way, emit_building, emit_vehicles, emit_way,
-)
+from pak.dat import Building, Vehicle, Way, emit_building, emit_vehicles, emit_way
 
 
 def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:

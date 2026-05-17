@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 85 lb/yard low-speed track for branch lines.
 SPEC = Way(
     name='wssri_light',

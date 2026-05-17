@@ -5,7 +5,6 @@ from __future__ import annotations
 from pak.bake import bake_way_main
 from pak.dat import Way
 
-
 # 40 lb/yard.
 SPEC = Way(
     name='wrought_iron_light_track',

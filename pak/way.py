@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import math
 
-
 # World-coords hex circumradius (one entry-edge length).  Bakers express
 # asset dimensions in these units so the camera math doesn't depend on
 # the pixel width.  Source of truth — `pak.hex_synth` re-exports this so

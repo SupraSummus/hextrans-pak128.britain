@@ -54,7 +54,6 @@ from pathlib import Path
 
 from pak import REPO_ROOT
 
-
 HERE = Path(__file__).resolve().parent
 VIEWS_8 = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
 VIEWS_4 = ["S", "W", "N", "E"]

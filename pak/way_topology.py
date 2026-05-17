@@ -17,10 +17,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .way import (
-    HEX_CORNERS, HEX_EDGES,
-    edge_midpoint, edge_unit_dir, shared_corner,
-)
+from .way import HEX_CORNERS, HEX_EDGES, edge_midpoint, edge_unit_dir, shared_corner
 
 
 @dataclass
@@ -164,14 +161,14 @@ def for_edges_paths(edges):
 # the actual mesh ops live in `pak/bake_way.py` (Blender-only).
 
 
-def path_chord_length(path: "StraightPath") -> float:
+def path_chord_length(path: StraightPath) -> float:
     """Euclidean length of the chord from `start` to `end`."""
     dx = path.end[0] - path.start[0]
     dy = path.end[1] - path.start[1]
     return math.hypot(dx, dy)
 
 
-def path_chord_angle(path: "StraightPath") -> float:
+def path_chord_angle(path: StraightPath) -> float:
     """Z-rotation `θ` such that `R_z(θ) @ (0, 1, 0)` lands along the
     chord direction `(end - start) / |end - start|`.  The atom is
     authored along +Y so this is exactly the angle the bake driver
@@ -181,12 +178,12 @@ def path_chord_angle(path: "StraightPath") -> float:
     return math.atan2(-dx, dy)
 
 
-def path_chord_midpoint(path: "StraightPath") -> tuple[float, float]:
+def path_chord_midpoint(path: StraightPath) -> tuple[float, float]:
     return ((path.start[0] + path.end[0]) / 2.0,
             (path.start[1] + path.end[1]) / 2.0)
 
 
-def path_chord_unit(path: "StraightPath") -> tuple[float, float]:
+def path_chord_unit(path: StraightPath) -> tuple[float, float]:
     """Unit vector along the chord from `start` to `end`."""
     dx = path.end[0] - path.start[0]
     dy = path.end[1] - path.start[1]
@@ -218,7 +215,7 @@ def atom_offsets_along_path(chord_length: float, atom_step: float
     return [-half_span + k * atom_step for k in range(n)]
 
 
-def cap_plane(path: "StraightPath", end: str
+def cap_plane(path: StraightPath, end: str
               ) -> tuple[tuple[float, float], tuple[float, float]] | None:
     """`(plane_co, plane_no)` in world XY for the bisect plane at one
     chord end, or `None` if the cap is suppressed (V-bend apex pair).
