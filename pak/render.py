@@ -75,17 +75,30 @@ class Viewpoint:
     name: str
     image_width: int
     ortho_scale: Optional[float]
-    sun_energy: float
+    # `None` means "use the blend's authored sun energy, scaled by the
+    # engine-substitution factor declared in `sun_energy_scale`".  A
+    # float pins the value directly -- used by SQUARE_VIEWPOINT and
+    # HEX_VIEWPOINT to assert the upstream 0.028 verbatim under Cycles
+    # (the empirical vehicle/way substitute for the lost BI authoring
+    # engine; not literally what upstream rendered with).
+    sun_energy: Optional[float]
     # "hex": centre + z_floor + INTRA_TILE_PER_BLEND_UNIT scale.
     # "none": identity (used by SQUARE_VIEWPOINT — operates in blend
     # coords so it can pixel-diff against upstream's published cells).
     fit_kind: str
     extrinsic: Optional[tuple]  # 4x4 row-major tuple, or None for identity
     facings: list[Facing]
-    # Vehicles & ways: "CYCLES" (matches upstream's calibration target).
-    # Buildings: "BLENDER_EEVEE" (BI texture data is partially recoverable;
-    # see CLAUDE.md → "Building-bake architecture").  "BLENDER_WORKBENCH"
-    # available for flat-shading paths.
+    # Engine-substitution multiplier applied to the authored sun energy
+    # when `sun_energy is None`.  BI-authored 0.028 reads as near-zero
+    # under EEVEE's PBR pipeline; the building viewpoints scale by
+    # ≈71.4 (= 2.0/0.028) to approximate BI's apparent brightness.
+    sun_energy_scale: float = 1.0
+    # Vehicles & ways: "CYCLES".  Buildings: "BLENDER_EEVEE" (BI's
+    # use_nodes=False materials render closer to upstream under EEVEE
+    # than Cycles).  Both are empirical substitutes for upstream's
+    # actual authoring engine (Blender Internal under 2.79, dropped
+    # in 2.80) -- see CLAUDE.md -> "Building-bake architecture".
+    # "BLENDER_WORKBENCH" available for flat-shading paths (ways).
     engine: str = "CYCLES"
 
 
@@ -245,40 +258,57 @@ def _bind_textures_via_nodes(bpy) -> None:
         build_image_material(m, tex)
 
 
-def _strip_scene(bpy) -> Optional[float]:
-    """Remove any pre-existing cameras, lights, and the upstream
-    `Sphere` sun visualisation, and return the first camera's
-    `ortho_scale` (or `None` if no camera).  The blend is treated as
-    model data; every render-time prop is created fresh from the
-    Viewpoint, but the blend's authored ortho_scale is the artist's
-    declaration of "this is how my model fits in one tile" — vehicle
-    blends ship with 24 (the pak128.Britain contributing-graphics
-    convention), buildings often with 12 (twice the per-cell zoom).
-    `_compute_fit` consumes this to compute the per-asset
-    `INTRA_TILE_PER_BLEND_UNIT = 2 * HEX_TILE_RADIUS / blend_ortho`
-    so each blend renders at the scale its author intended."""
-    blend_ortho: Optional[float] = None
+@dataclass
+class BlendAuthored:
+    """Parameters captured from the .blend before its scene objects are
+    stripped.  The .blend is treated as pure model data — every
+    render-time prop is reinstalled from the Viewpoint — but the artist's
+    authored choices land here and feed back in.
+
+    `ortho_scale` drives the per-asset `INTRA_TILE_PER_BLEND_UNIT =
+    2*HEX_TILE_RADIUS / ortho_scale` (vehicles=24, many buildings=12).
+    `sun_energy` carries the upstream-authored 0.028 that BI rendered
+    against; modern engines apply `viewpoints._BI_TO_EEVEE_SUN_SCALE`
+    to compensate.  Sun color isn't extracted — all Britain blends
+    ship `(1,1,1)` (white), the default a freshly-installed SUN lamp
+    gets anyway.  World ambient also isn't extracted: authored
+    `world.color` was the BI background sky, not the ambient term,
+    and modern EEVEE's `world.color` IS the ambient term — so the
+    authored value would be the wrong thing to plug in."""
+    ortho_scale: Optional[float] = None
+    sun_energy: Optional[float] = None
+
+
+def _strip_scene(bpy) -> BlendAuthored:
+    """Capture authored Camera/Sun parameters into a BlendAuthored, then
+    remove the corresponding scene objects so the Viewpoint can install
+    its own.  `Sphere` is the upstream sun-visualisation parent mesh
+    (Lamp.001 is parented to it); both go."""
+    authored = BlendAuthored()
     for obj in list(bpy.context.scene.objects):
         if obj.type == "CAMERA":
-            if blend_ortho is None and obj.data.type == "ORTHO":
-                blend_ortho = float(obj.data.ortho_scale)
+            if authored.ortho_scale is None and obj.data.type == "ORTHO":
+                authored.ortho_scale = float(obj.data.ortho_scale)
             bpy.data.objects.remove(obj, do_unlink=True)
-        elif obj.type == "LIGHT" or obj.name == "Sphere":
+        elif obj.type == "LIGHT":
+            la = obj.data
+            if authored.sun_energy is None and la.type == "SUN":
+                authored.sun_energy = float(la.energy)
             bpy.data.objects.remove(obj, do_unlink=True)
-    return blend_ortho
+        elif obj.name == "Sphere":
+            bpy.data.objects.remove(obj, do_unlink=True)
+    return authored
 
 
 def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
-                            blend_ortho: Optional[float] = None):
-    """Create one camera and one SUN light, configured per the Viewpoint.
-    Per-facing pose changes (location, rotation) happen in the render loop.
-
-    Camera ortho_scale comes from the Viewpoint when set, else falls
-    back to `blend_ortho` (the value `_strip_scene` read from the blend's
-    own camera).  `square_building` passes `ortho_scale=None` so the
-    diff renders at the blend's authored scale -- matching upstream's
-    own per-blend camera -- rather than the pakset-wide 24."""
-    ortho = viewpoint.ortho_scale if viewpoint.ortho_scale is not None else blend_ortho
+                            authored: BlendAuthored):
+    """Create one camera and one SUN light, configured per the Viewpoint
+    with fallback to authored values for fields the Viewpoint defers
+    (sun_energy=None, ortho_scale=None).  Per-facing pose changes
+    (location, rotation) happen in the render loop."""
+    ortho = (viewpoint.ortho_scale
+             if viewpoint.ortho_scale is not None
+             else authored.ortho_scale)
     if ortho is None:
         raise SystemExit(
             "Viewpoint declared ortho_scale=None and blend has no ortho camera"
@@ -291,8 +321,16 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     bpy.context.scene.camera = cam
     cam.rotation_mode = "XYZ"
 
+    if viewpoint.sun_energy is not None:
+        sun_energy = viewpoint.sun_energy
+    elif authored.sun_energy is not None:
+        sun_energy = authored.sun_energy * viewpoint.sun_energy_scale
+    else:
+        raise SystemExit(
+            "Viewpoint declared sun_energy=None and blend has no SUN light"
+        )
     sun_data = bpy.data.lights.new("_render_sun", type="SUN")
-    sun_data.energy = viewpoint.sun_energy
+    sun_data.energy = sun_energy
     sun = bpy.data.objects.new("_render_sun", sun_data)
     bpy.context.scene.collection.objects.link(sun)
     sun.rotation_mode = "XYZ"
@@ -536,13 +574,14 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     calibration diff against the upstream pak."""
     import numpy as np
 
-    blend_ortho = _strip_scene(bpy)
+    authored = _strip_scene(bpy)
     if viewpoint.engine == "BLENDER_EEVEE":
         _reload_external_textures(bpy)
         _bind_textures_via_nodes(bpy)
-    cam, sun = _install_camera_and_sun(bpy, viewpoint, blend_ortho)
+    cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
     records = _bake_world_into_meshes(bpy, mathutils)
-    fit = _compute_fit(mathutils, records, viewpoint.fit_kind, blend_ortho)
+    fit = _compute_fit(mathutils, records, viewpoint.fit_kind,
+                       authored.ortho_scale)
     extrinsic = (mathutils.Matrix(viewpoint.extrinsic) if viewpoint.extrinsic
                  else mathutils.Matrix.Identity(4))
 

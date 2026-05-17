@@ -143,16 +143,18 @@ second building ports: extend the three tables in lockstep, OR
 `materials={"Brick": {...}}` dict declared in each bake script
 mirroring the way ways already declare `MATERIALS = {...}`.
 
-**Building lighting is calibrated to one asset.**  All the EEVEE
-knobs (sun_energy=2.0, ambient=0.30, elev=30°, az_offset=-90°)
-came out of grid+line search against `res_1600_kg_01` only,
-landing at mean |dRGB| 26.6 (started at 55.7).  The second
-building port may want different settings, especially for
-warehouses / industrial buildings (different material palette,
-larger flat walls).  Concrete next move when the second
-building lands at noticeably-higher dRGB: re-run
-`pak/diff_buildings.py` for it, and either find shared values
-that work for both or move the knobs into `Building` SPEC.
+**Building lighting is calibrated to one asset.**  Three EEVEE-
+substitution knobs (`_BI_TO_EEVEE_SUN_SCALE` ≈ 71.4, sun direction
+elev=30°/az_offset=-90°, world ambient 0.30 grey) came out of
+grid+line search against `res_1600_kg_01`.  Sun energy itself is
+no longer a free knob — it's `authored × scale`, so a future blend
+authoring a non-0.028 sun would pick that up automatically.
+The second building port may still need direction/ambient
+re-tuning, especially for warehouses / industrial (different
+material palette, flatter walls).  Concrete next move when the
+second building lands at noticeably-higher dRGB: re-run
+`pak/diff_buildings.py`, and either find shared values that work
+for both or move the knobs into `Building` SPEC.
 
 **Pixel-perfect building match needs UVs (or new materials).**
 The 26.6 dRGB floor on `res_1600_kg_01` is set by BI's lost

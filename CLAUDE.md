@@ -1025,28 +1025,52 @@ are exercised on a single-tile near-symmetric residential, so
 multi-tile centring and layout-rotation-sign disambiguation still
 wait on a multi-tile asymmetric port.
 
-**Lighting calibration.**  Buildings render through `BLENDER_EEVEE`
-(not Cycles): Britain blends ship pre-2.80-style `use_nodes=False`
-materials whose authoring assumed Blender Internal's flat-Lambert
-+ ambient model, which Cycles' physical BSDF reproduces poorly
-(washed-out, hue-shifted, sun_energy 0.028 lands as near-zero).
-EEVEE respects `diffuse_color` + the SUN lamp's direction in a way
-that approximates the original BI look once the ambient and sun
-strength are calibrated against an upstream PNG.  Vehicles & ways
-stay on Cycles because the upstream calibration target for those
-classes was rendered in Cycles.
+**Lighting calibration.**  All upstream PNGs (vehicles, ways,
+buildings alike) were rendered in **Blender Internal under Blender
+2.79** — confirmed by the contributing-graphics tutorial board 75
+topic=17510 (pins Blender 2.79, references BI's OSA-samples
+preset 11→16) and the migration thread topic=21677 ("only
+openable in Blender <2.80, uses the internal renderer").  BI was
+dropped in 2.80 with no upgrade path; everything we render is
+therefore a BI substitute.
+
+We pick the substitute per asset class.  Buildings go through
+`BLENDER_EEVEE`: Britain's `use_nodes=False` BI materials, with
+their flat-Lambert + ambient assumption, render washed-out and
+hue-shifted under Cycles' physical BSDF (sun_energy 0.028 lands
+as near-zero), but read close enough under EEVEE once ambient
+and sun strength are scaled against an upstream PNG.  Vehicles
+and ways stay on Cycles — also an empirical substitute, not a
+match to upstream's authoring engine (there is no Cycles-rendered
+upstream target for any asset class).  Cycles happens to produce
+acceptable results on the vehicle/way blends and was the first
+substitute tried; switching a flaky-cross-CPU vehicle to
+Workbench or EEVEE wouldn't "break upstream calibration" because
+no such Cycles-native calibration exists.
 
 `pak.viewpoints.sun_rotation_for_camera(cam_z, elev=30°, az=-90°)`
 is the single source of truth for the building sun direction —
 used by both the `building_square_viewpoint` (apples-to-apples
 diff against upstream's per-cardinal cells, cam_z varies per
 facing) and `building_hex_viewpoint` (shipped atlas, cam_z=0).
-Defaults plus `_BUILDING_SUN_ENERGY = 2.0` and `pak.render`'s
-EEVEE world ambient `0.30` give `res_1600_kg_01` mean |dRGB| 26.6
-vs upstream — calibrated by grid+line search over (elev, az_offset,
-sun_energy, ambient).  All four knobs are single-asset-calibrated;
-see TODO → "Building lighting is calibrated to one asset" for the
-trigger to revisit.
+Sun energy enters via `_strip_scene`: each Britain blend ships
+its own SUN lamp at the BI-authored `energy=0.028`, which
+`render.py::BlendAuthored` captures before stripping the lamp.
+Building viewpoints declare `sun_energy=None,
+sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE` (= 2.0/0.028 ≈ 71.4)
+so `_install_camera_and_sun` resolves to `authored × scale ≈ 2.0`
+under EEVEE.  Vehicles/ways pin `sun_energy=0.028` directly under
+Cycles where the upstream PNG is the calibration target.
+
+The remaining EEVEE-substitution magic numbers — sun direction
+(elev=30°, az=-90° defaults) and world ambient (0.30 grey in
+`pak.render`) — are calibrated to `res_1600_kg_01` only; see
+TODO → "Building lighting is calibrated to one asset" for the
+trigger to revisit.  Authored `world.color` (Britain blends ship
+(0.906, 1.0, 1.0)) is *not* extracted: that value was BI's
+background sky, not its ambient term, and modern EEVEE's
+`world.color` IS the ambient term — so the authored value is the
+wrong thing to plug in here.
 
 **Texture rebinding.**  Blender 2.80 dropped BI's `material.
 texture_slots[i]` data, but `bpy.data.textures` and
@@ -1283,11 +1307,14 @@ practice.  Vehicles + buildings bake through Cycles
 same-CPU-class non-determinism source we know about, but Intel
 vs AMD running the AVX2 kernel still diverge on transcendentals
 / embree (max per-channel delta ~185 on the cssr atlas when we
-tried Cycles for ways).  Cycles for vehicles is the calibration-
-diff requirement -- `pak/diff_upstream.py` scores us against
-upstream's Cycles renders -- not a determinism guarantee.  If a
-vehicle flakes cross-CPU in CI, switching it to Workbench would
-re-anchor its IoU calibration; cross that bridge when it bites.
+tried Cycles for ways).  Cycles for vehicles is an empirical
+choice that landed acceptable dRGB on the first ported assets,
+not a literal match to upstream's authoring engine (which was BI
+under 2.79 -- see "Lighting calibration" above).  If a vehicle
+flakes cross-CPU in CI, switching it to Workbench or EEVEE would
+re-anchor its IoU calibration but not break a Cycles-native
+upstream target (no such target exists); cross that bridge when
+it bites.
 
 If a flake appears, `pak/diag_png_drift.py` runs as a
 post-failure step and reports whether the drift is in the pixel

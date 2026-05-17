@@ -71,7 +71,20 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float] | None
 
     out_dir = REPO_ROOT / "out" / "diff" / script.stem
     if isinstance(spec, Building):
-        layouts = spec.layouts or 1
+        # Read the layout count off the upstream PNG width rather than
+        # SPEC.layouts.  SPEC.layouts is None for most ports (resolved
+        # to hex_layouts_default at bake time, which is the hex-port's
+        # 8-direction choice, not what's in the upstream 4-wide atlas).
+        # The PNG is the source of truth for "what columns the upstream
+        # actually published"; `_UPSTREAM_NORMAL_CARDINAL` caps the
+        # cardinal cameras at 4, so layouts beyond that go unrendered
+        # (e.g. an upstream-8 atlas would still diff against our 4
+        # cardinals -- diagonals are deferred until they ship).
+        from PIL import Image
+        from pak.fetch_pak import fetch as fetch_pak
+        with Image.open(fetch_pak(stem)) as im:
+            up_w = im.size[0]
+        layouts = min(up_w // 128, 4)
         mat, perm = diff_buildings.run(
             blend, stem, layouts=layouts, out_dir=out_dir,
         )
