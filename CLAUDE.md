@@ -243,20 +243,20 @@ canonical inverts every such asset's facings (the standard
 configuration was the failing case in the original `render.py`
 auto-fit) — trust the contract instead.
 
-**Z = 0 is the renderer's hex-frame floor, not an upstream
-invariant.**  The .blend's native z = 0 is wherever the artist left
-it; visible geometry routinely dips below (e.g. 4wheel-1850 has
-`z_min ≈ −1.54`).  The hex renderer pins the lowest visible vertex
-to z = 0 by computing `z_floor = min(zs)` and translating by
-`−z_floor`.  Don't read the upstream z origin; let the bbox drive
-the shift.
-
-**XY centring is per-asset, not per-frame.**  Artists place the
-asset anywhere inside the camera view; upstream compensates with
-per-facing camera offset (`"vehicles"` alignment vs `"bases"` /
-`"normal"`).  Hex bakers re-centre under their fixed camera using
-the bounding-box midpoint; this is the only piece of fit math that
-reads the model, and it reads only position, never scale.
+**Artist-authored XYZ is the placement contract.**  `_compute_fit`
+with `fit_kind="hex"` is scale-only: convert blend coords to
+intra-tile coords by `2*HEX_TILE_RADIUS/blend_ortho` and stop.  No
+XY recentre, no z-floor drop.  Earlier the renderer did both as a
+substitute for upstream's per-facing camera offset (the
+`"vehicles"` / `"normal"` alignment positions in the upstream render
+script), but the substitute masked real authoring quirks and the
+per-tile `model_translation` axis (added for multi-tile buildings)
+is the right place to express positional anchoring -- not the fit
+matrix.  Britain blends are authored against the contributing-
+graphics spec (long-axis Y, centre near origin, footings at z=0
+for buildings); the scale-only fit honours that authoring on
+everything that follows the spec, and surfaces drift on assets
+that don't.
 
 **Alignment mode is asset-class-dependent.**  Trains, trams, water
 craft and aircraft use upstream's **`vehicles` alignment** camera
@@ -291,9 +291,15 @@ and reports two independent per-facing metrics:
 
   * **Contour** — silhouette IoU plus the absolute XOR pixel count.
     Geometry-only; ignores RGB entirely.
-  * **Colour** — mean abs(RGB-delta) restricted to the silhouette
-    intersection.  Colour-only; pixels missing from one or the other
-    don't bleed in.
+  * **Colour** — mean abs(RGB-delta) over the whole image after
+    compositing both renders onto MAGIC_PINK and Gaussian-blurring
+    σ=3.  Common-background composite collapses the "ours-zero vs
+    upstream-pink" gap; the blur folds texture-phase / sub-pixel-AA
+    mismatch into the macro colour signal.  Reported as
+    `dRGB (blurred all-pixel)` -- note that 80% of pixels are
+    background-on-background and contribute zero, so the absolute
+    number is suppressed relative to per-silhouette-pixel error;
+    use as a relative optimisation target.
 
 A calibrated asset's bboxes match upstream within ±1 px on every
 facing — bbox match is the geometry-only check.  Calibrated assets
@@ -762,8 +768,11 @@ Present:
   square --keep-per-facing`, fetches the matching upstream PNG via
   `fetch_pak.py`, and reports the contour and colour metrics from
   "Calibration validation loop" above (silhouette IoU + XOR pixel
-  count, and intersection-restricted mean abs(RGB-delta)).  Returns
-  non-zero if any facing is below 0.90 IoU.
+  count, and common-bg blurred all-pixel mean abs(RGB-delta)).
+  Returns non-zero if any facing is below 0.90 IoU.
+- `pak/tune_materials.py` — per-asset colour solver: iterates
+  `Material.color` overrides against the blurred dRGB metric until
+  no improvement.  See "Per-asset colour solver" below.
 - `pak/check.py` — convenience driver around
   `diff_upstream.py` / `diff_buildings.py`.  Takes a bake-script
   path (or `--all`), imports it, reads `BLEND` and `UPSTREAM_STEM`
@@ -1137,13 +1146,35 @@ Cycles where the upstream PNG is the calibration target.
 
 The remaining EEVEE-substitution magic numbers — sun direction
 (elev=30°, az=-90° defaults) and world ambient (0.30 grey in
-`pak.render`) — are calibrated to `res_1600_kg_01` only; see
-TODO → "Building lighting is calibrated to one asset" for the
-trigger to revisit.  Authored `world.color` (Britain blends ship
-(0.906, 1.0, 1.0)) is *not* extracted: that value was BI's
-background sky, not its ambient term, and modern EEVEE's
-`world.color` IS the ambient term — so the authored value is the
-wrong thing to plug in here.
+`pak.render`) — are the global fallback; per-asset values land
+via `LIGHTING = Lighting(world_ambient, sun_energy_scale,
+sun_elev_deg, sun_az_offset_deg)` declared alongside MATERIALS in
+the bake script (see `pak.materials.Lighting`).  `_apply_lighting`
+in `pak.render` overrides each field where non-None after
+`_install_camera_and_sun` runs; missing entries fall through to
+the global.  Today only `res_1600_kg_01` carries one (ambient
+0.55, elev 45°); see TODO → "Lighting overrides exist; only the
+pilot uses them" for sweeping the fleet.
+
+Authored `world.color` (Britain blends ship (0.906, 1.0, 1.0))
+is *not* extracted: that value was BI's background sky, not its
+ambient term, and modern EEVEE's `world.color` IS the ambient
+term — so the authored value is the wrong thing to plug in here.
+
+**Per-asset colour solver.**  `pak.tune_materials <bake_script>`
+runs an iterative gradient solver on the bake script's MATERIALS
+against the blurred-all-pixel dRGB metric.  Each step renders the
+asset twice (normal + id-map), composites both ours and upstream
+onto a common background, blurs σ=3, samples per-material means
+from the **blurred** images (σ=0 attribution doesn't track the
+σ=3 metric -- neighborhoods average across material boundaries),
+proposes `new_color = current_color * (up_mean / our_mean)`
+clamped + damped, re-measures.  Only `color=`-bearing materials
+get tuned: adding `color=` to an image-only material flips the
+heuristic `image x blend_diffuse` path to `image x gain`, a
+larger step than the small-gradient iteration assumes.  Opt an
+image-only material into solver tuning by giving it an explicit
+`color=` starting point in the bake script.
 
 **Texture rebinding.**  Blender 2.80 dropped BI's
 `material.texture_slots[i]` API, but the Material+MTex struct
@@ -1194,15 +1225,22 @@ all saved by 2.42/2.48 (pre-2.5 file format).  The full pipeline:
     diffuse colour.  BI's CLOUDS substitute (single-slot heuristic).
   * `Material(slots=[Slot(...), ...])` -> for each slot, build a
     sub-graph (image: `<coord> -> Mapping -> ImageTexture`;
-    procedural: `<coord> -> Mapping -> TexNoise -> ColorRamp(black→
-    white)`), then chain through `MixRGB(blend_type=slot.blend,
-    fac=slot.fac × tex_intensity)` over a running base seeded from
-    the material's diffuse (or `color=` override).  Procedural
-    slots' `tex_intensity` is the noise.Fac so they partially lerp
-    rather than fully replace — BI-faithful for the CLOUDS-default
-    case.  Currently opt-in; the catalog defaults to the single-
-    slot heuristic until the per-Tex colour band is parsed (see
-    TODO).
+    procedural: `<coord> -> Mapping -> TexNoise`, with the slot's
+    output colour either the parsed Tex ColorBand mapped through
+    `ValToRGB` -- when `Tex.flag & TEX_COLORBAND` is set in the
+    .blend -- or, much more commonly in the Britain pak, a constant
+    `RGB(slot.color)` node carrying the per-slot MTex.r/g/b),
+    then chain through `MixRGB(blend_type=slot.blend, fac=slot.fac
+    × tex_intensity)` over a running base seeded from the material's
+    diffuse (or `color=` override).  Procedural slots' `tex_intensity`
+    is the noise.Fac so they partially lerp rather than fully
+    replace -- BI-faithful: a CLOUDS slot ships its per-slot RGB
+    (e.g. Hedge's `(0.10, 0.06, 0.04)`) and the noise modulates
+    influence so low-noise regions show the base while high-noise
+    regions lerp toward the slot colour.  `res_1600_kg_01` runs in
+    slot form (summer dRGB 37.6); the pilot's L0/L2 vs L1/L3
+    asymmetry vs upstream is the open residual -- see TODO ->
+    "Multi-slot IMAGE composition shadows the single-slot heuristic".
   * Materials omitted from MATERIALS render flat-diffuse via
     Blender's `use_nodes=False` auto-conversion.
 

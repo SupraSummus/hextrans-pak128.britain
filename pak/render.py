@@ -362,24 +362,36 @@ def _build_slot_output(bpy, nt, slot):
         # opaque images alpha is 1.0 throughout so the mix factor is
         # just slot.fac — same as the previous single-slot path.
         return tex_node.outputs["Color"], tex_node.outputs["Alpha"]
-    # Procedural: noise.Fac is the intensity (0..1).  BI's tex output for
-    # a procedural *without a color band* is `tex_color = (intensity,
-    # intensity, intensity)` — grayscale, not constant white.  Combined
-    # with `mix_factor = colfac * intensity`, this means at low noise the
-    # slot contributes ~nothing (base shows through), at high noise it
-    # contributes its own grayscale.  Output color = noise-broadcast to
-    # RGB via a ColorRamp from black at 0 to white at 1.
+    # Procedural: noise.Fac is the intensity (0..1) and feeds the slot's
+    # influence factor.  Two output paths for the slot's RGB:
+    #
+    #   color_band -> intensity mapped through the band's stops via a
+    #     ValToRGB node.  BI-faithful for Tex's with `TEX_COLORBAND` set
+    #     (rare in the Britain pak).
+    #
+    #   else -> constant `slot.color` (from MTex.r/g/b).  BI's default
+    #     when the texture supplies no RGB: Hedge's CLOUDS slot ships
+    #     `(0.10, 0.06, 0.04)` and contributes a dark-brown overlay
+    #     modulated by noise; MainColour1's ships `(0.60, 0.60, 0.60)`.
+    #     Before this path landed the renderer emitted a black->white
+    #     ramp here, dropping the per-slot tint and regressing summer
+    #     dRGB on res_1600 when switched to slot form.
     noise = nt.nodes.new("ShaderNodeTexNoise")
     noise.inputs["Scale"].default_value = 4.0
     noise.inputs["Detail"].default_value = 2.0
     nt.links.new(mapping.outputs["Vector"], noise.inputs["Vector"])
-    ramp = nt.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = 0.0
-    ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
-    ramp.color_ramp.elements[1].position = 1.0
-    ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
-    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
-    return ramp.outputs["Color"], noise.outputs["Fac"]
+    if slot.color_band:
+        ramp = nt.nodes.new("ShaderNodeValToRGB")
+        cr = ramp.color_ramp
+        for i, (pos, r, g, b, a) in enumerate(slot.color_band):
+            stop = cr.elements[i] if i < len(cr.elements) else cr.elements.new(pos)
+            stop.position = pos
+            stop.color = (r, g, b, a)
+        nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+        return ramp.outputs["Color"], noise.outputs["Fac"]
+    rgb_node = nt.nodes.new("ShaderNodeRGB")
+    rgb_node.outputs[0].default_value = (*slot.color, 1.0)
+    return rgb_node.outputs["Color"], noise.outputs["Fac"]
 
 
 def _build_multislot_material(bpy, m, mat_spec):
@@ -590,8 +602,8 @@ def _configure_eevee(scn) -> None:
     """EEVEE substitute for BI: taa_render_samples=8 gives proper edge
     alpha-AA (1 writes 0-or-255 only and drops the edge ring); GTAO,
     bloom, SSR, volumetrics off for determinism across CI runners.
-    World ambient at 0.30 grey is calibrated against `res_1600_kg_01`
-    upstream -- see CLAUDE.md -> "Building-bake architecture"."""
+    World ambient defaults to 0.30 grey; per-asset Lighting overrides
+    via `_apply_lighting`."""
     scn.eevee.taa_render_samples = 8
     scn.eevee.use_gtao = False
     scn.eevee.use_bloom = False
@@ -605,6 +617,36 @@ def _configure_eevee(scn) -> None:
             scn.world.color = (0.30, 0.30, 0.30)
         except AttributeError:
             pass
+
+
+def _apply_lighting(bpy, sun, authored, viewpoint, lighting) -> None:
+    """Per-asset Lighting overrides applied on top of the Viewpoint +
+    BlendAuthored defaults.  Called from `render_atlas` after
+    `_install_camera_and_sun` and the engine configurer; each field is
+    independently optional."""
+    scn = bpy.context.scene
+    if lighting.world_ambient is not None and scn.world is not None:
+        try:
+            scn.world.color = lighting.world_ambient
+        except AttributeError:
+            pass
+    if lighting.sun_energy_scale is not None and authored.sun_energy is not None:
+        sun.data.energy = authored.sun_energy * lighting.sun_energy_scale
+    if (lighting.sun_elev_deg is not None or
+            lighting.sun_az_offset_deg is not None):
+        import math
+
+        from pak.viewpoints import sun_rotation_for_camera
+        elev = (lighting.sun_elev_deg if lighting.sun_elev_deg is not None
+                else 30.0)
+        az_off = (lighting.sun_az_offset_deg
+                  if lighting.sun_az_offset_deg is not None else -90.0)
+        # Recompute each facing's sun rotation in place against the override.
+        for f in viewpoint.facings:
+            cam_z_deg = math.degrees(f.camera_rotation_euler[2])
+            f.sun_rotation_euler = sun_rotation_for_camera(
+                cam_z_deg, sun_elev_deg=elev, sun_az_offset_deg=az_off,
+            )
 
 
 def _configure_workbench(scn) -> None:
@@ -749,17 +791,26 @@ def _bake_world_into_meshes(bpy, mathutils):
 def _compute_fit(mathutils, records, fit_kind: str,
                  blend_ortho: float | None = None):
     """Build the world->fitted-frame 4x4 the per-facing transform composes
-    over.  `fit_kind="none"` is identity (model renders at its native
-    blend-coord scale).  `fit_kind="hex"` centres the XY bounding box
-    on origin, drops the lowest visible vertex to z=0, and scales by
-    `2 * HEX_TILE_RADIUS / blend_ortho` to convert from blend coords into
-    the pakset's intra-tile coord system.  `blend_ortho` is the blend's
-    authored ortho_scale read by `_strip_scene` — falls back to the
-    pakset-default `UPSTREAM_ORTHO_SCALE` (24, vehicle-blend convention)
-    when the blend has no camera.  Buildings tend to ship at
-    ortho_scale=12 (twice the per-cell zoom) and honouring that per-
-    asset is what makes them render at upstream's per-pixel scale
-    instead of half-size."""
+    over.
+
+    `fit_kind="none"` -- identity (model renders at native blend-coord
+    scale).  Used by the square calibration view, where upstream camera
+    positions are in blend coords.
+
+    `fit_kind="hex"` -- scale by `2 * HEX_TILE_RADIUS / blend_ortho` to
+    convert blend coords -> intra-tile coords; no XY recentre, no
+    z-floor drop.  The artist's authored XYZ placement is the contract
+    -- same as upstream's BI render reads it.  Vehicles authored
+    near origin and at z>=0 (the upstream contributing-graphics spec)
+    sit centred in the cell; assets that aren't surface that as a
+    real authoring quirk rather than have it masked by our recentre.
+
+    `blend_ortho` is the blend's authored ortho_scale read by
+    `_strip_scene` -- falls back to `UPSTREAM_ORTHO_SCALE` (24,
+    vehicle-blend convention) when the blend has no camera.  Buildings
+    tend to ship at ortho_scale=12 (twice the per-cell zoom); honouring
+    that per-asset is what makes them render at upstream's per-pixel
+    scale instead of half-size."""
     M = mathutils.Matrix
     if fit_kind == "none":
         return M.Identity(4)
@@ -767,17 +818,7 @@ def _compute_fit(mathutils, records, fit_kind: str,
         from pak.hex_synth import HEX_TILE_RADIUS, UPSTREAM_ORTHO_SCALE  # noqa: E402
         ortho = blend_ortho if blend_ortho is not None else UPSTREAM_ORTHO_SCALE
         scale = 2.0 * HEX_TILE_RADIUS / ortho
-        xs = []; ys = []; zs = []
-        for _, orig in records:
-            for c in orig:
-                xs.append(c.x); ys.append(c.y); zs.append(c.z)
-        if not xs:
-            raise SystemExit("no renderable mesh vertices to fit")
-        cx = (min(xs) + max(xs)) / 2.0
-        cy = (min(ys) + max(ys)) / 2.0
-        z_floor = min(zs)
-        S = M.Diagonal((scale, scale, scale, 1.0))
-        return S @ M.Translation((-cx, -cy, -z_floor))
+        return M.Diagonal((scale, scale, scale, 1.0))
     raise SystemExit(f"unknown fit_kind: {fit_kind!r}")
 
 
@@ -843,6 +884,7 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                  name: str, cols_per_row: int | None = None,
                  keep_per_facing: bool = False,
                  materials: dict | None = None,
+                 lighting=None,
                  material_id_map: bool = False) -> None:
     """Render `viewpoint.facings` of the currently loaded blend.  Writes
     `<out_dir>/<name>.png` (atlas).  With `keep_per_facing=True`, also
@@ -867,6 +909,8 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     if viewpoint.engine == "BLENDER_EEVEE":
         _reload_external_textures(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
+    if lighting is not None:
+        _apply_lighting(bpy, sun, authored, viewpoint, lighting)
     records = _bake_world_into_meshes(bpy, mathutils)
     if material_id_map:
         mat_to_id = _swap_to_id_map(bpy)
@@ -947,6 +991,10 @@ def _parse_args(argv):
                          "Per-material image/noise/texco/size descriptions "
                          "the renderer wires into Principled BSDF node "
                          "graphs; unlisted materials render flat-diffuse.")
+    ap.add_argument("--lighting", default="",
+                    help="JSON serialisation of the bake script's optional "
+                         "`LIGHTING = Lighting(...)` block; per-asset world-"
+                         "ambient + sun overrides.  See pak.materials.Lighting.")
     ap.add_argument("--material-id-map", action="store_true",
                     help="Diagnostic: instead of the normal render, "
                          "replace every material with a flat unlit "
@@ -1010,10 +1058,18 @@ def main(argv):
         from pak.materials import from_jsonable
         materials = from_jsonable(json.loads(args.materials))
 
+    lighting = None
+    if args.lighting:
+        import json
+
+        from pak.materials import Lighting
+        lighting = Lighting.from_jsonable(json.loads(args.lighting))
+
     render_atlas(bpy, mathutils, vp, args.out, args.name,
                  cols_per_row=args.cols_per_row,
                  keep_per_facing=args.keep_per_facing,
                  materials=materials,
+                 lighting=lighting,
                  material_id_map=args.material_id_map)
     return 0
 

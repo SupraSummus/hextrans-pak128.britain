@@ -129,24 +129,53 @@ a `--mask` mode on render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
 
-**Multi-slot BI composition needs per-Tex colour band data.**  The
-slot-stack rendering path (`pak.render._build_multislot_material`,
-opt-in via `Material(slots=[Slot(...), ...])`) replicates BI's
-slot order, blend mode and intensity-modulated fac correctly, but
-procedural slots (CLOUDS / NOISE / MUSGRAVE) without a colour band
-output grayscale.  In BI, the Tex datablock carries a ColorBand
-that maps the texture's intensity to RGB — that's where Britain's
-hedge materials get their green and dirt materials get their brown.
-Without it, switching res_1600 to slot form regresses summer dRGB
-30.6 → 41.2.  Concrete next move: extend `pak.blend_slots` to parse
-the Tex struct (pointer from `MTex.tex`) and its ColorBand entries
-out of the .blend binary; add `color_band: list[(pos, r, g, b, a)]`
-to `Slot`; have `_build_slot_output` build a `ShaderNodeValToRGB`
-from the parsed band instead of the current black→white default;
-re-seed res_1600's MATERIALS in slot form, run
-`pak.diag_per_material --all` to compare, sweep the catalog under
-slot form, decide whether to keep `image=` / `noise=` shorthand
-paths or migrate everyone.
+**BI-faithful slot composition replaces, heuristic multiplies.**
+`pak.blend_slots` reads per-slot MTex.r/g/b + Tex ColorBand from the
+.blend binary; `Slot.color` / `Slot.color_band` ride through to
+`render._build_slot_output`, which emits the BI-faithful colour for
+procedural slots (constant MTex-r/g/b, or band mapped through noise
+intensity).  No ported Britain building blend carries an active
+`TEX_COLORBAND` flag, so the band path is forward infrastructure
+rather than load-bearing for today's catalog.
+
+What's actually load-bearing: a slot[0] IMAGE under MIX fac=1.0
+**replaces** the material's diffuse with the image pixels in BI's
+real math.  The `Material(image=..., size=...)` single-slot heuristic
+in `_build_image_material` instead **multiplies** `image x diffuse`
+-- BI-incorrect, but visually closer to upstream because
+`flemish-bond-improved x (0.61, 0.33, 0.27)` lands near the
+upstream Brick photo where BI's replace renders too bright.  The
+pilot ships in the heuristic path because of this; slot form on
+this blend regressed the metric.
+
+Concrete next moves to close the gap honestly: (a) switch building
+viewpoint to Cycles (handles world emission as ambient natively,
+may rebalance slot composition); or (b) audit BI's actual slot
+math (mapto's `MA_ADDCOL` flag, MTex `stencil`) for a path that
+multiplies image against diffuse.  Pixel-identical via BI 2.79b
+sidecar is open but on hold (legacy-renderer dependency we'd
+rather not carry -- see "Pixel-perfect building match needs UVs"
+for the framing).
+
+**Building square-projection diff has a ~1px AA-filter residual.**
+The silhouette XOR row shows a ~1px column of ours-only red at the
+building's left edge across L0/L1/L2 and on the right edge for L3.
+Traced to its source: by projecting every visible mesh vertex of
+`res_1600_kg_01` analytically through each cardinal camera and
+comparing against (a) our render's silhouette bbox and (b) the
+upstream PNG's silhouette bbox, our render lands within sub-pixel
+of analytical (e.g. S cardinal analytic left=0.64, our render
+left=pixel 0) while upstream's left is at pixel 1 -- consistently
+1 px right of analytical across all four cardinals.  Our silhouette
+is 128 px wide; upstream's is 127 px wide.  Almost certainly the
+saved `filtertype=2, gauss=1.5` Gaussian AA filter in upstream's
+.blend (BI's edge-eating filter at 1.5 px width) contracting
+upstream's silhouette by ~0.5 px on each side; EEVEE's TAA at 8
+samples doesn't.  Closing it requires running BI 2.79b (the
+legacy-renderer-debt path we've ruled out) or replicating BI's
+Gaussian filter footprint in EEVEE post-process.  Filed as a known
+residual; no concrete next move planned -- the diff harness is a
+regression check on our own pipeline, not a calibration target.
 
 **Per-material dRGB attribution surfaced two systematic gaps.**
 `pak.diag_per_material --all` (added this session) aggregates by
@@ -165,24 +194,19 @@ the BSDF level (mimicking BI's additive WORLD_AMB term).  (2) is
 the multi-slot colour-band gap above — same fix, different
 manifestation.
 
-**Building lighting needs re-calibration against the new MATERIALS
-baseline.**  The previous EEVEE-substitution knobs
-(`_BI_TO_EEVEE_SUN_SCALE` ≈ 71.4, sun direction elev=30°/az_offset=-90°,
-world ambient 0.30 grey) were grid-searched against a hand-coded
-material-binding path (now retired -- see "Building material binding
-now reads BI MTex slot data" above).  Under the new slot-driven
-binding the fleet-mean dRGB shifted slightly (res_1600 from 26.6 to
-30.6; fleet mean from ~30.7 to ~32.2 excl gasometer) because the
-old hand-tuned `_TEX_TILE` frequencies were themselves part of the
-lighting fit.  Per-asset preferences still disagree (res_kg_1920's
-opposing-ambient need is structural, not fixed by material data).
-Concrete next move: re-run the 12-point grid (elev=0, az ∈
-{-90,-45,+45,+90}, amb ∈ {0.15,0.30,0.50}) on the 6-asset fleet
-under the new MATERIALS path; if no global beats the current
-baseline, move sun + ambient into a per-asset `LIGHTING` dict on
-`Building` SPEC (mirroring how ways carry per-recolour
-`MATERIALS`), defaulting to today's fleet values; calibrate
-townhouse and detached houses independently.
+**Lighting overrides exist; only the pilot uses them.**  Per-asset
+`LIGHTING = Lighting(world_ambient, sun_energy_scale, sun_elev_deg,
+sun_az_offset_deg)` lands as a module-level constant alongside
+MATERIALS, threaded through bake / diff / render via `--lighting`
+JSON.  `res_1600_kg_01` carries one (ambient 0.55, elev 45°);
+the other six ported buildings still rely on the global EEVEE-
+substitute defaults (ambient 0.30, elev 30°).  Per-asset preferences
+diverge (res_kg_1920's opposing-ambient need is structural, not
+fixed by material data) so the global is unlikely to beat per-asset
+tuning across the fleet.  Concrete next move: run `pak.tune_materials`
+on each ported building, accept whichever per-asset `LIGHTING +
+MATERIALS` it converges to.  Light cost (~2-5 min per asset); does
+not require any infrastructure beyond what landed.
 
 **Pavement texture file missing from upstream blends repo.**
 Multiple Britain blends reference a `concrete-paving-small` Image

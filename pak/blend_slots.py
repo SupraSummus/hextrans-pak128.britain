@@ -31,6 +31,11 @@ TEXCO_ORCO = 1
 TEXCO_GLOB = 8
 TEXCO_UV = 16
 
+# Tex.flag bit 0: when set, the Tex's `coba` ColorBand maps the
+# texture's intensity to RGB at render time; otherwise BI falls back
+# to the MTex slot's per-slot RGB.
+TEX_COLORBAND = 1
+
 # The Britain blends only use these subset of Tex.type values; rest are
 # present in the format but irrelevant to this pak.
 _TEX_TYPE = {
@@ -49,6 +54,18 @@ class TextureSlot:
     texco: int              # 1=ORCO 8=GLOBAL 16=UV
     blendtype: int          # 0=MIX 1=MUL 2=ADD ...
     colfac: float
+    # MTex per-slot RGB (`MTex.r/g/b`).  BI uses this as the slot's
+    # texture-output colour when the Tex itself doesn't supply RGB --
+    # i.e. for procedural textures without `TEX_COLORBAND` set, or
+    # without `stype = TEX_COLOR`.  Default for unused IMAGE slots
+    # is the magenta sentinel `(1.0, 0.0, 1.0)`; meaningful only for
+    # procedural slots that the renderer composites as a flat colour.
+    color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    # ColorBand entries from the Tex datablock when `TEX_COLORBAND`
+    # (`Tex.flag & 1`) is set.  None if the flag is unset, in which
+    # case BI falls back to `color` (above).  Each entry is
+    # `(pos, r, g, b, a)`.
+    color_band: list[tuple[float, float, float, float, float]] | None = None
 
 
 @dataclass
@@ -247,6 +264,7 @@ def _read_slot(P: _Parser, slot_i: int, mt: bytes) -> TextureSlot:
     """Decode one MTex block into a TextureSlot."""
     tex_type = "OTHER"
     image_name = ""
+    color_band = None
     tex_ptr = P._field("MTex", mt, "tex")
     if tex_ptr:
         tex_blk_i = P.by_addr.get(tex_ptr)
@@ -255,12 +273,19 @@ def _read_slot(P: _Parser, slot_i: int, mt: bytes) -> TextureSlot:
             tex_type = _TEX_TYPE.get(
                 P._maybe_field("Tex", tex_body, "type", 0), "OTHER"
             )
+            tex_flag = P._maybe_field("Tex", tex_body, "flag", 0)
             if tex_type == "IMAGE":
                 ima_ptr = P._maybe_field("Tex", tex_body, "ima", 0)
                 if ima_ptr:
                     ima_idx = P.by_addr.get(ima_ptr)
                     if ima_idx is not None:
                         image_name = P._id_name(P.blocks[ima_idx][1])
+            if tex_flag & TEX_COLORBAND:
+                coba_ptr = P._maybe_field("Tex", tex_body, "coba", 0)
+                if coba_ptr:
+                    coba_idx = P.by_addr.get(coba_ptr)
+                    if coba_idx is not None:
+                        color_band = _read_color_band(P, P.blocks[coba_idx][1])
 
     size_xyz = P._field("MTex", mt, "size") or [1.0, 1.0, 1.0]
     ofs_xyz = P._field("MTex", mt, "ofs") or [0.0, 0.0, 0.0]
@@ -273,7 +298,30 @@ def _read_slot(P: _Parser, slot_i: int, mt: bytes) -> TextureSlot:
         texco=P._field("MTex", mt, "texco") or 0,
         blendtype=P._field("MTex", mt, "blendtype") or 0,
         colfac=P._maybe_field("MTex", mt, "colfac", 1.0),
+        color=(
+            P._maybe_field("MTex", mt, "r", 1.0),
+            P._maybe_field("MTex", mt, "g", 1.0),
+            P._maybe_field("MTex", mt, "b", 1.0),
+        ),
+        color_band=color_band,
     )
+
+
+def _read_color_band(
+    P: _Parser, body: bytes,
+) -> list[tuple[float, float, float, float, float]]:
+    """Decode a ColorBand block into its `(pos, r, g, b, a)` stops.
+
+    Layout (from `DNA_color_types.h`, stable across BI-era files):
+    `short flag, tot, cur, ipotype` then `CBData data[16]`, where each
+    `CBData` is `float r, g, b, a, pos; int cur` (24 bytes)."""
+    tot = struct.unpack(P.endian + "h", body[2:4])[0]
+    stops: list[tuple[float, float, float, float, float]] = []
+    for i in range(tot):
+        off = 8 + i * 24
+        r, g, b, a, pos = struct.unpack(P.endian + "fffff", body[off:off + 20])
+        stops.append((pos, r, g, b, a))
+    return stops
 
 
 def _main():
@@ -285,7 +333,9 @@ def _main():
             print(f"  slot[{s.slot_idx}]: {s.tex_type:<7s} img={s.image_name!r:<28s} "
                   f"size={tuple(round(v, 3) for v in s.size)} "
                   f"ofs={tuple(round(v, 3) for v in s.ofs)} "
-                  f"texco={s.texco} blend={s.blendtype} fac={s.colfac:.2f}")
+                  f"texco={s.texco} blend={s.blendtype} fac={s.colfac:.2f} "
+                  f"color={tuple(round(v, 3) for v in s.color)}"
+                  + (f" band={s.color_band}" if s.color_band else ""))
 
 
 if __name__ == "__main__":

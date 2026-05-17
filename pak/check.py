@@ -99,11 +99,13 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                 materials=getattr(mod, "MATERIALS", None),
                 blend_winter=blend_winter,
                 materials_winter=getattr(mod, "MATERIALS_WINTER", None),
+                lighting=getattr(mod, "LIGHTING", None),
             )
         else:
             mat, perm, drgb = diff_buildings.run(
                 blend, stem, layouts=layouts, out_dir=out_dir,
                 materials=getattr(mod, "MATERIALS", None),
+                lighting=getattr(mod, "LIGHTING", None),
             )
             seasons = [("summer", mat, perm, drgb)]
 
@@ -117,7 +119,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             print(diff_buildings.format_matrix(mat, perm))
             print(f"mean IoU identity: {diag:.3f}  best perm: {best:.3f}  "
                   f"worst-of-best: {worst:.3f}  perm={perm}")
-            print(f"dRGB (intersection mean): mean={drgb_mean:.2f}  "
+            print(f"dRGB (blurred all-pixel): mean={drgb_mean:.2f}  "
                   f"per-layout={[round(v, 2) for v in drgb]}")
             worst_overall = min(worst_overall, worst)
             drgb_overall = max(drgb_overall, drgb_mean)
