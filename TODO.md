@@ -128,34 +128,72 @@ port the material-swap code from the upstream `-65` script into
 a `--mask` mode on render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
-**Per-asset material binding for buildings is hand-coded for one
-blend.**  `pak.render._bind_textures_via_nodes` reconstructs BI's
-lost material→texture binding by name match (Brick→Brick) plus
-a small `explicit_map` (Pavement→Pavings, Roof/RoofSide→Brick) and
-`procedural_noise_mats = {"hedge"}` for materials BI bound to CLOUDS
-procedurals.  `_TEX_TILE` is a parallel name-keyed table picking
-how many cycles per object bbox each texture tiles at.  All three
-are calibrated to `res_1600_kg_01`'s material names.  Status across
-the seven current building ports: bakes complete without errors
-(material names happen to overlap enough — Brick, Wood, Roof, Tile
-recur), but residual flat regions on unmatched materials aren't
-audited.  Concrete next move (now overdue): move the per-asset
-binding into `Building` SPEC as a `materials={"Brick": {...}}`
-dict declared in each bake script mirroring the way ways already
-declare `MATERIALS = {...}`, then delete the global tables.
+**Building material→texture binding can read from .blend binary,
+not just guess by name.**  `pak/blend_slots.py` parses the pre-2.5
+Material/MTex structs that survive in every Britain building blend
+(saved as Blender 2.42/2.48, so the `MTex *mtex[10]` slot array is
+intact in the binary even though Blender 2.80's API stripped it).
+Per-slot data extracted: `tex_type` (IMAGE / CLOUDS / NOISE /
+MUSGRAVE / STUCCI / WOOD), `image_name`, `size` (per-axis tile
+count), `ofs`, `texco` (ORCO/GLOB/UV), `blendtype`, `colfac`, plus
+per-material rgb + alpha.  Validated on res_1600_kg_01: the binary
+says Roof's texture is `BrownTile` (image `flemish-bond-impr.001`)
+at size `(3, 1, 2)`, not `Brick` -- the hand-coded
+`explicit_map["roof"] = "brick"` is overlaying the wrong pattern.
+No production consumer yet -- `pak.blend_slots` ships as a parser
++ `python3 -m pak.blend_slots <blend>` CLI inspection tool.  The
+straightforward "feed slot data into Blender's Mapping node"
+integration regressed res_1600 from 26.6 to 39.1 dRGB because
+BI's TEXCO_GLOB sizes the texture against world units while
+Blender 4.0's Mapping/Generated operates on bbox-normalised
+[0, 1], a factor of `world_span` apart; a fixed coord-scale
+multiplier (×6 for GLOB, ×2 for ORCO) wasn't enough.  Concrete
+next move: compute the per-mesh bbox extent in blend space at
+material-binding time (before `_bake_world_into_meshes` runs),
+use it as the per-asset GLOB→Generated multiplier; verify on
+res_1600 first, then sweep the fleet.  Once landed, delete
+`_TEX_TILE` and `explicit_map` from `pak/render.py`.
 
-**Building lighting is calibrated to one asset.**  Three EEVEE-
-substitution knobs (`_BI_TO_EEVEE_SUN_SCALE` ≈ 71.4, sun direction
-elev=30°/az_offset=-90°, world ambient 0.30 grey) came out of
-grid+line search against `res_1600_kg_01`.  Sun energy itself is
-no longer a free knob — it's `authored × scale`, so a future blend
-authoring a non-0.028 sun would pick that up automatically.  Six
-new ports inherit these knobs unchanged and look acceptable by
-eye; per-asset dRGB hasn't been measured (diff is geometry-only
-on best-perm).  Concrete next move when one of the new ports
-needs better lighting: run `pak/diff_buildings.py` on it, and
-either find shared values that work across all seven or move the
-knobs into `Building` SPEC.
+**Building lighting is near the fleet-mean global minimum; per-asset
+preferences disagree.**  Three EEVEE-substitution knobs
+(`_BI_TO_EEVEE_SUN_SCALE` ≈ 71.4, sun direction elev=30°/az_offset=-90°,
+world ambient 0.30 grey) came out of grid+line search against
+`res_1600_kg_01`.  `diff_buildings` now reports per-layout dRGB
+alongside IoU (see `pak/diff_buildings.py`); a 12-point grid
+(elev=0, az ∈ {-90,-45,+45,+90}, amb ∈ {0.15,0.30,0.50}) on the
+6-asset fleet (excl. gasometer) found no combination beats the
+baseline 30.7 mean dRGB.  The per-asset numbers tell a sharper story:
+res_kg_1920_detatched bottoms at 20.3 dRGB at amb=0.50 (very bright
+ambient), while res_kg_1870_townhouse hits 61.7 at the same point
+(very bad).  The two assets have opposing lighting preferences, so
+fleet-mean tuning is necessarily a compromise.  Sun energy itself
+is no longer a free knob — it's `authored × scale`, so a future
+blend authoring a non-0.028 sun picks that up automatically.
+Concrete next move: move sun + ambient into a per-asset
+`LIGHTING` dict on `Building` SPEC (mirroring how ways carry per-
+recolour `MATERIALS`), defaulting to today's fleet values; calibrate
+townhouse and detached houses independently.  See also "Per-asset
+material binding" above -- the same per-asset story drives both.
+
+**Gasometer renders see-through under EEVEE.**  Symptom:
+ind_1860_jh_gasometer sits at IoU 0.80 / dRGB 65 vs the fleet's
+~0.92 / ~30, with the silhouette XOR red+blue across the upper
+half of the tank.  `pak/blend_slots.py` reads `Material->alpha`
+authoritatively from the .blend binary; on the gasometer only the
+small `Transparent` material (on a 4-vert decorative plane) has
+alpha < 1, while every outer-tank material (`Material.001..003`,
+`MainColour1.001`) is alpha=1.  So the translucent appearance
+upstream isn't from per-material alpha at all -- likely a BI
+ZTRANSP / raytrace-transparency / use_transparency flag the
+.blend stores in a field `pak.blend_slots` doesn't currently
+extract.  Concrete next move: extend `blend_slots.extract` to
+read `Material.mode` (BI's flag bitfield; `MA_ZTRANSP=1<<6`,
+`MA_RAYTRANSP=1<<9`); audit the gasometer materials for which
+flags are set; route those through a (future) renderer integration
+that uses node-graph alpha -- a fresh-eyes test confirmed
+`use_nodes=False` + `blend_method='BLEND'` + `diffuse_color[3]<1`
+is a no-op under EEVEE 4.0, so any alpha integration has to build
+a real Principled BSDF graph with the Alpha socket wired.
 
 **Pixel-perfect building match needs UVs (or new materials).**
 The 26.6 dRGB floor on `res_1600_kg_01` is set by BI's lost

@@ -141,27 +141,43 @@ def _reload_external_textures(bpy) -> None:
             pass
 
 
+def _bsdf_node(nt):
+    """A flat-shading Principled BSDF (roughness=1, specular=0) — the
+    EEVEE substitute for BI's default Lambert."""
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 1.0
+    try:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.0
+    except KeyError:
+        bsdf.inputs["Specular"].default_value = 0.0
+    return bsdf
+
+
 def _bind_textures_via_nodes(bpy) -> None:
-    """Reconstruct the BI `material.texture_slots[i] -> texture` binding
-    that Blender 2.80 stripped, via name-match heuristic against
-    `bpy.data.textures` (which survives).  Builds a Principled BSDF
-    node graph per matched material: Generated coords -> Mapping
+    """Reconstruct BI material->texture bindings via the name-match
+    heuristic against `bpy.data.textures` (which survives the
+    2.80 stripping of `material.texture_slots`).  Builds a Principled
+    BSDF node graph per matched material: Generated coords -> Mapping
     (scale `tile_n`) -> ImageTexture -> Multiply by fallback diffuse
     -> Base Color.  Materials with no image-texture match but a name
     in `procedural_noise_mats` (Hedge) get a Noise->ColorRamp node
-    graph instead — substitutes BI's lost CLOUDS texture.  Everything
-    else keeps its flat `diffuse_color`.
+    graph instead -- substitutes BI's lost CLOUDS texture.
 
-    See CLAUDE.md → "Building-bake architecture" for what this
-    approximation does and does not recover from upstream's BI render."""
+    See CLAUDE.md -> "Building-bake architecture" for what this
+    approximation does and does not recover from upstream's BI render.
+
+    A richer recovery path -- reading BI's authoritative MTex slot
+    data from the .blend binary (`pak/blend_slots.py`) -- is staged
+    but not wired in; see TODO."""
 
     tex_by_name: dict[str, "bpy.types.Texture"] = {}
     for t in bpy.data.textures:
         if t.type == "IMAGE" and t.image and t.image.size[0] > 0:
             tex_by_name[t.name.lower()] = t
 
-    # Hand-encoded overrides for material/texture name pairs the prefix
-    # matcher misses.  Extend per blend as new buildings port.
+    # Fallback hand-encoded overrides for material/texture name pairs
+    # the prefix matcher misses.  Only kicks in when slot-data extraction
+    # didn't bind this material.
     explicit_map = {
         "pavement": "pavings",
         "roof": "brick",
@@ -177,7 +193,6 @@ def _bind_textures_via_nodes(bpy) -> None:
                 return tex
         return None
 
-    # Materials BI bound to procedural CLOUDS textures (now unreachable).
     procedural_noise_mats = {"hedge"}
 
     def build_image_material(m, tex):
@@ -186,12 +201,7 @@ def _bind_textures_via_nodes(bpy) -> None:
         nt = m.node_tree
         nt.nodes.clear()
         out = nt.nodes.new("ShaderNodeOutputMaterial")
-        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
-        bsdf.inputs["Roughness"].default_value = 1.0
-        try:
-            bsdf.inputs["Specular IOR Level"].default_value = 0.0
-        except KeyError:
-            bsdf.inputs["Specular"].default_value = 0.0
+        bsdf = _bsdf_node(nt)
         tex_img = nt.nodes.new("ShaderNodeTexImage")
         tex_img.image = tex.image
         coord = nt.nodes.new("ShaderNodeTexCoord")
@@ -216,12 +226,7 @@ def _bind_textures_via_nodes(bpy) -> None:
         nt = m.node_tree
         nt.nodes.clear()
         out = nt.nodes.new("ShaderNodeOutputMaterial")
-        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
-        bsdf.inputs["Roughness"].default_value = 1.0
-        try:
-            bsdf.inputs["Specular IOR Level"].default_value = 0.0
-        except KeyError:
-            bsdf.inputs["Specular"].default_value = 0.0
+        bsdf = _bsdf_node(nt)
         noise = nt.nodes.new("ShaderNodeTexNoise")
         noise.inputs["Scale"].default_value = 50.0
         noise.inputs["Detail"].default_value = 2.0

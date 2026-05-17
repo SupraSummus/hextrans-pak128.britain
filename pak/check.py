@@ -56,9 +56,11 @@ def _discover() -> list[Path]:
     return out
 
 
-def _run_one(script: Path, views: int) -> tuple[float, int | None, float] | None:
-    """Returns `(worst_iou, xor_px_or_None, fail_floor)` -- `xor_px`
-    is None for buildings since the harness doesn't compute it yet."""
+def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float | None] | None:
+    """Returns `(worst_iou, xor_px_or_None, fail_floor, drgb_mean_or_None)`
+    -- `xor_px` is None for buildings (the harness doesn't compute it
+    yet); `drgb_mean` is None for vehicles (printed in the per-facing
+    table instead, no need to duplicate in the summary)."""
     mod = _load(script)
     blend = getattr(mod, "BLEND", None)
     stem = getattr(mod, "UPSTREAM_STEM", None)
@@ -85,14 +87,17 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float] | None
         with Image.open(fetch_pak(stem)) as im:
             up_w = im.size[0]
         layouts = min(up_w // 128, 4)
-        mat, perm = diff_buildings.run(
+        mat, perm, drgb = diff_buildings.run(
             blend, stem, layouts=layouts, out_dir=out_dir,
         )
         worst, best, diag = diff_buildings.summarise(mat, perm)
         print(diff_buildings.format_matrix(mat, perm))
         print(f"mean IoU identity: {diag:.3f}  best perm: {best:.3f}  "
               f"worst-of-best: {worst:.3f}  perm={perm}")
-        return worst, None, diff_buildings.FAIL_IOU
+        drgb_mean = sum(drgb) / len(drgb)
+        print(f"dRGB (intersection mean): mean={drgb_mean:.2f}  "
+              f"per-layout={[round(v, 2) for v in drgb]}")
+        return worst, None, diff_buildings.FAIL_IOU, drgb_mean
 
     metrics = diff_upstream.run(blend, stem, views=views, out_dir=out_dir)
     print(f"wrote {out_dir / 'grid.png'}")
@@ -100,7 +105,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float] | None
     worst = min(m.iou for m in metrics)
     xor_tot = sum(m.xor_px for m in metrics)
     print(f"worst IoU: {worst:.3f}  sum XOR: {xor_tot} px")
-    return worst, xor_tot, diff_upstream.FAIL_IOU
+    return worst, xor_tot, diff_upstream.FAIL_IOU, None
 
 
 def main(argv: list[str]) -> int:
@@ -113,25 +118,26 @@ def main(argv: list[str]) -> int:
 
     scripts = _discover() if args.all else [Path(args.script).resolve()]
 
-    summary: list[tuple[str, float, int | None]] = []
+    summary: list[tuple[str, float, int | None, float | None]] = []
     rc = 0
     for s in scripts:
         print(f"=== {s.relative_to(REPO_ROOT)} ===")
         result = _run_one(s, args.views)
         if result is None:
             continue
-        worst, xor_tot, fail_floor = result
-        summary.append((s.stem, worst, xor_tot))
+        worst, xor_tot, fail_floor, drgb_mean = result
+        summary.append((s.stem, worst, xor_tot, drgb_mean))
         if worst < fail_floor:
             rc = 1
         print()
 
     if len(summary) > 1:
         print("=== summary ===")
-        print(f"{'asset':<28}  {'worst IoU':>9}  {'sum XOR_px':>10}")
-        for name, worst, xor_tot in summary:
+        print(f"{'asset':<28}  {'worst IoU':>9}  {'sum XOR_px':>10}  {'mean dRGB':>9}")
+        for name, worst, xor_tot, drgb_mean in summary:
             xor_cell = f"{xor_tot:>10d}" if xor_tot is not None else f"{'—':>10}"
-            print(f"{name:<28}  {worst:>9.3f}  {xor_cell}")
+            drgb_cell = f"{drgb_mean:>9.2f}" if drgb_mean is not None else f"{'—':>9}"
+            print(f"{name:<28}  {worst:>9.3f}  {xor_cell}  {drgb_cell}")
 
     return rc
 
