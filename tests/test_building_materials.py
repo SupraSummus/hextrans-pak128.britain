@@ -16,7 +16,7 @@ import unittest
 from types import ModuleType
 
 from pak import REPO_ROOT
-from pak.materials import Material, from_jsonable, seed_python, to_jsonable
+from pak.materials import Material, Slot, from_jsonable, seed_python, to_jsonable
 
 
 def _building_modules_with_materials() -> list[tuple[str, ModuleType]]:
@@ -65,6 +65,38 @@ class TestMaterialConstructor(unittest.TestCase):
     def test_accepts_noise(self):
         Material(noise=True)
 
+    def test_accepts_slots(self):
+        Material(slots=[Slot(image="brick"), Slot(procedural="CLOUDS")])
+
+    def test_rejects_slots_with_image(self):
+        with self.assertRaisesRegex(ValueError, "cannot combine"):
+            Material(slots=[Slot(image="brick")], image="brick")
+
+
+class TestSlotConstructor(unittest.TestCase):
+
+    def test_rejects_empty(self):
+        with self.assertRaisesRegex(ValueError, "exactly one of"):
+            Slot()
+
+    def test_rejects_both_image_and_procedural(self):
+        with self.assertRaisesRegex(ValueError, "exactly one of"):
+            Slot(image="brick", procedural="CLOUDS")
+
+    def test_rejects_unknown_procedural(self):
+        with self.assertRaisesRegex(ValueError, "unknown procedural"):
+            Slot(procedural="HOLLY")
+
+    def test_rejects_unknown_blend(self):
+        with self.assertRaisesRegex(ValueError, "unknown blend"):
+            Slot(image="brick", blend="LERP")
+
+    def test_accepts_image_slot(self):
+        Slot(image="brick", texco="ORCO", size=(2.0, 2.0, 1.0))
+
+    def test_accepts_procedural_slot(self):
+        Slot(procedural="CLOUDS", fac=0.5)
+
 
 class TestJsonRoundTrip(unittest.TestCase):
 
@@ -74,6 +106,12 @@ class TestJsonRoundTrip(unittest.TestCase):
             "Roof":  Material(image="roof", texco="ORCO",
                               size=(3.0, 1.0, 2.0), ofs=(0.0, 0.02, 0.0)),
             "Hedge": Material(noise=True),
+            "Tint":  Material(noise=True, color=(0.5, 0.8, 0.3)),
+            "Stack": Material(slots=[
+                Slot(image="brick", size=(4.0, 4.0, 1.0)),
+                Slot(image="brick", texco="ORCO"),
+                Slot(procedural="CLOUDS", blend="ADD", fac=0.7),
+            ]),
         }
 
     def test_round_trip(self):
@@ -87,13 +125,20 @@ class TestJsonRoundTrip(unittest.TestCase):
         wire = to_jsonable({"Hedge": Material(noise=True)})
         self.assertEqual(wire, {"Hedge": {"noise": True}})
 
+    def test_wire_form_omits_slot_defaults(self):
+        # A slot at its full defaults still needs `image=` or
+        # `procedural=` to construct; check the wire form drops the
+        # other field-level defaults.
+        wire = to_jsonable({"X": Material(slots=[Slot(image="brick")])})
+        self.assertEqual(wire, {"X": {"slots": [{"image": "brick"}]}})
+
     def test_seed_python_is_executable(self):
         # `seed_python` output is meant for paste into a bake script;
         # exec it in a namespace where `Material` resolves and check
         # the resulting MATERIALS dict equals the input.
         mats = self._sample()
         src = seed_python(mats)
-        ns: dict = {"Material": Material}
+        ns: dict = {"Material": Material, "Slot": Slot}
         exec(src, ns)
         self.assertEqual(ns["MATERIALS"], mats)
 

@@ -78,10 +78,10 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
 
-def _split_upstream(up_png: Path, layouts: int):
-    """Slice the upstream atlas into N_layouts 128x128 cells from row 0
-    (summer).  Returns a list of (h, w, 4) numpy arrays in column
-    order."""
+def _split_upstream(up_png: Path, layouts: int, season_row: int = 0):
+    """Slice the upstream atlas into N_layouts 128x128 cells from row
+    `season_row` (0=summer, 1=winter).  Returns a list of (h, w, 4)
+    numpy arrays in column order."""
     import numpy as np
     from PIL import Image
 
@@ -92,7 +92,13 @@ def _split_upstream(up_png: Path, layouts: int):
             f"upstream atlas {up_png} is {W}x{H}; needs at least "
             f"{128 * layouts}x128 for {layouts} layouts"
         )
-    return [full[0:128, c * 128:(c + 1) * 128] for c in range(layouts)]
+    y0 = season_row * 128
+    if H < y0 + 128:
+        raise SystemExit(
+            f"upstream atlas {up_png} is {W}x{H}; needs at least "
+            f"{y0 + 128} rows for season {season_row}"
+        )
+    return [full[y0:y0 + 128, c * 128:(c + 1) * 128] for c in range(layouts)]
 
 
 def _load_our_renders(our_dir: Path, name: str, layouts: int):
@@ -177,11 +183,16 @@ def _best_permutation(mat) -> list[int]:
 
 
 def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
-        materials: dict | None = None):
+        materials: dict | None = None, season_row: int = 0,
+        grid_name: str = "grid.png"):
     """Render `blend` through `square_building`, diff each layout
-    against `upstream_png`'s columns, return (matrix, permutation).
+    against `upstream_png`'s columns, return (matrix, permutation, drgb).
 
-    Side effect: writes per-layout PNGs into `out_dir`.
+    `season_row` picks which 128-px row of the upstream atlas to diff
+    against (0 = summer, 1 = winter).  Caller pre-selects the matching
+    `blend` / `materials` for the season being checked.
+
+    Side effect: writes per-layout PNGs and `<grid_name>` into `out_dir`.
     """
     from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
@@ -191,7 +202,7 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
     render_name = Path(blend).stem
     _render(blend_path, out_dir, render_name, layouts, materials=materials)
     up_path = fetch_pak(upstream_png)
-    up_cells = _split_upstream(up_path, layouts)
+    up_cells = _split_upstream(up_path, layouts, season_row=season_row)
     our_rgba = _load_our_renders(out_dir, render_name, layouts)
     our_masks = [_silhouette_mask(r) for r in our_rgba]
     up_masks = [_silhouette_mask(c) for c in up_cells]
@@ -203,8 +214,28 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
         for l in range(len(our_rgba))
     ]
     _compose_grid(our_rgba, up_cells, our_masks, up_masks, perm,
-                  out_dir / "grid.png")
+                  out_dir / grid_name)
     return mat, perm, drgb_per_layout
+
+
+def run_seasonal(
+    blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
+    materials: dict | None = None,
+    blend_winter: str, materials_winter: dict | None = None,
+):
+    """Run `run()` once per season and return a list of
+    `(season_label, mat, perm, drgb)` — `("summer", ...)` first, then
+    `("winter", ...)`.  Each season writes its own grid PNG so the two
+    diffs can be eyeballed side by side."""
+    summer = run(
+        blend, upstream_png, layouts=layouts, out_dir=out_dir,
+        materials=materials, season_row=0, grid_name="grid_summer.png",
+    )
+    winter = run(
+        blend_winter, upstream_png, layouts=layouts, out_dir=out_dir,
+        materials=materials_winter, season_row=1, grid_name="grid_winter.png",
+    )
+    return [("summer", *summer), ("winter", *winter)]
 
 
 def format_matrix(mat, perm) -> str:

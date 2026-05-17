@@ -87,18 +87,41 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
         with Image.open(fetch_pak(stem)) as im:
             up_w = im.size[0]
         layouts = min(up_w // 128, 4)
-        mat, perm, drgb = diff_buildings.run(
-            blend, stem, layouts=layouts, out_dir=out_dir,
-            materials=getattr(mod, "MATERIALS", None),
-        )
-        worst, best, diag = diff_buildings.summarise(mat, perm)
-        print(diff_buildings.format_matrix(mat, perm))
-        print(f"mean IoU identity: {diag:.3f}  best perm: {best:.3f}  "
-              f"worst-of-best: {worst:.3f}  perm={perm}")
-        drgb_mean = sum(drgb) / len(drgb)
-        print(f"dRGB (intersection mean): mean={drgb_mean:.2f}  "
-              f"per-layout={[round(v, 2) for v in drgb]}")
-        return worst, None, diff_buildings.FAIL_IOU, drgb_mean
+        if spec.seasons >= 2:
+            blend_winter = getattr(mod, "BLEND_WINTER", None)
+            if blend_winter is None:
+                raise SystemExit(
+                    f"{script.name}: spec.seasons={spec.seasons} but "
+                    f"BLEND_WINTER not declared in the bake script"
+                )
+            seasons = diff_buildings.run_seasonal(
+                blend, stem, layouts=layouts, out_dir=out_dir,
+                materials=getattr(mod, "MATERIALS", None),
+                blend_winter=blend_winter,
+                materials_winter=getattr(mod, "MATERIALS_WINTER", None),
+            )
+        else:
+            mat, perm, drgb = diff_buildings.run(
+                blend, stem, layouts=layouts, out_dir=out_dir,
+                materials=getattr(mod, "MATERIALS", None),
+            )
+            seasons = [("summer", mat, perm, drgb)]
+
+        worst_overall = 1.0
+        drgb_overall = 0.0
+        for label, mat, perm, drgb in seasons:
+            worst, best, diag = diff_buildings.summarise(mat, perm)
+            drgb_mean = sum(drgb) / len(drgb)
+            if len(seasons) > 1:
+                print(f"--- {label} ---")
+            print(diff_buildings.format_matrix(mat, perm))
+            print(f"mean IoU identity: {diag:.3f}  best perm: {best:.3f}  "
+                  f"worst-of-best: {worst:.3f}  perm={perm}")
+            print(f"dRGB (intersection mean): mean={drgb_mean:.2f}  "
+                  f"per-layout={[round(v, 2) for v in drgb]}")
+            worst_overall = min(worst_overall, worst)
+            drgb_overall = max(drgb_overall, drgb_mean)
+        return worst_overall, None, diff_buildings.FAIL_IOU, drgb_overall
 
     metrics = diff_upstream.run(blend, stem, views=views, out_dir=out_dir)
     print(f"wrote {out_dir / 'grid.png'}")

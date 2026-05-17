@@ -24,36 +24,58 @@ import sys
 from pathlib import Path
 
 from pak.blend_slots import TEXCO_GLOB, TEXCO_ORCO, TEXCO_UV, extract
-from pak.materials import Material, seed_python
+from pak.materials import Material, Slot, seed_python
 
 _TEXCO_NAME = {TEXCO_GLOB: "GLOB", TEXCO_ORCO: "ORCO", TEXCO_UV: "UV"}
+# BI MTex.blendtype enum -> Blender shader-node MixRGB blend_type.
+_BLEND_NAME = {
+    0: "MIX", 1: "MULTIPLY", 2: "ADD", 3: "SUBTRACT",
+    4: "SCREEN", 5: "DIVIDE", 6: "DIFFERENCE",
+}
 
 
 def materials_from_blend(blend_path: Path) -> dict[str, Material]:
-    """Slot-data -> per-material `Material` description.  Picks the
-    first IMAGE slot if any, else the first CLOUDS/NOISE slot, else
-    omits the material (renders flat-diffuse)."""
+    """Slot-data -> per-material `Material` description carrying the
+    full slot stack BI composites at render time.
+
+    Multi-slot is the BI-faithful path — every Britain material we've
+    inspected uses 1-5 slots at Mix fac=1.0 each, and dropping all but
+    the first (the previous one-shot seeder) collapses what BI builds
+    additively into a single-slot multiply, losing the texture
+    variation upstream's PNGs show.  See `pak.diag_per_material --all`.
+
+    Materials with no usable slot are omitted (the renderer falls back
+    to flat diffuse for unlisted entries).  STUCCI / WOOD / OTHER tex
+    types are skipped — Britain blends rarely use them, and our
+    procedural substitute set is CLOUDS / NOISE / MUSGRAVE.  Fill in
+    later if a real consumer surfaces them."""
     raw = extract(blend_path)
     out: dict[str, Material] = {}
     for name, ms in raw.items():
-        image_slot = None
-        procedural = False
+        slots: list[Slot] = []
         for s in ms.slots:
+            blend_name = _BLEND_NAME.get(s.blendtype, "MIX")
+            texco = _TEXCO_NAME.get(s.texco, "GLOB")
             if s.tex_type == "IMAGE" and s.image_name:
-                if image_slot is None:
-                    image_slot = s
-            elif s.tex_type in ("CLOUDS", "NOISE"):
-                procedural = True
-        if image_slot is not None:
-            texco = _TEXCO_NAME.get(image_slot.texco, "GLOB")
-            out[name] = Material(
-                image=image_slot.image_name,
-                texco=texco,
-                size=tuple(round(v, 4) for v in image_slot.size),
-                ofs=tuple(round(v, 4) for v in image_slot.ofs),
-            )
-        elif procedural:
-            out[name] = Material(noise=True)
+                slots.append(Slot(
+                    image=s.image_name,
+                    texco=texco,
+                    size=tuple(round(v, 4) for v in s.size),
+                    ofs=tuple(round(v, 4) for v in s.ofs),
+                    blend=blend_name,
+                    fac=round(s.colfac, 3),
+                ))
+            elif s.tex_type in ("CLOUDS", "NOISE", "MUSGRAVE"):
+                slots.append(Slot(
+                    procedural=s.tex_type,
+                    texco=texco,
+                    size=tuple(round(v, 4) for v in s.size),
+                    ofs=tuple(round(v, 4) for v in s.ofs),
+                    blend=blend_name,
+                    fac=round(s.colfac, 3),
+                ))
+        if slots:
+            out[name] = Material(slots=slots)
     return out
 
 

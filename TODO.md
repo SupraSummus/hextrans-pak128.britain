@@ -129,6 +129,42 @@ a `--mask` mode on render.py.  Trigger: first asset that
 gameplay-actually-needs livery support (probably a BR-era loco).
 
 
+**Multi-slot BI composition needs per-Tex colour band data.**  The
+slot-stack rendering path (`pak.render._build_multislot_material`,
+opt-in via `Material(slots=[Slot(...), ...])`) replicates BI's
+slot order, blend mode and intensity-modulated fac correctly, but
+procedural slots (CLOUDS / NOISE / MUSGRAVE) without a colour band
+output grayscale.  In BI, the Tex datablock carries a ColorBand
+that maps the texture's intensity to RGB — that's where Britain's
+hedge materials get their green and dirt materials get their brown.
+Without it, switching res_1600 to slot form regresses summer dRGB
+30.6 → 41.2.  Concrete next move: extend `pak.blend_slots` to parse
+the Tex struct (pointer from `MTex.tex`) and its ColorBand entries
+out of the .blend binary; add `color_band: list[(pos, r, g, b, a)]`
+to `Slot`; have `_build_slot_output` build a `ShaderNodeValToRGB`
+from the parsed band instead of the current black→white default;
+re-seed res_1600's MATERIALS in slot form, run
+`pak.diag_per_material --all` to compare, sweep the catalog under
+slot form, decide whether to keep `image=` / `noise=` shorthand
+paths or migrate everyone.
+
+**Per-material dRGB attribution surfaced two systematic gaps.**
+`pak.diag_per_material --all` (added this session) aggregates by
+material name across the catalog and reveals the dominant
+contributors are (1) dark-diffuse surfaces — Interior, Tiles,
+FeltRoof, Stone — uniformly rendering ~50 RGB below upstream, and
+(2) multi-image-slot surfaces — Hedge, Veg-Green*, Veg2 — rendering
+2× too dark.  (1) needs ambient lighting that EEVEE doesn't deliver
+without baked light probes; we tried world emission + irradiance
+probe + light_cache_bake in headless mode and the probe adds AO-like
+darkening that cancels the world contribution, net zero.  Concrete
+next move: either switch building viewpoint to Cycles (handles world
+emission as ambient natively, no probes) and re-tune sun energy
+scale, or investigate adding an explicit additive emission floor at
+the BSDF level (mimicking BI's additive WORLD_AMB term).  (2) is
+the multi-slot colour-band gap above — same fix, different
+manifestation.
+
 **Building lighting needs re-calibration against the new MATERIALS
 baseline.**  The previous EEVEE-substitution knobs
 (`_BI_TO_EEVEE_SUN_SCALE` ≈ 71.4, sun direction elev=30°/az_offset=-90°,

@@ -847,14 +847,28 @@ Present:
   `material.texture_slots` API.  CLI: `python3 -m pak.blend_slots
   <blend>` dumps every material's slot table.
 - `pak/materials.py` — `Material` dataclass (image / texco /
-  size / ofs / noise) carried in each `citybuildings/<asset>.py`
-  as `MATERIALS = {...}`.  `to_jsonable` / `from_jsonable`
-  serialise for subprocess transit; `seed_python` emits paste-
-  ready source.  See "Texture rebinding" above.
+  size / ofs / noise / color / slots) carried in each
+  `citybuildings/<asset>.py` as `MATERIALS = {...}`.  Three forms:
+  single image, single noise, full BI slot stack (`slots=[Slot(...),
+  ...]`).  `Slot` mirrors `pak.blend_slots.TextureSlot` with
+  blend mode and fac.  `to_jsonable` / `from_jsonable` serialise
+  for subprocess transit; `seed_python` emits paste-ready source.
+  See "Texture rebinding" and "Multi-slot composition" below.
 - `pak/extract_materials.py` — one-shot seeder.
   `python3 -m pak.extract_materials <blend>` prints the
-  `MATERIALS = {...}` block to paste next to SPEC; collapses each
-  material to its first IMAGE slot or fallback CLOUDS/NOISE slot.
+  `MATERIALS = {...}` block to paste next to SPEC; emits the
+  full BI slot stack per material (image+image+CLOUDS where the
+  blend has it).
+- `pak/diag_per_material.py` — per-material dRGB attribution
+  for buildings.  Renders the asset twice (normal + flat-emission
+  material id map, sidecar `*.materials.json`) and reports which
+  materials own which fraction of the upstream-vs-ours dRGB.
+  `--all` aggregates across the catalog and prints worst-offender
+  materials by name — that's how systematic gaps (e.g. "every
+  dark-diffuse surface renders too dark") surface in one place.
+  Note: its `mean per-px dRGB` metric is weighted by per-material
+  id-map coverage and doesn't match `pak.check`'s intersection-
+  mean exactly; use for relative ranking, not absolute calibration.
 - `pak/bake_units.py` — `discover()` returns every
   per-asset bake script (`.py` with `.dat` + `.png` siblings outside
   `pak/`, `tests/`, `grounds/`, `simutranslator/`), `import_script
@@ -1142,14 +1156,19 @@ all saved by 2.42/2.48 (pre-2.5 file format).  The full pipeline:
   rgb + alpha.  Not a general .blend parser; targets only what
   building binding needs.
 * **`pak/extract_materials.py`** is the one-shot seeder
-  (`python3 -m pak.extract_materials <blend>`).  Collapses each
-  material to its first IMAGE slot or fallback procedural slot
-  and emits paste-ready Python source for the bake script's
-  `MATERIALS = {...}` dict.
-* **`pak/materials.py`** defines the `Material` dataclass --
-  per-material `image / texco / size / ofs` or `noise=True`.
-  `to_jsonable` / `from_jsonable` serialise across the subprocess
-  command line.
+  (`python3 -m pak.extract_materials <blend>`).  Emits the full BI
+  slot stack per material as `Material(slots=[Slot(...), ...])`
+  in paste-ready Python source.  The single-slot `image=` /
+  `noise=` shorthand forms remain for hand-tuned overrides; the
+  slot form is the BI-faithful default.
+* **`pak/materials.py`** defines the `Material` and `Slot`
+  dataclasses.  Per-material modes (mutually exclusive): a slot
+  list (`slots=[Slot(image=..., texco=..., size=..., blend="MIX",
+  fac=1.0), ...]`), a single image (`image=..., size=...`), or a
+  single noise (`noise=True`).  Optional `color=(r,g,b)` overrides
+  the .blend's diffuse as the slot-stack base or noise-band centre.
+  `to_jsonable` / `from_jsonable` serialise (slots recursively)
+  across the subprocess command line.
 * Each `citybuildings/<asset>.py` carries `MATERIALS = {...}`
   inline next to `SPEC`, passed through
   `bake_building_main(..., materials=MATERIALS)`.  Once seeded,
@@ -1172,7 +1191,18 @@ all saved by 2.42/2.48 (pre-2.5 file format).  The full pipeline:
     Mapping(scale=`size`) -> ...  Bbox-normalised per-mesh,
     substitutes BI's object-local projection.
   * `Material(noise=True)` -> Noise -> ColorRamp around the
-    diffuse colour.  BI's CLOUDS substitute.
+    diffuse colour.  BI's CLOUDS substitute (single-slot heuristic).
+  * `Material(slots=[Slot(...), ...])` -> for each slot, build a
+    sub-graph (image: `<coord> -> Mapping -> ImageTexture`;
+    procedural: `<coord> -> Mapping -> TexNoise -> ColorRamp(black→
+    white)`), then chain through `MixRGB(blend_type=slot.blend,
+    fac=slot.fac × tex_intensity)` over a running base seeded from
+    the material's diffuse (or `color=` override).  Procedural
+    slots' `tex_intensity` is the noise.Fac so they partially lerp
+    rather than fully replace — BI-faithful for the CLOUDS-default
+    case.  Currently opt-in; the catalog defaults to the single-
+    slot heuristic until the per-Tex colour band is parsed (see
+    TODO).
   * Materials omitted from MATERIALS render flat-diffuse via
     Blender's `use_nodes=False` auto-conversion.
 

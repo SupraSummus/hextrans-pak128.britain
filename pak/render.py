@@ -174,8 +174,17 @@ def _build_image_material(bpy, m, tex_img, mat_spec) -> None:
       and our attribute coords *are* world units.
     - "ORCO" / "UV": TexCoord.Generated, the bbox-normalised substitute
       (we have no preserved UVs).  Mapping.scale = `mat_spec.size`,
-      matching BI's per-axis cycles across the object bbox."""
-    fallback_diffuse = tuple(m.diffuse_color)
+      matching BI's per-axis cycles across the object bbox.
+
+    `mat_spec.color`, when set, replaces the .blend's authored
+    `diffuse_color` as the multiplier the image texture gets tinted
+    by.  Push a summer-tinted image (e.g. snow blend's Hedge still
+    has its summer green diffuse plus a brick image) toward a snow
+    tint without losing the image's structural detail."""
+    if mat_spec.color is not None:
+        fallback_diffuse = (*mat_spec.color, 1.0)
+    else:
+        fallback_diffuse = tuple(m.diffuse_color)
     m.use_nodes = True
     nt = m.node_tree
     nt.nodes.clear()
@@ -206,13 +215,21 @@ def _build_image_material(bpy, m, tex_img, mat_spec) -> None:
     m.diffuse_color = fallback_diffuse
 
 
-def _build_noise_material(bpy, m) -> None:
+def _build_noise_material(bpy, m, mat_spec=None) -> None:
     """CLOUDS substitute: Noise -> ColorRamp around the material's
     diffuse colour.  Used for `Material(noise=True)` entries -- BI's
     pre-2.5 procedural textures don't survive to modern Blender, and
     a noise band around the diffuse colour reads close enough at
-    pakset zoom."""
-    fallback_diffuse = tuple(m.diffuse_color)
+    pakset zoom.
+
+    `mat_spec.color`, when set, replaces the .blend's authored
+    `diffuse_color` as the band's centre — needed for snow surfaces
+    where BI's default CLOUDS slot paints white-over-diffuse but our
+    extraction only carries the diffuse."""
+    if mat_spec is not None and mat_spec.color is not None:
+        fallback_diffuse = (*mat_spec.color, 1.0)[:4]
+    else:
+        fallback_diffuse = tuple(m.diffuse_color)
     m.use_nodes = True
     nt = m.node_tree
     nt.nodes.clear()
@@ -269,6 +286,9 @@ def _bind_textures_via_nodes(bpy, materials) -> None:
         )
     for name, mat_spec in materials.items():
         m = bpy.data.materials[name]
+        if mat_spec.slots is not None:
+            _build_multislot_material(bpy, m, mat_spec)
+            continue
         if mat_spec.image is not None:
             tex_img = _resolve_image(bpy, mat_spec.image)
             if tex_img is None:
@@ -286,7 +306,166 @@ def _bind_textures_via_nodes(bpy, materials) -> None:
                 continue
             _build_image_material(bpy, m, tex_img, mat_spec)
         elif mat_spec.noise:
-            _build_noise_material(bpy, m)
+            _build_noise_material(bpy, m, mat_spec)
+
+
+def _build_slot_output(bpy, nt, slot):
+    """Build the per-slot sub-graph for one BI slot.  Returns a
+    `(color_socket, intensity_socket)` pair where:
+
+    - `color_socket` is the slot's RGB output (image pixels, or constant
+      white for procedurals — BI's default Tex colour band).  Wired into
+      the slot-stack MixRGB's Color2.
+    - `intensity_socket` is the texture's per-pixel "influence" in [0,1]
+      that BI multiplies into the slot's `colfac` before mixing.  For
+      IMAGE textures this is the image's alpha (1.0 for opaque); for
+      procedurals it's the noise value itself.  Wired (after multiply
+      by `slot.fac`) into the MixRGB's Fac input — that's what makes
+      a CLOUDS slot a *partial* overlay (lerping toward white where the
+      noise is high) rather than a full replace.
+
+    Returns `None, None` when the slot's image refused to load.
+
+    Image slots: `<coord> -> Mapping(scale=size, ofs=ofs) -> ImageTexture
+    -> Color/Alpha`.  Coord by texco — GLOB reads the `blend_world_pos`
+    vertex attribute populated by `_bake_world_into_meshes` so the
+    texture stays pinned to the .blend's world frame across per-facing
+    rotations; ORCO / UV use `TexCoord.Generated`.
+
+    Procedural slots: a `TexNoise` (CLOUDS / NOISE / MUSGRAVE all map
+    to Blender's smooth fractal noise for our purposes) whose `Fac`
+    output is the intensity (BI: noise value drives the influence
+    factor; default texture colour at full influence is white).  Scale
+    inversely tracks BI's `size` — BI doubles frequency by halving."""
+    tex_img = None
+    if slot.image is not None:
+        tex_img = _resolve_image(bpy, slot.image)
+        if tex_img is None:
+            return None, None
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.vector_type = "POINT"
+    mapping.inputs["Scale"].default_value = tuple(slot.size)
+    if any(slot.ofs):
+        mapping.inputs["Location"].default_value = tuple(slot.ofs)
+    if slot.texco == "GLOB":
+        coord = nt.nodes.new("ShaderNodeAttribute")
+        coord.attribute_name = "blend_world_pos"
+        nt.links.new(coord.outputs["Vector"], mapping.inputs["Vector"])
+    else:
+        coord = nt.nodes.new("ShaderNodeTexCoord")
+        nt.links.new(coord.outputs["Generated"], mapping.inputs["Vector"])
+    if slot.image is not None:
+        tex_node = nt.nodes.new("ShaderNodeTexImage")
+        tex_node.image = tex_img
+        nt.links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
+        # Image texture: color from RGB, intensity from alpha.  For
+        # opaque images alpha is 1.0 throughout so the mix factor is
+        # just slot.fac — same as the previous single-slot path.
+        return tex_node.outputs["Color"], tex_node.outputs["Alpha"]
+    # Procedural: noise.Fac is the intensity (0..1).  BI's tex output for
+    # a procedural *without a color band* is `tex_color = (intensity,
+    # intensity, intensity)` — grayscale, not constant white.  Combined
+    # with `mix_factor = colfac * intensity`, this means at low noise the
+    # slot contributes ~nothing (base shows through), at high noise it
+    # contributes its own grayscale.  Output color = noise-broadcast to
+    # RGB via a ColorRamp from black at 0 to white at 1.
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 4.0
+    noise.inputs["Detail"].default_value = 2.0
+    nt.links.new(mapping.outputs["Vector"], noise.inputs["Vector"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].position = 0.0
+    ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+    ramp.color_ramp.elements[1].position = 1.0
+    ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    return ramp.outputs["Color"], noise.outputs["Fac"]
+
+
+def _build_multislot_material(bpy, m, mat_spec):
+    """Compose every entry in `mat_spec.slots` over the material's
+    diffuse colour using each slot's blend mode + fac.  Mirrors BI's
+    Tex stack: each slot's RGB output is mixed into the running base
+    in declaration order; slot[N] sees the result of slot[0..N-1] as
+    its base.
+
+    A skipped slot (image 404, returns None from `_build_slot_output`)
+    contributes nothing — the next slot mixes over the previous
+    accumulated base.  `mat_spec.color`, when set, replaces the
+    .blend's authored `diffuse_color` as the starting base."""
+    if mat_spec.color is not None:
+        base = (*mat_spec.color, 1.0)
+    else:
+        base = tuple(m.diffuse_color)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = _bsdf_node(nt)
+    rgb_node = nt.nodes.new("ShaderNodeRGB")
+    rgb_node.outputs[0].default_value = (*base[:3], 1.0)
+    current = rgb_node.outputs["Color"]
+    for slot in mat_spec.slots:
+        slot_color, slot_intensity = _build_slot_output(bpy, nt, slot)
+        if slot_color is None:
+            continue
+        mix = nt.nodes.new("ShaderNodeMixRGB")
+        mix.blend_type = slot.blend
+        nt.links.new(current, mix.inputs["Color1"])
+        nt.links.new(slot_color, mix.inputs["Color2"])
+        # MixRGB.Fac = slot.fac * texture_intensity.  Multiply via a
+        # ShaderNodeMath so a CLOUDS slot's noise-Fac modulates the
+        # influence (BI's `factor = colfac * intensity`).  For opaque
+        # IMAGE slots this is `slot.fac * 1.0 = slot.fac` — equivalent
+        # to wiring `slot.fac` directly, but uniform-path keeps the
+        # graph shape consistent.
+        fac_mul = nt.nodes.new("ShaderNodeMath")
+        fac_mul.operation = "MULTIPLY"
+        fac_mul.inputs[0].default_value = slot.fac
+        nt.links.new(slot_intensity, fac_mul.inputs[1])
+        nt.links.new(fac_mul.outputs["Value"], mix.inputs["Fac"])
+        current = mix.outputs["Color"]
+    nt.links.new(current, bsdf.inputs["Base Color"])
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+
+def _swap_to_id_map(bpy) -> dict[str, tuple[int, int, int]]:
+    """Replace every material's node graph with a flat unlit emission of
+    a unique RGB id.  Used by `--material-id-map`: the resulting render
+    pixel-aligns with the normal render, and each material's pixels are
+    identifiable by their exact RGB triple.
+
+    Ids are spaced on a coarse grid (40-unit step in each channel,
+    skipping (0,0,0)) so floating-point round-trip through the EEVEE /
+    PNG encode survives — exact equality at integer RGB is reliable for
+    flat emission, but a margin keeps it robust under future engine
+    changes.  Returns the `{material_name: (r,g,b)}` mapping so the
+    diagnostic driver can decode masks from the map PNG."""
+    palette: list[tuple[int, int, int]] = []
+    step = 40
+    for r in range(step, 256, step):
+        for g in range(step, 256, step):
+            for b in range(step, 256, step):
+                palette.append((r, g, b))
+    mat_to_id: dict[str, tuple[int, int, int]] = {}
+    for i, m in enumerate(bpy.data.materials):
+        if i >= len(palette):
+            raise RuntimeError(
+                f"material-id-map: ran out of palette slots at {i} "
+                f"({m.name})"
+            )
+        rgb = palette[i]
+        mat_to_id[m.name] = rgb
+        m.use_nodes = True
+        nt = m.node_tree
+        nt.nodes.clear()
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        emit = nt.nodes.new("ShaderNodeEmission")
+        emit.inputs["Color"].default_value = (rgb[0] / 255.0, rgb[1] / 255.0,
+                                              rgb[2] / 255.0, 1.0)
+        emit.inputs["Strength"].default_value = 1.0
+        nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    return mat_to_id
 
 
 @dataclass
@@ -663,7 +842,8 @@ def _print_atlas_summary(out_path: Path, cells, cols: int, rows: int) -> None:
 def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                  name: str, cols_per_row: int | None = None,
                  keep_per_facing: bool = False,
-                 materials: dict | None = None) -> None:
+                 materials: dict | None = None,
+                 material_id_map: bool = False) -> None:
     """Render `viewpoint.facings` of the currently loaded blend.  Writes
     `<out_dir>/<name>.png` (atlas).  With `keep_per_facing=True`, also
     writes `<out_dir>/<name>_<label>.png` per facing -- used by the
@@ -672,7 +852,15 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     `materials` is the per-asset `MATERIALS = {...}` dict from the bake
     script (a `dict[str, pak.materials.Material]`).  Applied after the
     world-bake step so the GLOB-coord path can read the
-    `blend_world_pos` vertex attribute it populates."""
+    `blend_world_pos` vertex attribute it populates.
+
+    `material_id_map=True` replaces every material with a flat unlit
+    emission of a unique RGB id (sidecar JSON written next to the atlas)
+    so the resulting render pixel-aligns with the normal pass but each
+    material's coverage is identifiable.  Used by `pak.diag_per_material`
+    to attribute the upstream-vs-ours dRGB to specific materials."""
+    import json
+
     import numpy as np
 
     authored = _strip_scene(bpy, viewpoint.strip_meshes)
@@ -680,7 +868,12 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
         _reload_external_textures(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
     records = _bake_world_into_meshes(bpy, mathutils)
-    if viewpoint.engine == "BLENDER_EEVEE" and materials:
+    if material_id_map:
+        mat_to_id = _swap_to_id_map(bpy)
+        sidecar = Path(out_dir) / f"{name}.materials.json"
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_text(json.dumps(mat_to_id, indent=2, sort_keys=True))
+    elif viewpoint.engine == "BLENDER_EEVEE" and materials:
         _bind_textures_via_nodes(bpy, materials)
     fit = _compute_fit(mathutils, records, viewpoint.fit_kind,
                        authored.ortho_scale)
@@ -754,6 +947,14 @@ def _parse_args(argv):
                          "Per-material image/noise/texco/size descriptions "
                          "the renderer wires into Principled BSDF node "
                          "graphs; unlisted materials render flat-diffuse.")
+    ap.add_argument("--material-id-map", action="store_true",
+                    help="Diagnostic: instead of the normal render, "
+                         "replace every material with a flat unlit "
+                         "emission of a unique RGB id, write a "
+                         "`<name>.materials.json` sidecar mapping name → "
+                         "RGB.  Resulting atlas pixel-aligns with the "
+                         "normal render; consumers (`pak.diag_per_material`) "
+                         "use the id map to extract per-material masks.")
     return ap.parse_args(argv)
 
 
@@ -812,7 +1013,8 @@ def main(argv):
     render_atlas(bpy, mathutils, vp, args.out, args.name,
                  cols_per_row=args.cols_per_row,
                  keep_per_facing=args.keep_per_facing,
-                 materials=materials)
+                 materials=materials,
+                 material_id_map=args.material_id_map)
     return 0
 
 
