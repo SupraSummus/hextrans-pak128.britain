@@ -630,7 +630,8 @@ def _parse_args(argv):
     ap.add_argument("--out", required=True)
     ap.add_argument("--name", required=True)
     ap.add_argument("--viewpoint", required=True,
-                    choices=["hex", "square", "hex_building", "square_building"])
+                    choices=["hex", "square", "hex_building", "square_building",
+                             "fence_square"])
     ap.add_argument("--keep-per-facing", action="store_true",
                     help="write per-facing PNGs alongside the atlas (used by diff)")
     ap.add_argument("--cols-per-row", type=int, default=None)
@@ -647,6 +648,7 @@ def main(argv):
     from pak.viewpoints import (
         HEX_VIEWPOINT, SQUARE_VIEWPOINT,
         building_hex_viewpoint, building_square_viewpoint,
+        fence_square_viewpoint,
     )
 
     args = _parse_args(argv)
@@ -654,6 +656,8 @@ def main(argv):
         vp = HEX_VIEWPOINT
     elif args.viewpoint == "square":
         vp = SQUARE_VIEWPOINT
+    elif args.viewpoint == "fence_square":
+        vp = fence_square_viewpoint()
     elif args.viewpoint in ("hex_building", "square_building"):
         if not args.building_footprint:
             raise SystemExit(

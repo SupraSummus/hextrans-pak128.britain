@@ -52,7 +52,7 @@ GOODS_DIR := goods
 # `pak.stage_upstream_pngs` copies each dat + fetches its referenced
 # PNGs into `$(UPSTREAM_STAGED)/`; per-pak rules then run makeobj
 # against the staged copy.
-UPSTREAM_STAGED_DATS := gui/gui64/*.dat gui/gui128/*.dat grounds/fences.dat
+UPSTREAM_STAGED_DATS := gui/gui64/*.dat gui/gui128/*.dat
 UPSTREAM_STAGED := $(DESTDIR)/upstream-staged
 GUI_DIRS := gui/gui64 gui/gui128
 
@@ -125,7 +125,7 @@ DIRS224 :=
 DIRS256 :=
 #DIRS256 += air/air256
 
-DIRS := $(OUTSIDE) $(GOODS_DIR) $(GUI_DIRS) fences $(DIRS32) $(DIRS64) $(DIRS128) $(DIRS192) $(DIRS224) $(DIRS256)
+DIRS := $(OUTSIDE) $(GOODS_DIR) $(GUI_DIRS) $(DIRS32) $(DIRS64) $(DIRS128) $(DIRS192) $(DIRS224) $(DIRS256)
 
 #generating filenames
 #with this function the filenames are assembled, by removing the dir
@@ -208,11 +208,6 @@ $(GUI_DIRS): $(UPSTREAM_STAGED)/.staged
 	@SIZE=$(if $(findstring 128,$@),PAK128,PAK); \
 		$(MAKEOBJ) quiet $$SIZE $(PAKDIR)/$(call make_name,$@) $(wildcard $(UPSTREAM_STAGED)/$@/*.dat) > /dev/null
 
-fences: $(UPSTREAM_STAGED)/.staged
-	@echo "===> PAK128 fences (upstream sprites)"
-	@mkdir -p $(PAKDIR)
-	@$(MAKEOBJ) quiet PAK128 $(PAKDIR)/fences.pak $(UPSTREAM_STAGED)/grounds/fences.dat > /dev/null
-
 $(DIRS192):
 	@echo "===> PAK192 $@"
 	@mkdir -p $(PAKDIR)
@@ -238,7 +233,8 @@ $(OUTSIDE):
 # self-contained.  Re-run the family with `make bake-grounds`; CI does
 # not regenerate, the committed PNG/dat pairs are what ship.
 GROUND_BAKERS := light_texture back_wall marker borders water \
-                 shore_trans slope_trans sidewalk climate_texture
+                 shore_trans slope_trans sidewalk climate_texture \
+                 way_ground fence
 
 .PHONY: bake-grounds $(addprefix bake-,$(GROUND_BAKERS)) bake-outside
 

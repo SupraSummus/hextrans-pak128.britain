@@ -42,8 +42,9 @@ Lambert shading are functions of engine constants in
 `grounds/<asset>.py` that emits sibling `<asset>.{png,dat}`; the
 filename matches the engine `Name=` field (`light_texture`,
 `shore_trans`, …) so grepping from engine source lands on the
-right baker.  Ported from `hextrans-pak128/landscape/grounds/`; see
-TODO.md for the gaps (texture-climate, way_ground, fence).
+right baker.  Ported from `hextrans-pak128/landscape/grounds/`;
+`climate_texture` is still vendored upstream verbatim and the
+`fence` / `way_ground` bakers are v1 only — see TODO.md.
 
 One ground asset (`Outside`, the void cell shown beyond the map
 edge) ships under `pak1file/128/` instead, mirroring upstream's

@@ -8,12 +8,9 @@ re-bake yet:
   symbol / skin objects (Construction, GeneralTools, Logo,
   Passagiere…).  GUI elements don't carry the world's hex-projection
   burden so the upstream 64/128-px bitmaps render verbatim under hex.
-* `grounds/fences.dat` — the last engine-required ground descriptor
-  without a hex bake.
 
 Without these, `pakset_manager_t::resolve_xrefs` and
-`{skinverwaltung_t,ground_desc_t}::successfully_loaded` fatal at
-load.  This module parses each dat's image refs, fetches every
+`skinverwaltung_t::successfully_loaded` fatal at load.  This module parses each dat's image refs, fetches every
 referenced PNG from the upstream pak repo via `fetch_pak`, and
 copies dat + PNGs into a staging dir laid out for makeobj (image
 refs are resolved relative to the dat path, so source geometry
