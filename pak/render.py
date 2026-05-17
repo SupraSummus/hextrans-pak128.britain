@@ -501,13 +501,16 @@ class BlendAuthored:
     sun_energy: float | None = None
 
 
-def _strip_scene(bpy, strip_meshes: tuple[str, ...] = ("Sphere",)) -> BlendAuthored:
+def strip_scene(bpy, strip_meshes: tuple[str, ...] | set[str] = ("Sphere",)) -> BlendAuthored:
     """Capture authored Camera/Sun parameters into a BlendAuthored, then
     remove the corresponding scene objects so the Viewpoint can install
     its own.  `strip_meshes` names extra mesh objects to drop on entry
     (default `("Sphere",)` -- upstream's sun-visualisation parent mesh;
-    Lamp.001 is parented to it and goes via the LIGHT branch)."""
+    Lamp.001 is parented to it and goes via the LIGHT branch).  Also
+    consumed by `pak/bake_way.py` -- ways install their own camera +
+    sun from a Projection and discard the BlendAuthored return value."""
     authored = BlendAuthored()
+    strip_names = set(strip_meshes)
     for obj in list(bpy.context.scene.objects):
         if obj.type == "CAMERA":
             if authored.ortho_scale is None and obj.data.type == "ORTHO":
@@ -518,7 +521,7 @@ def _strip_scene(bpy, strip_meshes: tuple[str, ...] = ("Sphere",)) -> BlendAutho
             if authored.sun_energy is None and la.type == "SUN":
                 authored.sun_energy = float(la.energy)
             bpy.data.objects.remove(obj, do_unlink=True)
-        elif obj.name in strip_meshes:
+        elif obj.name in strip_names:
             bpy.data.objects.remove(obj, do_unlink=True)
     return authored
 
@@ -649,13 +652,13 @@ def _apply_lighting(bpy, sun, authored, viewpoint, lighting) -> None:
             )
 
 
-def _configure_workbench(scn) -> None:
+def configure_workbench(scn) -> None:
     """Flat-shading substitute: rendered pixel == material's diffuse
     colour directly.  No path tracing, no embree, no SIMD-sensitive
-    reductions -- byte-stable across CPUs in practice.  Mirrors
-    `pak/bake_way.py::_configure_render`; ways have their own harness
-    for composition reasons (see CLAUDE.md -> "Way-bake architecture")
-    but share the engine-config contract."""
+    reductions -- byte-stable across CPUs in practice.  Imported by
+    `pak/bake_way.py` (ways have their own harness for composition
+    reasons -- see CLAUDE.md -> "Way-bake architecture" -- but share
+    the engine-config contract)."""
     shading = scn.display.shading
     shading.light = "FLAT"
     shading.color_type = "MATERIAL"
@@ -667,16 +670,17 @@ def _configure_workbench(scn) -> None:
 _ENGINE_CONFIGURERS = {
     "CYCLES": _configure_cycles,
     "BLENDER_EEVEE": _configure_eevee,
-    "BLENDER_WORKBENCH": _configure_workbench,
+    "BLENDER_WORKBENCH": configure_workbench,
 }
 
 
-def _exit_edit_mode(bpy) -> None:
+def exit_edit_mode(bpy) -> None:
     """Upstream blends occasionally ship with one mesh stuck in edit
     mode (e.g. 4wheel-1850's body Cube.009).  Blender renders the BMesh
     edit buffer rather than `obj.data` until the object leaves edit
     mode -- our mesh.transform() / v.co writes are invisible to the
-    renderer otherwise.  See CLAUDE.md -> "Edit-mode meshes"."""
+    renderer otherwise.  See CLAUDE.md -> "Edit-mode meshes".  Imported
+    by `pak/bake_way.py`."""
     prev_active = bpy.context.view_layer.objects.active
     for obj in bpy.context.scene.objects:
         if obj.type == "MESH" and obj.data.is_editmode:
@@ -719,7 +723,7 @@ def _bake_world_into_meshes(bpy, mathutils):
     M = mathutils.Matrix
     scn = bpy.context.scene
 
-    _exit_edit_mode(bpy)
+    exit_edit_mode(bpy)
 
     cache: dict = {}
     def renders(obj):
@@ -806,7 +810,7 @@ def _compute_fit(mathutils, records, fit_kind: str,
     real authoring quirk rather than have it masked by our recentre.
 
     `blend_ortho` is the blend's authored ortho_scale read by
-    `_strip_scene` -- falls back to `UPSTREAM_ORTHO_SCALE` (24,
+    `strip_scene` -- falls back to `UPSTREAM_ORTHO_SCALE` (24,
     vehicle-blend convention) when the blend has no camera.  Buildings
     tend to ship at ortho_scale=12 (twice the per-cell zoom); honouring
     that per-asset is what makes them render at upstream's per-pixel
@@ -905,7 +909,7 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
 
     import numpy as np
 
-    authored = _strip_scene(bpy, viewpoint.strip_meshes)
+    authored = strip_scene(bpy, viewpoint.strip_meshes)
     if viewpoint.engine == "BLENDER_EEVEE":
         _reload_external_textures(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)

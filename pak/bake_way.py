@@ -43,6 +43,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from pak.fetch_blend import fetch as fetch_blend  # noqa: E402
 from pak.hex_synth import DEFAULT_W  # noqa: E402
+from pak.render import configure_workbench, exit_edit_mode, strip_scene  # noqa: E402
 from pak.way_proj import PROJECTIONS, Projection  # noqa: E402
 from pak.way_topology import (  # noqa: E402
     atom_offsets_along_path,
@@ -146,18 +147,13 @@ _STRIP_MATERIALS: frozenset[str] = frozenset({"Transparent"})
 
 
 def _strip_scene(strip_meshes: set[str]) -> None:
-    """Strip every camera/light, any mesh whose name is in
-    `strip_meshes`, and any mesh carrying a material in
-    `_STRIP_MATERIALS`.  Cameras + lights always go — we install our
-    own from the way-bake recipe."""
+    """Strip every camera/light + any mesh in `strip_meshes` (shared
+    via `pak.render.strip_scene`); then also drop meshes whose
+    material is in `_STRIP_MATERIALS`.  Way bake hardcodes camera + sun
+    and discards the captured BlendAuthored return value."""
+    strip_scene(bpy, strip_meshes)
     for obj in list(bpy.context.scene.objects):
-        if obj.type in ("CAMERA", "LIGHT"):
-            bpy.data.objects.remove(obj, do_unlink=True)
-            continue
         if obj.type != "MESH":
-            continue
-        if obj.name in strip_meshes:
-            bpy.data.objects.remove(obj, do_unlink=True)
             continue
         if any(s.material and s.material.name in _STRIP_MATERIALS
                for s in obj.material_slots):
@@ -178,12 +174,8 @@ def _bake_world_transforms(atoms) -> None:
     the world matrix to identity, so subsequent `mesh.transform()`
     calls compose cleanly without re-decomposing the basis (CLAUDE.md
     "matrix_basis drops shear")."""
+    exit_edit_mode(bpy)
     for obj in atoms:
-        # Edit-mode landmine: writes to obj.data.vertices are invisible
-        # to the renderer if the mesh is in edit mode.  Force OBJECT.
-        if obj.data.is_editmode:
-            bpy.context.view_layer.objects.active = obj
-            bpy.ops.object.mode_set(mode="OBJECT")
         obj.data.transform(obj.matrix_world)
         obj.matrix_world = mathutils.Matrix.Identity(4)
 
@@ -263,16 +255,12 @@ def _configure_render(*, image_width: int) -> None:
     # at the standard W=128 / u=32 / top_pad=4*lift=4*16=64 settings).
     scene.render.resolution_y = image_width
     scene.render.engine = "BLENDER_WORKBENCH"
-    shading = scene.display.shading
-    # FLAT (not STUDIO) lighting: rendered pixel == material's diffuse
-    # colour directly, no studio-light attenuation.  Lets MATERIALS in
-    # each ways/<rail>.py be sampled K-means clusters from the upstream
-    # cssr cell and have the bake reproduce those colours pixel-exact.
-    shading.light = "FLAT"
-    shading.color_type = "MATERIAL"
-    shading.show_shadows = False
-    shading.show_cavity = False
-    shading.show_specular_highlight = False
+    # FLAT (not STUDIO) lighting via `pak.render.configure_workbench`:
+    # rendered pixel == material's diffuse colour directly, no studio-
+    # light attenuation.  Lets MATERIALS in each ways/<rail>.py be
+    # sampled K-means clusters from the upstream cssr cell and have the
+    # bake reproduce those colours pixel-exact.
+    configure_workbench(scene)
 
 
 def _clone_atom(template, *, name_suffix: str):
