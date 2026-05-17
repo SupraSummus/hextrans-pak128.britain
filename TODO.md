@@ -271,14 +271,14 @@ type field.  Two known gaps: (a) **Factory schema** —
 carries `Productivity`, `Range`, `InputGood[N]`, `OutputGood[N]`,
 `distributionweight`, `passenger_boost`, smoke fields etc., much
 fatter than Building; add a `Factory` dataclass once the first
-industry ports.  (b) **Animation phase, seasons** — `emit_building`
-hardcodes phase=0 and season=0.  Animated assets (phase > 0) and
-snowed-over winters (season > 0) need their own axes in
-`iter_building_cells` and the viewpoint factory.  Concrete next
-move when the first port needs either: extend the cell iterator
-to yield `(l, y, x, h, p, s)` and the viewpoint to multiply
-facings accordingly.  Height-stacking (the `h` axis) is already
-plumbed end-to-end and tested.
+industry ports.  (b) **Animation phase** — `emit_building`
+hardcodes phase=0.  Animated assets (phase > 0) need their own
+axis in `iter_building_cells` and the viewpoint factory.
+Concrete next move when the first port needs it: extend the cell
+iterator to yield `(s, l, y, x, h, p)` and the viewpoint to
+multiply facings accordingly.  Seasons (the `s` axis) and
+height-stacking (the `h` axis) are already plumbed end-to-end and
+tested — same axis-multiplication pattern.
 
 **Climate texture not yet hex-native.**  `climate_texture` is
 vendored from upstream pak128.Britain verbatim (see

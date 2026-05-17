@@ -22,9 +22,9 @@ class_proportion_jobs[2]=8
 class_proportion_jobs[3]=2
 class_proportion_jobs[4]=0
 backimage[0][0][0][0][0][0]=./com_kg_1870_pub.0.0
-backimage[1][0][0][0][0][0]=./com_kg_1870_pub.1.0
-backimage[2][0][0][0][0][0]=./com_kg_1870_pub.2.0
-backimage[3][0][0][0][0][0]=./com_kg_1870_pub.3.0
-backimage[4][0][0][0][0][0]=./com_kg_1870_pub.4.0
-backimage[5][0][0][0][0][0]=./com_kg_1870_pub.5.0
+backimage[1][0][0][0][0][0]=./com_kg_1870_pub.0.1
+backimage[2][0][0][0][0][0]=./com_kg_1870_pub.0.2
+backimage[3][0][0][0][0][0]=./com_kg_1870_pub.0.3
+backimage[4][0][0][0][0][0]=./com_kg_1870_pub.0.4
+backimage[5][0][0][0][0][0]=./com_kg_1870_pub.0.5
 ----------

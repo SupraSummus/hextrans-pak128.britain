@@ -193,42 +193,24 @@ def bake_way_main(
     )
 
 
-def bake_building(
-    spec: Building,
-    *,
-    blend: str,
-    basename: str,
-    out_dir: Path,
-    materials: dict[str, Material] | None = None,
+def _render_building_season(
+    *, blend: str, name: str, out_dir: Path, spec: Building,
+    materials: dict[str, Material] | None,
 ) -> Path:
-    """Fetch the blend, render the multi-tile atlas, emit the dat.
-
-    Drives `pak/render.py` under `--viewpoint hex_building` with the
-    SPEC's `(dims_x, dims_y, layouts)` footprint; the renderer
-    expands that into `layouts × dims_x × dims_y` per-cell facings
-    (see `viewpoints.building_hex_viewpoint`).  The atlas lands at
-    `<out_dir>/<basename>.png` with `dims_x * dims_y` cells per row,
-    one row per layout — matching the `backimage[l][y][x][0][0][0]
-    =./<basename>.<l>.<col>` refs `emit_building` writes.
-
-    Layout rotation, per-cell translation, and the model's centring
-    convention are all best-guess on the first pass.  When the first
-    real bake surfaces misalignment, fix in
-    `viewpoints.building_hex_viewpoint` (rotation sign / koord-tile
-    mapping) and in `render.py::_compute_fit` (the `fit_kind="hex"`
-    centring may need a multi-tile variant that anchors on the
-    building's koord origin rather than the model's XY bbox).
-    """
-    spec = _resolve_building_layouts(spec)
+    """Render one season's atlas to `<out_dir>/<name>.png` and return
+    the path.  One blender subprocess per call."""
     blend_path = fetch(blend)
-    cells_per_row = spec.dims_x * spec.dims_y
+    # One atlas row per `(season, height)` stripe; each row holds
+    # `layouts * dims_x * dims_y` cells (layouts span columns).  See
+    # `pak.dat.emit_building` for the matching row/col formula.
+    cells_per_row = spec.layouts * spec.dims_x * spec.dims_y
     cmd = [
         "blender", "-b", str(blend_path),
         "--python-exit-code", "1",
         "-P", str(_RENDER_SCRIPT),
         "--",
         "--out", str(out_dir),
-        "--name", basename,
+        "--name", name,
         "--viewpoint", "hex_building",
         "--building-footprint",
         f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
@@ -239,6 +221,89 @@ def bake_building(
         cmd += ["--materials", json.dumps(to_jsonable(materials))]
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
+    return out_dir / f"{name}.png"
+
+
+def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
+    """Vertically concatenate per-season PNGs into a single atlas.
+
+    Top = summer, bottom = winter — matches `emit_building`'s row
+    formula `s * heights + h` (each season is a `heights`-row
+    stripe).  All inputs must share dimensions (same viewpoint, same
+    footprint)."""
+    from PIL import Image
+    images = [Image.open(p).convert("RGBA") for p in season_pngs]
+    sizes = {img.size for img in images}
+    if len(sizes) > 1:
+        raise RuntimeError(f"season PNGs have mismatched sizes: {sorted(sizes)}")
+    w, h = images[0].size
+    combined = Image.new("RGBA", (w, h * len(images)), (0, 0, 0, 0))
+    for i, img in enumerate(images):
+        combined.paste(img, (0, i * h))
+    combined.save(out_path)
+
+
+def bake_building(
+    spec: Building,
+    *,
+    blend: str,
+    basename: str,
+    out_dir: Path,
+    materials: dict[str, Material] | None = None,
+    blend_winter: str | None = None,
+    materials_winter: dict[str, Material] | None = None,
+) -> Path:
+    """Fetch the blend(s), render the multi-tile atlas, emit the dat.
+
+    Drives `pak/render.py` under `--viewpoint hex_building` with the
+    SPEC's `(dims_x, dims_y, layouts)` footprint; the renderer
+    expands that into `layouts × dims_x × dims_y` per-cell facings
+    (see `viewpoints.building_hex_viewpoint`).  The atlas lands at
+    `<out_dir>/<basename>.png` shaped `seasons*heights` rows ×
+    `layouts*dims_x*dims_y` cols — see `emit_building` for the
+    matching `backimage[l][y][x][h][0][s]=./<basename>.<row>.<col>`
+    row/col formula.
+
+    When `spec.seasons >= 2`, requires `blend_winter` (the upstream
+    sibling `-snow.blend` per asset) and typically `materials_winter`
+    (seed via `python3 -m pak.extract_materials <winter-blend>`).
+    Renders each season into a temporary `<basename>__s<i>.png`, then
+    vertically concatenates with summer on top.
+
+    Layout rotation, per-cell translation, and the model's centring
+    convention are all best-guess on the first pass.  When the first
+    real bake surfaces misalignment, fix in
+    `viewpoints.building_hex_viewpoint` (rotation sign / koord-tile
+    mapping) and in `render.py::_compute_fit` (the `fit_kind="hex"`
+    centring may need a multi-tile variant that anchors on the
+    building's koord origin rather than the model's XY bbox).
+    """
+    spec = _resolve_building_layouts(spec)
+
+    season_inputs: list[tuple[str, dict[str, Material] | None]] = [(blend, materials)]
+    if spec.seasons >= 2:
+        if blend_winter is None:
+            raise ValueError(
+                f"{basename}: spec.seasons={spec.seasons} requires blend_winter"
+            )
+        season_inputs.append((blend_winter, materials_winter))
+
+    if len(season_inputs) == 1:
+        _render_building_season(
+            blend=blend, name=basename, out_dir=out_dir,
+            spec=spec, materials=materials,
+        )
+    else:
+        tmp_paths: list[Path] = []
+        for s, (b, m) in enumerate(season_inputs):
+            tmp_name = f"{basename}__s{s}"
+            tmp_paths.append(_render_building_season(
+                blend=b, name=tmp_name, out_dir=out_dir,
+                spec=spec, materials=m,
+            ))
+        _stitch_seasons(tmp_paths, out_dir / f"{basename}.png")
+        for p in tmp_paths:
+            p.unlink()
 
     out_dat = emit_building(spec, out_dir=out_dir, basename=basename)
     try:
@@ -251,6 +316,8 @@ def bake_building(
 def bake_building_main(
     spec: Building, blend: str, file: str, *,
     materials: dict[str, Material] | None = None,
+    blend_winter: str | None = None,
+    materials_winter: dict[str, Material] | None = None,
 ) -> Path:
     """Convenience for single-building bake scripts.
 
@@ -259,9 +326,13 @@ def bake_building_main(
 
         if __name__ == "__main__":
             bake_building_main(SPEC, BLEND, __file__, materials=MATERIALS)
+
+    Pass `blend_winter` / `materials_winter` alongside when the SPEC
+    declares `seasons=2`.
     """
     path = Path(file).resolve()
     return bake_building(
         spec, blend=blend, basename=path.stem, out_dir=path.parent,
         materials=materials,
+        blend_winter=blend_winter, materials_winter=materials_winter,
     )
