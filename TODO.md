@@ -310,39 +310,52 @@ into hextrans (when build infrastructure can stage a multi-tile
 building); if seams misalign, the slice-centre formula in
 `hex_tile_screen_offset` is the place to look.
 
-**Open: `fit_ortho_divisor=max(dims)` is a one-asset heuristic.**
-mechanical-signalbox-large ships `ortho=48 = dims·24`, so divisor
-2 recovers per-tile-ortho=24.  Other multi-tile blends may
-author at `dims·12` (building convention) or `dims·custom`; the
-divisor alone won't recover the right scale.  Concrete next move
-when the second multi-tile building ports: if it renders at the
-wrong size, give SPEC a `blend_ortho_override` bake-meta field
-(per-asset, explicit, no auto-fit).
+**Open: per-asset `blend_ortho_per_tile` override is opt-in, no
+sniffer.**  `Building.blend_ortho_per_tile` lets a SPEC pin the
+multi-tile per-tile ortho target when the blend's authored ortho
+isn't `max(dims)·24` -- stonehenge ships ortho=72 over a 2x2
+footprint, so SPEC declares per_tile=24 to recover the standard
+rate (renderer computes divisor = 72/(24·2) = 1.5).  The default
+fallback (`fit_ortho_divisor=max(dims)`) is still implicit-
+assumption-based -- equivalent to "honour the artist's authored
+per-tile rate".  Concrete next move when the third multi-tile
+building ports: if a pattern emerges (e.g. every attraction at
+`dims·36`, every signalbox at `dims·24`), document the per-class
+convention; otherwise treat per-asset override as the steady state.
 
-**Open: multi-tile calibration diff residual per-layout offset.**
-`diff_buildings.run_multitile` pins rotation (`model_rot_z =
-(2·step·l) % 360` on `square_building`) and stitches upstream's per-
-cell PNGs around `pak.dat.building_footprint_centroid(dims_x, dims_y,
-l)` with each cell's ground anchor at pixel (64, 96).  On mechanical-
-signalbox-large worst-stitched IoU is 0.557, mean dRGB 3.7.
-Centroid-aligned IoU (shift each layout's upstream stitch by its
-bbox-centre offset to ours) jumps to 0.98+ across all four layouts
-and mean dRGB to 0.8 -- the residual is positional drift, not a
-shape mismatch.  Per-layout offsets ours-minus-upstream: L0 (+4, +7),
-L1 (-9, +9), L2 (-8, +18), L3 (+14, +15).  Cam math says world (0,
-0, 0) renders at canvas y=287.7 not 256 (cam doesn't point at
-origin), empirically verified by rendering a marker; shifting the
-stitch anchor to (256, 288) overshoots so upstream stage-2 has a
-different anchor convention we don't fully replicate.  Per-layout
-variation likely comes from upstream's BI silhouette edges sitting
-different from our Cycles equivalents on the building's asymmetric
-y-mass -- upstream stitched bbox y-centres are nearly constant across
-L (233-235) while ours span 241-251.  Concrete next move: when the
-second multi-tile building ports, check whether the offset pattern
-(sign, magnitude) is consistent -- if so, reverse-engineer the
-stage-2 anchor convention; if not, treat as renderer-mismatch
-residual and gate FAIL_IOU against centroid-aligned IoU rather than
-raw stitched IoU.
+**Open: multi-tile calibration diff residual.**
+`diff_buildings.run_multitile` anchors the stitch on
+`_STITCH_CANVAS_ANCHOR = (256, 288)` -- where the camera projects
+world (0,0,0) per the cardinal-camera math (pitch=60° looks at
+(-4.2, 4.2, 0) not origin; uniform by cardinal symmetry).
+`Building.blend_model_offset_xyz` lets a SPEC pin where the model
+sits in world (renderer pre-translates by -offset before fit/
+rotation/render) for assets where the artist authored off-centre;
+`pak.diag_centroid_align` is the porter-aimed sweep that suggests
+a candidate offset.  The diff scores raw IoU at the structural
+anchor -- no auto-sweep -- so misalignment surfaces as IoU
+residual rather than being silently absorbed.
+
+Worst raw stitched IoU: signalbox 0.55 (was 0.557 against the
+old (256, 256) anchor; sign of the residual flipped but magnitude
+unchanged), stonehenge 0.49.  Pinning `blend_model_offset_xyz`
+on stonehenge tried -- per-layout best offsets don't collapse to
+one world translation (each layout's MUSGRAVE/CLOUDS noise phase
+rotates with the model, producing a different per-layout best
+shift), and pinning the mean helps one layout while hurting the
+others.  Stonehenge SPEC stays at default; the floor is the
+Cycles-vs-BI procedural-material rendering gap.  Concrete next
+move when a third multi-tile building ports: if its residual
+*does* collapse to one offset, the SPEC field gets exercised in
+production for the first time.  If not, the per-layout drift is
+a procedural-noise renderer-mismatch floor across the class.
+
+Stonehenge sits at IoU 0.49, signalbox at 0.55 -- both below
+`FAIL_IOU=0.88`.  Either lower the floor, add per-asset
+relaxation (`FAIL_IOU` override on SPEC), or mark these as
+known-fail and exclude from the gate.  No decision yet -- the
+diff still emits useful per-layout numbers and the visual grid
+for human inspection.
 
 **Open: hex vs square building viewpoints disagree on footprint
 centring.**  `building_hex_viewpoint` shifts slice positions by
@@ -365,26 +378,23 @@ calling into the same SPEC-level helper avoids future drift.
 The `model_rot_z = (2·step·l) % 360` formula in
 `building_square_viewpoint` was chosen on visual evidence from
 mechanical-signalbox-large (it produces the face arrangement matching
-upstream's stitched cells).  Metric-optimal would have been `180°
-for L in (1, 2)` -- worst per-layout IoU 0.774 vs the formula's
-0.557 -- but the cam-relative rotations under that pattern are
-(-45°, 45°, -45°, 45°), only two distinct values alternating per L
-rather than advancing by `step` per L.  The formula gives 4 distinct
-cam-relative angles (-45°, 45°, 135°, 225°), one per layout, which
-is the natural 4-rotation cycle for a 4-layout building; the
-silhouette IoU residual is positional drift on the asymmetric
-y-mass, not a wrong formula choice.  Concrete next move: when the
-second multi-tile building ports, re-test both patterns; if the
-formula consistently matches the face arrangement at lower silhouette
-IoU, the IoU gate needs centroid-aligned scoring.  If a different
-asset prefers the `(1, 2)` pattern, the formula isn't universal.
+upstream's stitched cells).  Stonehenge (second multi-tile port) is
+rotationally near-symmetric so doesn't discriminate between this
+and alternative rotation patterns -- the face-arrangement test
+needs a third port with clear asymmetry (e.g. a 2x2 building with
+distinguishable front/back).  Concrete next move when such an asset
+ports: re-test both this formula and `180° for L in (1, 2)`; if
+the latter wins, the formula isn't universal.
 
-**Open: winter-pass for signalboxes.**  `seasons=2` requires
-a `-snow.blend` sibling; the upstream blends repo doesn't ship
-one for any signalbox.  Current SPEC drops `seasons=2` and ships
-summer-only.  Concrete next move when winter coverage is wanted:
-either paint snow procedurally (a `materials_winter` recipe
-swapping Roof/Pavement diffuse for snow tones, like
+**Open: winter-pass for signalboxes + attractions.**  `seasons=2`
+requires a `-snow.blend` sibling; jamespetts blends doesn't ship
+one for any signalbox, and JamesHood blends ships `-snow` for
+some attractions (`citychurch-snow`, `cricket-ground-sm-snow`,
+`fountain-snow`, …) but not for stonehenge.  mechanical-signalbox-
+large and stonehenge ports drop `seasons=2` and ship summer-only.
+Concrete next move when winter coverage is wanted: either paint
+snow procedurally (a `materials_winter` recipe swapping
+Roof/Pavement/Stone diffuse for snow tones, like
 `citybuildings/res_1600_kg_01.py`'s winter pass does), or accept
 the per-season divergence from upstream.
 
