@@ -874,7 +874,7 @@ def _compute_fit(mathutils, records, fit_kind: str,
     if fit_kind == "none":
         return M.Identity(4)
     if fit_kind == "hex":
-        from pak.hex_synth import HEX_TILE_RADIUS, UPSTREAM_ORTHO_SCALE  # noqa: E402
+        from pak.hex_synth import HEX_TILE_RADIUS, UPSTREAM_ORTHO_SCALE
         ortho = blend_ortho if blend_ortho is not None else UPSTREAM_ORTHO_SCALE
         scale = 2.0 * HEX_TILE_RADIUS / ortho
         return M.Diagonal((scale, scale, scale, 1.0))
