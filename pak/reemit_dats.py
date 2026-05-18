@@ -22,7 +22,18 @@ from pathlib import Path
 from pak import REPO_ROOT
 from pak.bake import _resolve_building_layouts, clamp_age_overrides
 from pak.bake_units import discover, import_script, specs_of
-from pak.dat import Building, Tree, Vehicle, Way, emit_building, emit_trees, emit_vehicles, emit_way
+from pak.dat import (
+    Bridge,
+    Building,
+    Tree,
+    Vehicle,
+    Way,
+    emit_bridge,
+    emit_building,
+    emit_trees,
+    emit_vehicles,
+    emit_way,
+)
 
 # Rendered-ages count for the Tree reemit path -- matches
 # `pak.bake.bake_tree`'s `ages=4` default.  Both feed the same
@@ -43,6 +54,8 @@ def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
         return emit_vehicles(specs, out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Way):
         return emit_way(specs[0], out_dir=out_dir, basename=basename)
+    if len(specs) == 1 and isinstance(specs[0], Bridge):
+        return emit_bridge(specs[0], out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Building):
         spec = _resolve_building_layouts(specs[0])
         return emit_building(spec, out_dir=out_dir, basename=basename)

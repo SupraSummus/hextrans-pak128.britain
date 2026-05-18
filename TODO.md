@@ -390,24 +390,50 @@ multiply facings accordingly.  Seasons (the `s` axis) and
 height-stacking (the `h` axis) are already plumbed end-to-end and
 tested — same axis-multiplication pattern.
 
-**Bridge port stops at square-projection calibration.**
-`pak.diff_bridge` (Image / Start / Ramp diff against the upstream
-atlas cells) and `pak.diff_bridge_overview` (graphical fleet view)
-exist; `bridge_square_viewpoint` renders the JH bridge blends through
-the normal-alignment cameras with way-material stripping; one bridge
-family (plate-girder) is wired into the overview tool's `CASES`.
-What doesn't exist yet: a `Bridge` dataclass in `pak.dat`, a
-`bake_bridge_main` driver, any per-asset bake script, the hex
-projection pass, or a `.pak` artifact.  The calibration probe is
-groundwork — not a port.  Per-tile IoU 0.66-0.91 against upstream
-through `bridge_square` viewpoint, calibrated bar is 0.93.  Concrete
-next moves when porting bridges matters: (a) model the `Obj=bridge`
-schema in `pak.dat.Bridge` from the upstream `plate-girder.dat`
-shape (BackImage/FrontImage/BackStart/FrontStart/BackRamp/FrontRamp
-× direction × variant keys, plus dat-level `pillar_distance`,
-`max_weight`, `max_length`, `pillar_asymmetric`); (b) write
-`bake_bridge` mirroring `bake_way` but emitting the multi-row
-atlas; (c) add `bridge_hex_viewpoint` for the hex render pass.
+**Hex bridge: bake pipeline shipped, in-engine schema unverified.**
+`pak.dat.Bridge` + `emit_bridge`, `pak.bake.bake_bridge_main`, the
+per-piece `bridge_hex_viewpoint`, and `ways/plate_girder.py`
+exercise the bake side end-to-end (3-row × 6-col atlas: image axes
+/ start dirs / ramp dirs).  What's *not* validated: the emitted
+dat actually loading in-engine.  Three gaps visible in the current
+output:
+
+* **Hex bridge schema is a guess.**  Dat key tokens
+  (`BackImage[n_s]`, `BackStart[ne]`, …) and the 3-axis / 6-dir
+  layout are translated from upstream's square `[NS]`/`[EW]` and
+  `[N]`/`[S]`/`[E]`/`[W]` keys; hex `bridge_writer.cc` (presumed
+  to exist on the engine side -- `hextrans-pak128/infrastructure/
+  rail_bridges/rail_060_bridge/` is the worked-example pakset)
+  is the authoritative source.  Concrete next move when the
+  Britain pak first builds a `.pak` artifact for bridges: feed
+  `ways/plate_girder.{dat,png}` through makeobj, then load in-
+  engine and read engine logs for unknown-key warnings; if the
+  tokens drift, fix `HEX_BRIDGE_PIECE_LABELS` in `pak.dat` (one
+  source of truth -- bake and emit both read it).
+
+* **Depth-clipped Back/Front.**  The Front layer points at the
+  same atlas cell as Back, so the bridge silhouette is fully
+  opaque -- a vehicle traversing the deck vanishes behind the
+  bridge image instead of passing between Back and Front planes.
+  Concrete next move: split each piece render into Back / Front
+  passes (compositor Z-mask or per-render clip plane
+  perpendicular to camera Y at the cell midline), grow the atlas
+  to 6 rows (Back/Front × 3 pieces), have `emit_bridge` key Front
+  at row+1.
+
+* **Variant 2 + season 1 cells.**  Upstream emits four families
+  (variant 1 / variant 2 × season 0 / season 1; variant
+  interleaves under `pillar_asymmetric`, season switches at snow
+  climates).  We emit only variant 1 + season 0.  Concrete next
+  move when asymmetric pillars matter: render a second piece set
+  from a variant-pillar blend (none in JH yet -- see the variant
+  0 entry below) and emit `*2` keys.  Snow follows the building
+  pattern (recolour materials for winter).
+
+PlateGirderConcrete (the 1949+ successor in the same upstream dat
+file) is unported -- separate visual family, no JH blend source
+under `ways/plate_girder/`; lands when a `concrete.{blend}` set
+appears or someone authors one.
 
 **Plate-girder variant 0 (`BackImage` / `Start` / `Ramp` without
 trailing `2`) lacks a JH source.**  JH's `end.blend` and
