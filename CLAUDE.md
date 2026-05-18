@@ -66,7 +66,19 @@ either.  `TODO.md` tracks which assets have crossed the line.
   references):**
   `https://github.com/jamespetts/simutrans-pak128.britain`
 - **Upstream blends (`.blend` source for sprite re-bake):**
-  `https://github.com/jamespetts/Pak128.Britain-blends`
+  `https://github.com/jamespetts/Pak128.Britain-blends` is the
+  primary source.  A second repo,
+  `https://github.com/JamesHood/pak128.Britain-blend-files`, fills
+  two of jamespetts' gaps — it is the only blend source for
+  top-level `attractions/` and `depots/` — and adds substantially
+  more `stations/` blends (~75 vs ~13).  `citybuildings/` and
+  `industries/` paths are near-identical between the two; `boats`
+  / `trams` / `trees` overlap heavily on shared paths; `trains` is
+  organised completely differently (no shared paths).  Neither
+  repo holds an OldBrickSchool / hospital / stone-attractions
+  blend — those upstream PNGs predate the .blend pipeline.
+  `pak/fetch_blend.py` currently only knows jamespetts; wire the
+  second `Source` when the first attraction or depot ports.
 - **Hex engine:**  `SupraSummus/hextrans`.
 - **Worked-example hex pakset (procedural):**
   `SupraSummus/hextrans-pak128`.
@@ -446,6 +458,20 @@ side by side.
 If the upstream HTTP endpoint requires auth or routing, the
 fetcher is the single place to handle it.  Keep auth concerns
 out of per-asset `bake.py`s and out of the runtime loader.
+
+**Exploring upstream repos.**  Day-to-day porting goes through
+`fetch_blend` / `fetch_pak` — one blob over HTTP, not a clone.
+When you genuinely need to see what's *there* (compare two
+upstream repos, search for a blend that might or might not
+exist), clone blob-less:
+
+    git clone --filter=blob:none --no-checkout --depth 1 <url> <dst>
+    git -C <dst> ls-tree -r --name-only HEAD
+
+A full blends-repo clone is multi-GB (jamespetts unpacks to
+~18 GB working tree); the blob-less form is a few hundred KB
+of tree objects.  Drop the clone under `/tmp/` so it doesn't
+end up in the working repo.
 
 ## Bake units and per-asset layout
 

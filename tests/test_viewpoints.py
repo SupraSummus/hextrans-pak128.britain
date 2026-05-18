@@ -12,10 +12,12 @@ import math
 import unittest
 
 from pak.viewpoints import (
+    DEFAULT_W,
     HEX_VIEWPOINT,
     SQUARE_VIEWPOINT,
     building_hex_viewpoint,
     building_square_viewpoint,
+    hex_tile_screen_offset,
     sun_rotation_for_camera,
 )
 
@@ -89,6 +91,83 @@ class TestBuildingViewpoints(unittest.TestCase):
                          "BLENDER_EEVEE")
         self.assertEqual(building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1).engine,
                          "BLENDER_EEVEE")
+
+
+class TestBuildingHexMultiTile(unittest.TestCase):
+    """Multi-tile path in `building_hex_viewpoint`: one Facing per
+    (layout, height) with N=dims_x*dims_y slices at hex koord screen
+    positions.  Catches structural drift in the slice-list generation
+    that would silently scramble the atlas's per-cell labels."""
+
+    def test_single_tile_path_uses_no_slices(self):
+        # Backwards compatibility lock: dims=(1,1) keeps the legacy
+        # 1-cell-per-facing structure (no slicing), no canvas override.
+        vp = building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1)
+        self.assertEqual(len(vp.facings), 6)
+        self.assertIsNone(vp.canvas_width)
+        self.assertIsNone(vp.canvas_height)
+        self.assertAlmostEqual(vp.fit_ortho_divisor, 1.0)
+        for f in vp.facings:
+            self.assertIsNone(f.slices)
+
+    def test_multi_tile_emits_one_facing_per_layout_with_slices(self):
+        # 2x1x4 (mechanical-signalbox-large shape): 4 layouts × 1 height
+        # = 4 facings; each carries 2 slices (the per-layout cell count
+        # under iter_building_cells, regardless of even/odd swap).
+        vp = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        self.assertEqual(len(vp.facings), 4)
+        for f in vp.facings:
+            self.assertIsNotNone(f.slices)
+            self.assertEqual(len(f.slices), 2)
+        self.assertGreater(vp.canvas_width, DEFAULT_W)
+        self.assertAlmostEqual(vp.fit_ortho_divisor, 2.0)
+
+    def test_multi_tile_slice_labels_follow_iter_order(self):
+        # Atlas col formula `l * dims_x*dims_y + y * w + x` is the
+        # contract that lines slices up against `emit_building`'s
+        # BackImage references.  Even L=0 (dims_y=1 outer, dims_x=2
+        # inner) and odd L=1 (dims_x=2 outer, dims_y=1 inner -- swap)
+        # must hit the same (Y, X) label pairs in iter order.
+        vp = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        labels_per_layout = {f.label: [s[0] for s in f.slices]
+                             for f in vp.facings}
+        self.assertEqual(labels_per_layout["L0_H0"],
+                         ["L0_Y0_X0_H0", "L0_Y0_X1_H0"])
+        # L=1 swap: y iterates over dims_x=2, x over dims_y=1.
+        self.assertEqual(labels_per_layout["L1_H0"],
+                         ["L1_Y0_X0_H0", "L1_Y1_X0_H0"])
+
+    def test_multi_tile_slice_centres_match_hex_screen_lattice(self):
+        # The slice offsets must reproduce the engine's per-tile
+        # screen positions: `hex_tile_screen_offset(qx=x, ry=y)` shifted
+        # to centre the multi-tile footprint in the canvas.  Drift
+        # here means our sliced sprite no longer lands where the
+        # engine paints the corresponding tile.
+        vp = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        l0 = next(f for f in vp.facings if f.label == "L0_H0")
+        # Even layout iterates (y=0, x in [0, 1]).  Centring offset
+        # subtracts cx_max/2, cy_max/2 from the raw koord-screen
+        # position (cx_max/cy_max = hex offset of the worst-case koord).
+        cx_max, cy_max = hex_tile_screen_offset(max(2, 1) - 1, max(2, 1) - 1)
+        expected = [
+            hex_tile_screen_offset(0, 0),
+            hex_tile_screen_offset(1, 0),
+        ]
+        for (_, (got_cx, got_cy)), (want_cx, want_cy) in zip(
+                l0.slices, expected, strict=True,
+        ):
+            self.assertEqual(got_cx, int(round(want_cx - cx_max / 2)))
+            self.assertEqual(got_cy, int(round(want_cy - cy_max / 2)))
+
+
+class TestBuildingSquareViewpoint(unittest.TestCase):
+    """Square calibration viewpoint stays single-tile-only.  Multi-tile
+    diff against the shipped 4x4 atlas is upstream-private (see
+    TODO.md -> 'Multi-tile building port')."""
+
+    def test_multi_tile_raises(self):
+        with self.assertRaises(NotImplementedError):
+            building_square_viewpoint(layouts=4, dims_x=2, dims_y=1)
 
 
 if __name__ == "__main__":

@@ -303,23 +303,75 @@ override on the cardinal-zero angle, calibrated by inspection; or
 (b) accept the upstream's per-blend orientation as authored.
 Closes the original "rotation sign" probe.
 
-**Multi-tile building port.**  `res_1600_kg_01` is 1×1×4 — the
-multi-tile axis (`dims_x>1` or `dims_y>1`) is unit-tested via
-`iter_building_cells` but unverified end-to-end.  Concrete next
-move: pick a 1×2 or 2×1 upstream building with a matching blend
-(`town-house`, `terrace-row-house-2f`, or similar in
-`citybuildings/`), port it, observe whether the two cells' content
-correctly stitches at the shared tile edge in-engine.  Three known
-gaps surface together: (a) `fit_kind="hex"` centres on the model's
-XY bbox, which may not match upstream's per-tile-anchor convention
-— a `fit_kind="hex_building"` variant in `render.py::_compute_fit`
-anchored on a known footprint reference is the fix if it surfaces
-as "every cell renders the same part of the model"; (b)
-`building_square_viewpoint` errors on `dims_x*dims_y > 1` so the
-diff harness needs a square tile lattice (world-space inter-tile
-offset `(±SQUARE_TILE_HALF, ±SQUARE_TILE_HALF)` along the screen
-diagonal); (c) heights coverage triggers on the first port whose
-rendered silhouette overflows one cell vertically.
+**Multi-tile building port — production-side slicing landed; in-
+engine validation and material/ortho conventions are the open
+gaps.**  `signalboxes/mechanical_signalbox_large.py` is the first
+2×1×4 port.  `building_hex_viewpoint` renders multi-tile via
+image-space slicing: one Facing per `(layout, height)` on a wide
+canvas covering the full footprint at the hex screen lattice,
+model untranslated (artist XYZ contract preserved); each Facing
+carries `slices` listing per-cell W×W crops at
+`hex_tile_screen_offset(qx, ry)`.  Single-tile path is unchanged.
+`Viewpoint.canvas_width/canvas_height` + `Facing.slices` in
+`pak/render.py` do the underlying render-once-crop-many; the bake
+driver routes through automatically based on `dims`.
+`Viewpoint.fit_ortho_divisor=max(dims)` divides authored blend
+ortho before `_compute_fit` so the artist's
+`ortho = dims · per-tile-ortho` convention renders at the per-
+tile size the engine paints at.  All 8 atlas cells populate,
+building straddles the hex tile boundaries.
+
+**Open: in-engine eyeball.**  The hex atlas has never been seen
+under hextrans -- structural correctness is verified by bbox
+inspection + by `tests/test_viewpoints.py::TestBuildingHexMultiTile`,
+but whether adjacent cells actually tile coherently at hex tile
+seams in-game is unknown.  Concrete next move: load a built pak
+into hextrans (when build infrastructure can stage a multi-tile
+building); if seams misalign, the slice-centre formula in
+`hex_tile_screen_offset` is the place to look.
+
+**Open: `fit_ortho_divisor=max(dims)` is a one-asset heuristic.**
+mechanical-signalbox-large ships `ortho=48 = dims·24`, so divisor
+2 recovers per-tile-ortho=24.  Other multi-tile blends may
+author at `dims·12` (building convention) or `dims·custom`; the
+divisor alone won't recover the right scale.  Concrete next move
+when the second multi-tile building ports: if it renders at the
+wrong size, give SPEC a `blend_ortho_override` bake-meta field
+(per-asset, explicit, no auto-fit).
+
+**Closed (not pursued): square-viewpoint calibration diff against
+the shipped 4×4 atlas.**  The investigation surfaced that
+upstream's `<asset>.png` comes from a three-stage pipeline of
+which only stage 1 ships in the blends repo: (1) per-cardinal
+render at 512×512 via `render_SimutransRender_pak128Britain-65.py`
+(camera + sun rotation per layout, no model translation, no
+crop); (2) crop + arrange the four cardinal PNGs into the final
+4×N atlas grid (this stage is upstream-only, not in the blends
+repo); (3) reference the cells from the dat.  We have stage 1
+and stage 3; stage 2 is irreproducible from public artifacts.
+A per-cell IoU diff against the shipped atlas was tried (PR #48
+session, IoU ~0.09-0.29) and reverted -- the numbers reflected
+the unreproducible stage-2 crops, not anything we can act on.
+If a multi-tile diff is ever needed, the right target is the
+stage-1 per-cardinal 512×512 render, re-produced by us from the
+current blend through upstream's script; that diff would verify
+our pipeline reproduces stage 1 pixel-for-pixel.  Deferred until
+a regression actually needs gating.
+
+**Open: winter-pass for signalboxes.**  `seasons=2` requires
+a `-snow.blend` sibling; the upstream blends repo doesn't ship
+one for any signalbox.  Current SPEC drops `seasons=2` and ships
+summer-only.  Concrete next move when winter coverage is wanted:
+either paint snow procedurally (a `materials_winter` recipe
+swapping Roof/Pavement diffuse for snow tones, like
+`citybuildings/res_1600_kg_01.py`'s winter pass does), or accept
+the per-season divergence from upstream.
+
+**Open: heights coverage.**  The slicing canvas computes vertical
+headroom from hex koord offsets alone; `heights>1` will need
+extra vertical room in the canvas plus per-height slice rows.
+Untested end-to-end -- first multi-height port (no asset yet
+needs it) will surface what's missing.
 
 **Building schema gaps.**  `pak.dat.Building` covers attractions,
 monuments, city buildings (res/com/ind), townhalls, HQs, stops,
