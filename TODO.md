@@ -729,6 +729,16 @@ incremental per-port deletes drive it, or strip them all up
 front and fetch via `pak.lock` when seeding new ports.  Soft
 trigger.
 
+**Rewrite README.md.**  Current text is upstream's 2009 readme
+preserved verbatim with a disclaimer header — describes the
+vanilla Simutrans pakset, not the hex port.  Concrete next move:
+short README covering what this repo is (hex port targeting
+`SupraSummus/hextrans`), upstream provenance (pakset + blends),
+build path (`Makefile` copy + makeobj), and pointers to
+`CLAUDE.md` / `TODO.md` for porting status.  Trigger: when the
+pak boots far enough to claim "runs, with N categories of
+objects" — i.e. there's something concrete to ship behind.
+
 After the spine: expand by asset family (rail vehicles, road
 vehicles, buildings, industries).  Per-family progress is
 recorded by deleting that family's entry from this file when it's
