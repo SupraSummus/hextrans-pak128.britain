@@ -132,43 +132,16 @@ def _iou_matrix(our_masks, up_masks):
 def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
                   perm: list[int], out_path: Path) -> None:
     """Three-row grid (ours / upstream-best-match / silhouette XOR) so
-    contour drift is visible at a glance.  Same shape as
-    `diff_upstream.py::_compose`'s output."""
-    from PIL import Image, ImageDraw
+    contour drift is visible at a glance."""
+    from pak.diff import GridCell, compose_grid
 
-    from pak.diff import checker, xor_image
-
-    CELL, PAD, LH = 128, 8, 18
-    cols, rows = len(our_rgba), 3
-    W = cols * (CELL + PAD) + PAD
-    H = rows * (CELL + PAD) + PAD + LH
-
-    bg = checker(CELL)
-    grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
-    draw = ImageDraw.Draw(grid)
-
-    for i, (ours, up_idx) in enumerate(zip(our_rgba, perm, strict=True)):
-        label = f"L{i}~c{up_idx}"
-        draw.text((PAD + i * (CELL + PAD) + 4, 2), label, fill=(0, 0, 0, 255))
-        # Strip magic-pink before pasting upstream cell so the
-        # checker background reads through.
-        up_cell = up_cells[up_idx].copy()
-        pink = ((up_cell[..., 0] == MAGIC_PINK[0])
-                & (up_cell[..., 1] == MAGIC_PINK[1])
-                & (up_cell[..., 2] == MAGIC_PINK[2]))
-        up_cell[pink, 3] = 0
-        x = PAD + i * (CELL + PAD)
-        grid.paste(Image.alpha_composite(bg, Image.fromarray(ours, "RGBA")),
-                   (x, LH + PAD))
-        grid.paste(Image.alpha_composite(bg, Image.fromarray(up_cell, "RGBA")),
-                   (x, LH + PAD + CELL + PAD))
-
-        grid.paste(Image.fromarray(xor_image(our_masks[i], up_masks[up_idx]),
-                                   "RGBA"),
-                   (x, LH + PAD + 2 * (CELL + PAD)))
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    grid.save(out_path)
+    cells = [
+        GridCell(our_rgba[i], up_cells[perm[i]],
+                 our_masks[i], up_masks[perm[i]],
+                 f"L{i}~c{perm[i]}")
+        for i in range(len(our_rgba))
+    ]
+    compose_grid(cells, out_path=out_path, strip_magic_rgb=MAGIC_PINK)
 
 
 def _best_permutation(mat) -> list[int]:
