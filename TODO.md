@@ -336,7 +336,14 @@ If a multi-tile diff is ever needed, the right target is the
 stage-1 per-cardinal 512×512 render, re-produced by us from the
 current blend through upstream's script; that diff would verify
 our pipeline reproduces stage 1 pixel-for-pixel.  Deferred until
-a regression actually needs gating.
+a regression actually needs gating.  A non-calibration eyeball
+diff for multi-tile assets lives at `diff_buildings.run_multitile`
+(`pak.check` dispatches automatically): reads both dats, walks
+each `backimage[L][y][x][h][p][s]` ref, slices the committed
+atlases per dat, and emits the per-cell side-by-side grid plus an
+aligned text table.  Per-cell IoU is cross-projection (hex vs
+square) — informational only, sits alongside the visual, doesn't
+gate.
 
 **Open: winter-pass for signalboxes.**  `seasons=2` requires
 a `-snow.blend` sibling; the upstream blends repo doesn't ship

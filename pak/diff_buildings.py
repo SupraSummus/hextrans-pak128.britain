@@ -1,8 +1,9 @@
-"""Building calibration: render a building blend through the square
-viewpoint and pixel-diff each layout against the upstream pakset atlas.
+"""Building diff: two paths sharing the silhouette / dRGB primitives.
 
-Mirrors `diff_upstream.py` for buildings, with two differences from the
-vehicle harness:
+`run` is the calibration path — renders a single-tile building blend
+through the square viewpoint and pixel-diffs each layout against the
+upstream pakset atlas.  Mirrors `diff_upstream.py` for buildings, with
+two differences from the vehicle harness:
 
 1. **Layout permutation discovery.**  The dat-level mapping of "layout L
    -> atlas column C" is per-asset (upstream's `BackImage[L][0][0][0][0]
@@ -17,9 +18,16 @@ vehicle harness:
    our renderer writes proper RGBA.  Silhouette masks normalise across
    both via `_silhouette_mask`.
 
-Today's scope: single-tile (dims_x = dims_y = heights = 1) buildings
-only.  Multi-tile per-cell diffs need a square tile lattice analogous
-to the hex `HEX_KOORD_Q_WORLD`; see TODO.md.
+`run_multitile` is the multi-tile path — reads upstream's dat to
+enumerate `(l, y, x, h, phase, season)` cells, slices both the
+committed hex atlas (our bake's output) and the upstream square atlas
+per their dat refs, and composes a per-cell side-by-side grid.  No
+rendering: it's a regression check on what we ship, not a calibration
+of what we'd re-bake.  Per-cell IoU is cross-projection (hex vs
+square) so it sits in the report as a relative ranking, not a
+FAIL_IOU gate — see TODO.md → "Closed (not pursued)" for why
+absolute calibration against the shipped multi-tile atlas isn't a
+reachable target.
 
 Run via the more ergonomic `pak/check.py` driver (which reads `BLEND`
 and `UPSTREAM_STEM` from the bake script), or directly:
@@ -36,6 +44,7 @@ import argparse
 import itertools
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from pak import REPO_ROOT
@@ -104,6 +113,200 @@ def _split_upstream(up_png: Path, layouts: int, season_row: int = 0):
     return [full[y0:y0 + 128, c * 128:(c + 1) * 128] for c in range(layouts)]
 
 
+def _parse_backimage_entries(dat_path: Path):
+    """Parse a building dat's `backimage[L][y][x][h][p][s]=<basename>.<row>.<col>`
+    entries.  Returns list of dicts with keys
+    `l, y, x, h, phase, season, row, col`.  Ignores image refs that
+    can't be parsed (e.g. `backimage[…]=-` for missing slots).
+
+    Image refs that come back as `<basename>.<row>.<col>` (no `.<season>`
+    suffix on the file stem) are addressed against the upstream PNG by
+    integer `(row, col)` cell coords; sub-atlases / `frontimage` are
+    ignored — the diff targets `backimage` only."""
+    import re
+
+    from pak.dat import parse
+
+    objects = parse(dat_path)
+    if not objects:
+        raise SystemExit(f"empty dat: {dat_path}")
+    # Building dats hold one obj=building entry in this codebase.
+    obj = objects[0]
+    rec = re.compile(
+        r"^backimage"
+        r"\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]$",
+    )
+    ref = re.compile(r"\.(\d+)\.(\d+)\s*$")
+    entries: list[dict] = []
+    for k, v in obj:
+        m = rec.match(k.lower())
+        if not m:
+            continue
+        n = ref.search(v.strip())
+        if not n:
+            continue
+        l, y, x, h, p, s = (int(g) for g in m.groups())
+        row, col = int(n.group(1)), int(n.group(2))
+        entries.append(dict(l=l, y=y, x=x, h=h, phase=p, season=s,
+                            row=row, col=col))
+    return entries
+
+
+def _atlas_cell(atlas, row: int, col: int):
+    """Return the 128×128 RGBA cell at `(row, col)` of `atlas` (H,W,4
+    numpy array).  Raises with a clear message when the cell is out of
+    range — saves debugging an opaque IndexError on a stale dat."""
+    H, W = atlas.shape[:2]
+    if (row + 1) * 128 > H or (col + 1) * 128 > W:
+        raise SystemExit(
+            f"atlas {W}×{H} lacks cell ({row}, {col}); "
+            f"need at least {(col + 1) * 128}×{(row + 1) * 128}"
+        )
+    return atlas[row * 128:(row + 1) * 128, col * 128:(col + 1) * 128]
+
+
+def _upstream_dat_path(upstream_stem: str) -> str:
+    """Map an `upstream_stem` PNG path to the sibling dat path.
+    Britain convention is `<dir>/images/<asset>.png` ←→ `<dir>/<asset>.dat`.
+    Bare `<dir>/<asset>.png` (no `images/` subdir) maps to
+    `<dir>/<asset>.dat`."""
+    from pathlib import PurePosixPath
+
+    p = PurePosixPath(upstream_stem)
+    asset = p.stem
+    if p.parent.name == "images":
+        return str(p.parent.parent / f"{asset}.dat")
+    return str(p.parent / f"{asset}.dat")
+
+
+@dataclass(frozen=True)
+class MultiTileCell:
+    """One row of `run_multitile`'s report — the per-cell key plus the
+    atlas coordinates we found on each side and the cross-projection
+    silhouette IoU.  Atlas coords let a caller open the source PNG and
+    locate the cell when a number looks off."""
+    l: int
+    y: int
+    x: int
+    h: int
+    phase: int
+    season: int
+    our_row: int
+    our_col: int
+    up_row: int
+    up_col: int
+    iou: float
+
+    @property
+    def label(self) -> str:
+        """Per-cell key string shared between the grid label and the
+        text table — keeps grid + table in lockstep when phase/season
+        cells eventually arrive."""
+        return (f"L{self.l} y{self.y} x{self.x} h{self.h} "
+                f"p{self.phase} s{self.season}")
+
+
+def format_multitile_table(rows: list[MultiTileCell]) -> str:
+    """Aligned text table for `run_multitile`'s per-cell report."""
+    if not rows:
+        return ""
+    head = (
+        f"  {'cell':<18}  {'ours':>7}  {'upstream':>9}  {'IoU':>5}"
+    )
+    body = [
+        f"  {r.label:<18}  "
+        f"{r.our_row:>2}.{r.our_col:<4}  "
+        f"{r.up_row:>4}.{r.up_col:<4}  "
+        f"{r.iou:>5.3f}"
+        for r in rows
+    ]
+    ious = [r.iou for r in rows]
+    summary = (
+        f"  {'min/mean/max':<18}  {'':>7}  {'':>9}  "
+        f"{min(ious):.3f} / {sum(ious) / len(ious):.3f} / {max(ious):.3f}"
+    )
+    return "\n".join([head, *body, summary])
+
+
+def run_multitile(
+    upstream_stem: str, our_dat: Path, our_png: Path, *, out_dir: Path,
+    season: int = 0,
+):
+    """Per-cell visual diff for a multi-tile building.
+
+    Reads upstream's dat (source of truth on which `(l,y,x,h,phase,
+    season)` cells exist and where they land in the atlas) and our
+    own emitted dat (which `iter_building_cells` produced for our hex
+    bake), slices both atlases, composes a per-cell side-by-side grid
+    at `out_dir/grid.png`, and returns a list of `MultiTileCell`
+    records for the text report.
+
+    No rendering — both sides come from committed atlases, so the path
+    is a regression check against what we ship, not a calibration of
+    what we'd re-bake.  Per-cell IoU is cross-projection (ours hex,
+    upstream square dimetric); useful as a relative ranking across
+    cells, not a FAIL_IOU gate.  See the module docstring + the TODO
+    "Closed (not pursued)" entry for why absolute calibration against
+    the shipped multi-tile atlas isn't a reachable target.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from pak.diff import GridCell, compose_grid
+    from pak.fetch_pak import fetch as fetch_pak
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    up_dat_path = fetch_pak(_upstream_dat_path(upstream_stem))
+    up_png_path = fetch_pak(upstream_stem)
+    up_atlas = np.asarray(Image.open(up_png_path).convert("RGBA"))
+    our_atlas = np.asarray(Image.open(our_png).convert("RGBA"))
+
+    def index(entries):
+        return {(e["l"], e["y"], e["x"], e["h"], e["phase"], e["season"]):
+                (e["row"], e["col"]) for e in entries}
+
+    up_index = index(_parse_backimage_entries(up_dat_path))
+    our_index = index(_parse_backimage_entries(our_dat))
+
+    # Restrict to the requested season; our bake doesn't ship winter
+    # yet, so seasons that exist upstream but not in our atlas drop.
+    keys = sorted(
+        k for k in up_index if k in our_index and k[5] == season
+    )
+    if not keys:
+        raise SystemExit(
+            f"no overlapping (l,y,x,h,phase,season={season}) cells "
+            f"between upstream {up_dat_path.name} and our {our_dat.name}"
+        )
+
+    cells: list[GridCell] = []
+    rows: list[MultiTileCell] = []
+    for k in keys:
+        our_r, our_c = our_index[k]
+        up_r, up_c = up_index[k]
+        up_cell = _atlas_cell(up_atlas, up_r, up_c)
+        our_cell = _atlas_cell(our_atlas, our_r, our_c)
+        our_mask = _silhouette_mask(our_cell)
+        up_mask = _silhouette_mask(up_cell)
+        l, y, x, h, p, s = k
+        row = MultiTileCell(
+            l=l, y=y, x=x, h=h, phase=p, season=s,
+            our_row=our_r, our_col=our_c,
+            up_row=up_r, up_col=up_c,
+            iou=iou(our_mask, up_mask),
+        )
+        rows.append(row)
+        cells.append(GridCell(
+            ours_rgba=our_cell, up_rgba=up_cell,
+            our_mask=our_mask, up_mask=up_mask,
+            label=row.label,
+        ))
+    compose_grid(cells, out_path=out_dir / "grid.png",
+                 strip_magic_rgb=MAGIC_PINK,
+                 title=f"{our_dat.stem} (season {season})")
+    return rows
+
+
 def _load_our_renders(our_dir: Path, name: str, layouts: int):
     """Per-layout RGBA arrays produced by `_render`."""
     import numpy as np
@@ -129,21 +332,6 @@ def _iou_matrix(our_masks, up_masks):
     return mat
 
 
-def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
-                  perm: list[int], out_path: Path) -> None:
-    """Three-row grid (ours / upstream-best-match / silhouette XOR) so
-    contour drift is visible at a glance."""
-    from pak.diff import GridCell, compose_grid
-
-    cells = [
-        GridCell(our_rgba[i], up_cells[perm[i]],
-                 our_masks[i], up_masks[perm[i]],
-                 f"L{i}~c{perm[i]}")
-        for i in range(len(our_rgba))
-    ]
-    compose_grid(cells, out_path=out_path, strip_magic_rgb=MAGIC_PINK)
-
-
 def _best_permutation(mat) -> list[int]:
     """Permutation `[c0, c1, ...]` maximising `sum(mat[i, ci])`.
     Enumerates all N! permutations -- `_UPSTREAM_NORMAL_CARDINAL`
@@ -158,19 +346,18 @@ def _best_permutation(mat) -> list[int]:
     return list(best_perm)
 
 
-def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
-        materials: dict | None = None, season_row: int = 0,
-        grid_name: str = "grid.png", blur_sigma: float = 3.0,
-        lighting=None):
-    """Render `blend` through `square_building`, diff each layout
-    against `upstream_png`'s columns, return (matrix, permutation, drgb).
+def _diff_one_season(blend: str, upstream_png: str, *, layouts: int,
+                     out_dir: Path, materials, season_row: int,
+                     blur_sigma: float, lighting,
+                     row_label_prefix: str = ""):
+    """Render `blend`, diff each layout against the `season_row` row
+    of `upstream_png`, and return `(grid_cells, mat, perm, drgb)`.
 
-    `season_row` picks which 128-px row of the upstream atlas to diff
-    against (0 = summer, 1 = winter).  Caller pre-selects the matching
-    `blend` / `materials` for the season being checked.
-
-    Side effect: writes per-layout PNGs and `<grid_name>` into `out_dir`.
+    `row_label_prefix` is prepended to each `GridCell.label` so a
+    seasonal caller can disambiguate `summer L0` from `winter L0` in
+    a combined grid.
     """
+    from pak.diff import GridCell
     from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
 
@@ -192,8 +379,37 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
                           blur_sigma=blur_sigma)
         for l in range(len(our_rgba))
     ]
-    _compose_grid(our_rgba, up_cells, our_masks, up_masks, perm,
-                  out_dir / grid_name)
+    cells = [
+        GridCell(our_rgba[i], up_cells[perm[i]],
+                 our_masks[i], up_masks[perm[i]],
+                 f"{row_label_prefix}L{i}~c{perm[i]}")
+        for i in range(len(our_rgba))
+    ]
+    return cells, mat, perm, drgb_per_layout
+
+
+def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
+        materials: dict | None = None, season_row: int = 0,
+        grid_name: str = "grid.png", blur_sigma: float = 3.0,
+        lighting=None, title: str | None = None):
+    """Render `blend` through `square_building`, diff each layout
+    against `upstream_png`'s columns, return (matrix, permutation, drgb).
+
+    `season_row` picks which 128-px row of the upstream atlas to diff
+    against (0 = summer, 1 = winter).  Caller pre-selects the matching
+    `blend` / `materials` for the season being checked.
+
+    Side effect: writes per-layout PNGs and `<grid_name>` into `out_dir`.
+    """
+    from pak.diff import compose_grid
+
+    cells, mat, perm, drgb_per_layout = _diff_one_season(
+        blend, upstream_png, layouts=layouts, out_dir=out_dir,
+        materials=materials, season_row=season_row,
+        blur_sigma=blur_sigma, lighting=lighting,
+    )
+    compose_grid(cells, out_path=out_dir / grid_name,
+                 strip_magic_rgb=MAGIC_PINK, title=title)
     return mat, perm, drgb_per_layout
 
 
@@ -201,23 +417,34 @@ def run_seasonal(
     blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
     materials: dict | None = None,
     blend_winter: str, materials_winter: dict | None = None,
-    lighting=None,
+    lighting=None, blur_sigma: float = 3.0,
 ):
-    """Run `run()` once per season and return a list of
-    `(season_label, mat, perm, drgb)` — `("summer", ...)` first, then
-    `("winter", ...)`.  Each season writes its own grid PNG so the two
-    diffs can be eyeballed side by side."""
-    summer = run(
+    """Diff summer then winter against the matching upstream rows and
+    write **one** combined grid (`grid.png`) covering both seasons —
+    summer rows first, winter rows below, labelled.  Returns a list of
+    `(season_label, mat, perm, drgb)` so per-season IoU / permutation /
+    dRGB stay separately reportable."""
+    from pak.diff import compose_grid
+
+    summer_cells, *summer_stats = _diff_one_season(
         blend, upstream_png, layouts=layouts, out_dir=out_dir,
-        materials=materials, season_row=0, grid_name="grid_summer.png",
-        lighting=lighting,
+        materials=materials, season_row=0,
+        blur_sigma=blur_sigma, lighting=lighting,
+        row_label_prefix="summer ",
     )
-    winter = run(
+    winter_cells, *winter_stats = _diff_one_season(
         blend_winter, upstream_png, layouts=layouts, out_dir=out_dir,
-        materials=materials_winter, season_row=1, grid_name="grid_winter.png",
-        lighting=lighting,
+        materials=materials_winter, season_row=1,
+        blur_sigma=blur_sigma, lighting=lighting,
+        row_label_prefix="winter ",
     )
-    return [("summer", *summer), ("winter", *winter)]
+    compose_grid(
+        summer_cells + winter_cells,
+        out_path=out_dir / "grid.png",
+        strip_magic_rgb=MAGIC_PINK,
+        title=f"{Path(blend).stem} (summer + winter)",
+    )
+    return [("summer", *summer_stats), ("winter", *winter_stats)]
 
 
 def format_matrix(mat, perm) -> str:
