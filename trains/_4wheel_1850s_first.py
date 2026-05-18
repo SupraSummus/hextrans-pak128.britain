@@ -36,7 +36,7 @@ SPEC = Vehicle(
         "LSWR-Indian-red", "GWR-early", "GWR-two-tone",
     ],
     blend="trains/Carriages/4wheel-1850.blend",
-    upstream_stem="trains/carriages/4wheel-1850-first-lnwr",
+    upstream_dat="trains/4wheel-1850s-first.dat",
 )
 
 

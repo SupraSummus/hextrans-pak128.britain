@@ -11,7 +11,7 @@ SPEC = Tree(
     climates="temperate,mediterran,tropical",
     seasons=1,
     blend="trees/oak.blend",
-    upstream_stem="trees/oak",
+    upstream_dat="trees/oak.dat",
 )
 
 if __name__ == "__main__":

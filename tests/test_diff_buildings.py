@@ -25,7 +25,6 @@ from pak.diff_buildings import (
     _iou_matrix,
     _parse_backimage_entries,
     _split_upstream,
-    _upstream_dat_path,
     format_multitile_table,
     summarise,
 )
@@ -122,20 +121,6 @@ class TestIoUMatrix(unittest.TestCase):
         np.testing.assert_array_equal(mat, np.eye(2))
 
 
-class TestUpstreamDatPath(unittest.TestCase):
-    def test_strips_images_subdir_from_britain_pattern(self):
-        self.assertEqual(
-            _upstream_dat_path("signalboxes/images/mechanical-signalbox-large.png"),
-            "signalboxes/mechanical-signalbox-large.dat",
-        )
-
-    def test_keeps_sibling_dat_when_no_images_subdir(self):
-        self.assertEqual(
-            _upstream_dat_path("ways/cssr.png"),
-            "ways/cssr.dat",
-        )
-
-
 class TestParseBackimageEntries(unittest.TestCase):
     def _write_dat(self, body: str):
         from pathlib import Path
@@ -171,6 +156,25 @@ class TestParseBackimageEntries(unittest.TestCase):
         )
         entries = _parse_backimage_entries(dat)
         self.assertEqual([(e["row"], e["col"]) for e in entries], [(1, 1)])
+
+    def test_filters_by_name_in_multi_object_dat(self):
+        # Citybuildings dats pack several `obj=building` blocks; the
+        # name filter picks the requested block's entries.  Without
+        # it, callers would silently get the first block's atlas.
+        dat = self._write_dat(
+            "obj=building\nName=ALPHA\n"
+            "BackImage[0][0][0][0][0][0]=images/alpha.0.0\n"
+            "----------\n"
+            "obj=building\nName=BETA\n"
+            "BackImage[0][0][0][0][0][0]=images/beta.0.1\n"
+            "----------\n"
+        )
+        beta = _parse_backimage_entries(dat, name="BETA")
+        self.assertEqual([(e["row"], e["col"]) for e in beta], [(0, 1)])
+        alpha = _parse_backimage_entries(dat, name="alpha")  # case-insensitive
+        self.assertEqual([(e["row"], e["col"]) for e in alpha], [(0, 0)])
+        with self.assertRaisesRegex(SystemExit, "no obj named 'GAMMA'"):
+            _parse_backimage_entries(dat, name="GAMMA")
 
     def test_ignores_unparseable_image_refs(self):
         # BackImage entries with a `-` value (engine convention for an

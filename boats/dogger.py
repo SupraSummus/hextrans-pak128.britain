@@ -27,7 +27,7 @@ SPEC = Vehicle(
     constraint_prev=["none"],
     constraint_next=["none"],
     blend="boats/dogger.blend",
-    upstream_stem="boats/images/dogger",
+    upstream_dat="boats/dogger.dat",
 )
 
 

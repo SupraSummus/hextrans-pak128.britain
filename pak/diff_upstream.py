@@ -13,7 +13,7 @@ Run as:
 
     python3 pak/diff_upstream.py \\
         <blend_path_in_blends_repo> \\
-        <upstream_png_stem_in_pak_repo> \\
+        <upstream_dat_path_in_pak_repo> \\
         [--views 8|4] [--out out/diff/<name>]
 
 Outputs `<out>/grid.png` (ours / upstream / silhouette-XOR, 8 cols)
@@ -39,8 +39,8 @@ Dependencies (system Python, not Blender's bundled): `numpy`, `Pillow`.
 Blender (`apt-get install blender`) for the render half.
 
 `pak/check.py` is the more ergonomic entry point -- it
-imports a bake script and reads `BLEND` + `UPSTREAM_STEM` from the
-module, so callers don't carry two paths.  `diff_upstream.run()`
+imports a bake script and reads `blend` + `upstream_dat` from the
+SPEC, so callers don't carry two paths.  `diff_upstream.run()`
 returns structured metrics for programmatic callers.
 """
 
@@ -73,9 +73,9 @@ class FacingMetric:
 def _parse(argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("blend", help="path within the blends repo, e.g. trains/Carriages/4wheel-1850.blend")
-    ap.add_argument("stem", help="upstream png stem in the pak repo, e.g. trains/carriages/4wheel-1850-first-lnwr")
+    ap.add_argument("upstream_dat", help="upstream dat path in the pak repo, e.g. trains/4wheel-1850s-first.dat")
     ap.add_argument("--views", type=int, choices=[4, 8], default=8)
-    ap.add_argument("--out", default=None, help="output dir (default: out/diff/<stem-basename>)")
+    ap.add_argument("--out", default=None, help="output dir (default: out/diff/<dat-basename>)")
     return ap.parse_args(argv)
 
 
@@ -108,20 +108,28 @@ def _compose(ours_dir: Path, up_paths: dict[str, Path], name: str, views: list[s
     return metrics
 
 
-def run(blend: str, stem: str, *, views: int = 8, out_dir: Path) -> list[FacingMetric]:
+def run(blend: str, upstream_dat: str, *, views: int = 8, out_dir: Path,
+        name: str | None = None) -> list[FacingMetric]:
     """Render `blend` through the square viewpoint, diff every facing
-    against the matching upstream PNG (`<stem>_<facing>.png`), return
-    per-facing metrics.  Side effects: writes `grid.png` and per-facing
-    PNGs into `out_dir`.
+    against the matching upstream PNG (`<stem>_<facing>.png`, with
+    `<stem>` derived from `upstream_dat`'s `EmptyImage[…]` refs),
+    return per-facing metrics.  Side effects: writes `grid.png` and
+    per-facing PNGs into `out_dir`.
+
+    `name` selects which object in a multi-object upstream dat to read
+    image refs from (e.g. when a carriage family dat packs five
+    vehicles); single-object dats can leave it unset.
     """
     from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
+    from pak.upstream import image_stem
 
     view_list = VIEWS_8 if views == 8 else VIEWS_4
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)
     render_name = Path(blend).stem
     _render(blend_path, out_dir, render_name)
+    stem = image_stem(upstream_dat, name=name)
     up_paths = {v: fetch_pak(f"{stem}_{v}.png") for v in view_list}
     return _compose(out_dir, up_paths, render_name, view_list, out_dir / "grid.png")
 
@@ -136,10 +144,10 @@ def format_table(metrics: list[FacingMetric]) -> str:
 
 def main(argv: list[str]) -> int:
     args = _parse(argv)
-    stem_name = Path(args.stem).name
-    out_dir = Path(args.out) if args.out else REPO_ROOT / "out" / "diff" / stem_name
+    dat_name = Path(args.upstream_dat).stem
+    out_dir = Path(args.out) if args.out else REPO_ROOT / "out" / "diff" / dat_name
 
-    metrics = run(args.blend, args.stem, views=args.views, out_dir=out_dir)
+    metrics = run(args.blend, args.upstream_dat, views=args.views, out_dir=out_dir)
 
     print(f"wrote {out_dir / 'grid.png'}")
     print(format_table(metrics))

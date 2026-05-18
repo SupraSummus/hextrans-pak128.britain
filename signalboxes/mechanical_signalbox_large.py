@@ -72,7 +72,7 @@ SPEC = Building(
     class_proportion=[0, 4, 66, 30, 0],
     class_proportion_jobs=[0, 10, 90, 0, 0],
     blend="signals/mechanical-signalbox-large.blend",
-    upstream_stem="signalboxes/images/mechanical-signalbox-large.png",
+    upstream_dat="signalboxes/mechanical-signalbox-large.dat",
     materials=MATERIALS,
 )
 

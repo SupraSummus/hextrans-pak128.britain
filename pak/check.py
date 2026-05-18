@@ -1,7 +1,7 @@
 """Run the upstream calibration diff for one or more baked vehicles.
 
 Each bake script (e.g. `trains/_4wheel_1850s_first.py`) declares
-`blend=` and `upstream_stem=` on its `SPEC`; this driver imports
+`blend=` and `upstream_dat=` on its `SPEC`; this driver imports
 the module, reads those fields off the SPEC, and hands them to
 `diff_upstream.run`.  The only thing a caller needs to remember
 is the bake-script path.
@@ -13,8 +13,8 @@ Usage::
 
 `--all` walks the repo for bake scripts (anything that imports
 `pak.bake`) and runs the diff for each one whose SPEC declares
-`upstream_stem`.  Scripts missing the field are skipped with a
-notice -- fill it in when the upstream sprite stem is known.
+`upstream_dat`.  Scripts missing the field are skipped with a
+notice -- fill it in when the upstream dat path is known.
 A summary line per asset reports worst-facing IoU and total XOR
 pixel count, so contour drift is easy to compare across the fleet.
 """
@@ -65,9 +65,9 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
     specs = specs_of(mod)
     spec = specs[0] if specs else None
     blend = getattr(spec, "blend", None) if spec is not None else None
-    stem = getattr(spec, "upstream_stem", None) if spec is not None else None
-    if blend is None or stem is None:
-        missing = "blend=" if blend is None else "upstream_stem="
+    upstream_dat = getattr(spec, "upstream_dat", None) if spec is not None else None
+    if blend is None or upstream_dat is None:
+        missing = "blend=" if blend is None else "upstream_dat="
         print(f"{script.name}: no SPEC.{missing}, skipping (add one to enable diff)")
         return None
 
@@ -82,10 +82,11 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             # `grid_tiles.png` + `grid_stitched.png` side by side.
             spec_layouts = spec.layouts if spec.layouts is not None else 4
             per_cell, per_layout = diff_buildings.run_multitile(
-                blend, stem,
+                blend, upstream_dat,
                 dims_x=spec.dims_x, dims_y=spec.dims_y, layouts=spec_layouts,
                 out_dir=out_dir,
                 materials=spec.materials, lighting=spec.lighting,
+                name=spec.name,
             )
             print(f"wrote {out_dir / 'grid_tiles.png'}")
             print(diff_buildings.format_multitile_table(per_cell))
@@ -106,7 +107,8 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
         from PIL import Image
 
         from pak.fetch_pak import fetch as fetch_pak
-        with Image.open(fetch_pak(stem)) as im:
+        from pak.upstream import image_stem
+        with Image.open(fetch_pak(f"{image_stem(upstream_dat, name=spec.name)}.png")) as im:
             up_w = im.size[0]
         layouts = min(up_w // 128, 4)
         if spec.seasons >= 2:
@@ -116,17 +118,19 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                     f"blend_winter= not declared on SPEC"
                 )
             seasons = diff_buildings.run_seasonal(
-                blend, stem, layouts=layouts, out_dir=out_dir,
+                blend, upstream_dat, layouts=layouts, out_dir=out_dir,
                 materials=spec.materials,
                 blend_winter=spec.blend_winter,
                 materials_winter=spec.materials_winter,
                 lighting=spec.lighting,
+                name=spec.name,
             )
         else:
             mat, perm, drgb = diff_buildings.run(
-                blend, stem, layouts=layouts, out_dir=out_dir,
+                blend, upstream_dat, layouts=layouts, out_dir=out_dir,
                 materials=spec.materials,
                 lighting=spec.lighting,
+                name=spec.name,
             )
             seasons = [("summer", mat, perm, drgb)]
 
@@ -146,7 +150,8 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             drgb_overall = max(drgb_overall, drgb_mean)
         return worst_overall, None, diff_buildings.FAIL_IOU, drgb_overall
 
-    metrics = diff_upstream.run(blend, stem, views=views, out_dir=out_dir)
+    metrics = diff_upstream.run(blend, upstream_dat, views=views, out_dir=out_dir,
+                                name=spec.name)
     print(f"wrote {out_dir / 'grid.png'}")
     print(diff_upstream.format_table(metrics))
     worst = min(m.iou for m in metrics)

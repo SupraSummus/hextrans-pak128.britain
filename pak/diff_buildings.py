@@ -36,12 +36,12 @@ are calibration-grade rather than cross-projection.  See TODO.md →
 "Multi-tile calibration diff residual position offset" for the
 current residual + the diagnostic next moves.
 
-Run via the more ergonomic `pak/check.py` driver (which reads `BLEND`
-and `UPSTREAM_STEM` from the bake script), or directly:
+Run via the more ergonomic `pak/check.py` driver (which reads `blend`
+and `upstream_dat` from the SPEC), or directly:
 
     python3 -m pak.diff_buildings \\
         <blend_path_in_blends_repo> \\
-        <upstream_png_in_pak_repo> \\
+        <upstream_dat_path_in_pak_repo> \\
         --layouts 4 [--out out/diff/<name>]
 """
 
@@ -133,11 +133,14 @@ def _split_upstream(up_png: Path, layouts: int, season_row: int = 0):
     return [full[y0:y0 + 128, c * 128:(c + 1) * 128] for c in range(layouts)]
 
 
-def _parse_backimage_entries(dat_path: Path):
+def _parse_backimage_entries(dat_path: Path, *, name: str | None = None):
     """Parse a building dat's `backimage[L][y][x][h][p][s]=<basename>.<row>.<col>`
     entries.  Returns list of dicts with keys
     `l, y, x, h, phase, season, row, col`.  Ignores image refs that
     can't be parsed (e.g. `backimage[…]=-` for missing slots).
+
+    `name` filters multi-object dats (citybuildings dats hold up to
+    seven buildings); unset takes the first object.
 
     Image refs that come back as `<basename>.<row>.<col>` (no `.<season>`
     suffix on the file stem) are addressed against the upstream PNG by
@@ -150,8 +153,19 @@ def _parse_backimage_entries(dat_path: Path):
     objects = parse(dat_path)
     if not objects:
         raise SystemExit(f"empty dat: {dat_path}")
-    # Building dats hold one obj=building entry in this codebase.
-    obj = objects[0]
+    if name is None:
+        obj = objects[0]
+    else:
+        wanted = name.lower()
+        match = next(
+            (o for o in objects
+             if any(k.lower() == "name" and v.strip().lower() == wanted
+                    for k, v in o)),
+            None,
+        )
+        if match is None:
+            raise SystemExit(f"no obj named {name!r} in {dat_path}")
+        obj = match
     rec = re.compile(
         r"^backimage"
         r"\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]$",
@@ -183,20 +197,6 @@ def _atlas_cell(atlas, row: int, col: int):
             f"need at least {(col + 1) * 128}×{(row + 1) * 128}"
         )
     return atlas[row * 128:(row + 1) * 128, col * 128:(col + 1) * 128]
-
-
-def _upstream_dat_path(upstream_stem: str) -> str:
-    """Map an `upstream_stem` PNG path to the sibling dat path.
-    Britain convention is `<dir>/images/<asset>.png` ←→ `<dir>/<asset>.dat`.
-    Bare `<dir>/<asset>.png` (no `images/` subdir) maps to
-    `<dir>/<asset>.dat`."""
-    from pathlib import PurePosixPath
-
-    p = PurePosixPath(upstream_stem)
-    asset = p.stem
-    if p.parent.name == "images":
-        return str(p.parent.parent / f"{asset}.dat")
-    return str(p.parent / f"{asset}.dat")
 
 
 # Simutrans Standard dimetric tile lattice: koord +x heads SE on screen,
@@ -332,13 +332,14 @@ def format_multitile_layout_table(rows: list[MultiTileLayout]) -> str:
 
 
 def run_multitile(
-    blend: str, upstream_stem: str, *,
+    blend: str, upstream_dat: str, *,
     dims_x: int, dims_y: int, layouts: int,
     out_dir: Path,
     materials: dict | None = None,
     lighting=None,
     season: int = 0,
     blur_sigma: float = 3.0,
+    name: str | None = None,
 ):
     """Render the multi-tile blend through `square_building`, build the
     per-layout stitched upstream canvas from upstream's per-cell PNGs,
@@ -362,6 +363,7 @@ def run_multitile(
     from pak.diff import GridCell, compose_grid
     from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
+    from pak.upstream import image_stem
 
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)
@@ -371,15 +373,15 @@ def run_multitile(
             materials=materials, lighting=lighting)
     our_canvases = _load_our_renders(out_dir, render_name, layouts)
 
-    up_dat_path = fetch_pak(_upstream_dat_path(upstream_stem))
-    up_png_path = fetch_pak(upstream_stem)
+    up_dat_path = fetch_pak(upstream_dat)
+    up_png_path = fetch_pak(f"{image_stem(upstream_dat, name=name)}.png")
     up_atlas = np.asarray(Image.open(up_png_path).convert("RGBA"))
     # Upstream cells indexed by (L, y, x, h, p, s) -> (row, col); the
     # requested season filters everything else out.
     up_index = {
         (e["l"], e["y"], e["x"], e["h"], e["phase"], e["season"]):
             (e["row"], e["col"])
-        for e in _parse_backimage_entries(up_dat_path)
+        for e in _parse_backimage_entries(up_dat_path, name=name)
         if e["season"] == season
     }
     if not up_index:
@@ -486,12 +488,14 @@ def _best_permutation(mat) -> list[int]:
     return list(best_perm)
 
 
-def _diff_one_season(blend: str, upstream_png: str, *, layouts: int,
+def _diff_one_season(blend: str, upstream_dat: str, *, layouts: int,
                      out_dir: Path, materials, season_row: int,
                      blur_sigma: float, lighting,
-                     row_label_prefix: str = ""):
+                     row_label_prefix: str = "",
+                     name: str | None = None):
     """Render `blend`, diff each layout against the `season_row` row
-    of `upstream_png`, and return `(grid_cells, mat, perm, drgb)`.
+    of the upstream atlas (derived from `upstream_dat`'s `BackImage`
+    refs), and return `(grid_cells, mat, perm, drgb)`.
 
     `row_label_prefix` is prepended to each `GridCell.label` so a
     seasonal caller can disambiguate `summer L0` from `winter L0` in
@@ -500,13 +504,14 @@ def _diff_one_season(blend: str, upstream_png: str, *, layouts: int,
     from pak.diff import GridCell
     from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
+    from pak.upstream import image_stem
 
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)
     render_name = Path(blend).stem
     _render(blend_path, out_dir, render_name, layouts,
             materials=materials, lighting=lighting)
-    up_path = fetch_pak(upstream_png)
+    up_path = fetch_pak(f"{image_stem(upstream_dat, name=name)}.png")
     up_cells = _split_upstream(up_path, layouts, season_row=season_row)
     our_rgba = _load_our_renders(out_dir, render_name, layouts)
     our_masks = [_silhouette_mask(r) for r in our_rgba]
@@ -528,12 +533,14 @@ def _diff_one_season(blend: str, upstream_png: str, *, layouts: int,
     return cells, mat, perm, drgb_per_layout
 
 
-def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
+def run(blend: str, upstream_dat: str, *, layouts: int, out_dir: Path,
         materials: dict | None = None, season_row: int = 0,
         grid_name: str = "grid.png", blur_sigma: float = 3.0,
-        lighting=None, title: str | None = None):
+        lighting=None, title: str | None = None,
+        name: str | None = None):
     """Render `blend` through `square_building`, diff each layout
-    against `upstream_png`'s columns, return (matrix, permutation, drgb).
+    against the columns of the upstream atlas (derived from
+    `upstream_dat`'s `BackImage` refs), return (matrix, permutation, drgb).
 
     `season_row` picks which 128-px row of the upstream atlas to diff
     against (0 = summer, 1 = winter).  Caller pre-selects the matching
@@ -544,9 +551,9 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
     from pak.diff import compose_grid
 
     cells, mat, perm, drgb_per_layout = _diff_one_season(
-        blend, upstream_png, layouts=layouts, out_dir=out_dir,
+        blend, upstream_dat, layouts=layouts, out_dir=out_dir,
         materials=materials, season_row=season_row,
-        blur_sigma=blur_sigma, lighting=lighting,
+        blur_sigma=blur_sigma, lighting=lighting, name=name,
     )
     compose_grid(cells, out_path=out_dir / grid_name,
                  strip_magic_rgb=MAGIC_PINK, title=title)
@@ -554,10 +561,11 @@ def run(blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
 
 
 def run_seasonal(
-    blend: str, upstream_png: str, *, layouts: int, out_dir: Path,
+    blend: str, upstream_dat: str, *, layouts: int, out_dir: Path,
     materials: dict | None = None,
     blend_winter: str, materials_winter: dict | None = None,
     lighting=None, blur_sigma: float = 3.0,
+    name: str | None = None,
 ):
     """Diff summer then winter against the matching upstream rows and
     write **one** combined grid (`grid.png`) covering both seasons —
@@ -567,16 +575,16 @@ def run_seasonal(
     from pak.diff import compose_grid
 
     summer_cells, *summer_stats = _diff_one_season(
-        blend, upstream_png, layouts=layouts, out_dir=out_dir,
+        blend, upstream_dat, layouts=layouts, out_dir=out_dir,
         materials=materials, season_row=0,
         blur_sigma=blur_sigma, lighting=lighting,
-        row_label_prefix="summer ",
+        row_label_prefix="summer ", name=name,
     )
     winter_cells, *winter_stats = _diff_one_season(
-        blend_winter, upstream_png, layouts=layouts, out_dir=out_dir,
+        blend_winter, upstream_dat, layouts=layouts, out_dir=out_dir,
         materials=materials_winter, season_row=1,
         blur_sigma=blur_sigma, lighting=lighting,
-        row_label_prefix="winter ",
+        row_label_prefix="winter ", name=name,
     )
     compose_grid(
         summer_cells + winter_cells,
@@ -615,7 +623,7 @@ def summarise(mat, perm) -> tuple[float, float, float]:
 def _parse(argv):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("blend")
-    ap.add_argument("upstream_png")
+    ap.add_argument("upstream_dat")
     ap.add_argument("--layouts", type=int, default=4)
     ap.add_argument("--out", default=None)
     return ap.parse_args(argv)
@@ -625,7 +633,7 @@ def main(argv) -> int:
     args = _parse(argv)
     stem = Path(args.blend).stem
     out_dir = Path(args.out) if args.out else REPO_ROOT / "out" / "diff" / stem
-    mat, perm, drgb = run(args.blend, args.upstream_png, layouts=args.layouts, out_dir=out_dir)
+    mat, perm, drgb = run(args.blend, args.upstream_dat, layouts=args.layouts, out_dir=out_dir)
     worst, best, diag = summarise(mat, perm)
     print(format_matrix(mat, perm))
     print(f"\nmean IoU identity: {diag:.3f}  best perm: {best:.3f}  perm={perm}")

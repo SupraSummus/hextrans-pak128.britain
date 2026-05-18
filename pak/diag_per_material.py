@@ -186,14 +186,16 @@ def _resolve_season(mod, season: str):
     if not isinstance(spec, Building):
         return None
     blend = spec.blend
-    stem = spec.upstream_stem
-    if blend is None or stem is None:
+    upstream_dat = spec.upstream_dat
+    if blend is None or upstream_dat is None:
         return None
+    from pak.upstream import image_stem
+    upstream_png = f"{image_stem(upstream_dat, name=spec.name)}.png"
     if season == "winter":
         if not (spec.seasons >= 2 and spec.blend_winter):
             return None
-        return spec.blend_winter, spec.materials_winter, 1, stem
-    return blend, spec.materials, 0, stem
+        return spec.blend_winter, spec.materials_winter, 1, upstream_png
+    return blend, spec.materials, 0, upstream_png
 
 
 def _collect_stats(bake_path: Path, season: str) -> tuple[list[dict], int] | None:
@@ -209,10 +211,10 @@ def _collect_stats(bake_path: Path, season: str) -> tuple[list[dict], int] | Non
     resolved = _resolve_season(mod, season)
     if resolved is None:
         return None
-    blend_ref, materials, season_row, stem = resolved
+    blend_ref, materials, season_row, upstream_png = resolved
     blend_path_s = fetch_blend(blend_ref)
 
-    up_path = fetch_pak(stem)
+    up_path = fetch_pak(upstream_png)
     with Image.open(up_path) as im:
         up_w = im.size[0]
     layouts = min(up_w // 128, 4)

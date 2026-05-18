@@ -219,7 +219,7 @@ class Vehicle:
 
     # Bake-pipeline metadata.  Not emitted into the dat.
     blend: str | None = _bake_meta()
-    upstream_stem: str | None = _bake_meta()
+    upstream_dat: str | None = _bake_meta()
 
 
 _VEHICLE_FIELDS_SCALAR: tuple[str, ...] = tuple(
@@ -290,7 +290,7 @@ class Way:
     # `mat.diffuse_color` before render — see
     # `docs/bake-way.md` -> "Per-way material recolour".
     blend: str | None = _bake_meta()
-    upstream_stem: str | None = _bake_meta()
+    upstream_dat: str | None = _bake_meta()
     materials: dict[str, tuple[int, int, int]] | None = _bake_meta()
     # Comma-separated mesh names to drop on entry; default Sphere is
     # the upstream sun-direction visualizer.  Per-blend overrides go
@@ -370,7 +370,7 @@ class Bridge:
     blend_image: str | None = _bake_meta()
     blend_start: str | None = _bake_meta()
     blend_ramp: str | None = _bake_meta()
-    upstream_stem: str | None = _bake_meta()
+    upstream_dat: str | None = _bake_meta()
 
 
 _BRIDGE_FIELDS_SCALAR: tuple[str, ...] = tuple(
@@ -483,7 +483,7 @@ class Building:
     # / sun tune per asset.  `blend_winter` / `materials_winter` opt
     # the asset into the winter atlas pass when `seasons >= 2`.
     blend: str | None = _bake_meta()
-    upstream_stem: str | None = _bake_meta()
+    upstream_dat: str | None = _bake_meta()
     materials: dict[str, Material] | None = _bake_meta()
     blend_winter: str | None = _bake_meta()
     materials_winter: dict[str, Material] | None = _bake_meta()
@@ -521,7 +521,7 @@ class Tree:
 
     # Bake-pipeline metadata.  Not emitted into the dat.
     blend: str | None = _bake_meta()
-    upstream_stem: str | None = _bake_meta()
+    upstream_dat: str | None = _bake_meta()
 
 
 _TREE_FIELDS_SCALAR: tuple[str, ...] = tuple(

@@ -12,7 +12,7 @@ from pak.bake import bake_main
 from pak.dat import Vehicle
 
 _BLEND = "air/dragon-rapide.blend"
-_UPSTREAM_STEM = "air/images/dragon-rapide"
+_UPSTREAM_DAT = "air/dragon-rapide.dat"
 
 # https://en.wikipedia.org/wiki/De_Havilland_Dragon_Rapide
 # http://www.aviacaocomercial.net/english/frotavarig.htm
@@ -45,7 +45,7 @@ PASSENGER = Vehicle(
     payload_by_class=[0, 0, 0, 0, 8],
     comfort_by_class=[0, 0, 0, 0, 68],
     blend=_BLEND,
-    upstream_stem=_UPSTREAM_STEM,
+    upstream_dat=_UPSTREAM_DAT,
 )
 
 # 860kg
@@ -77,7 +77,7 @@ MAIL = Vehicle(
     constraint_next=["none"],
     payload_by_class=[0, 2500],
     blend=_BLEND,
-    upstream_stem=_UPSTREAM_STEM,
+    upstream_dat=_UPSTREAM_DAT,
 )
 
 SPECS = [PASSENGER, MAIL]

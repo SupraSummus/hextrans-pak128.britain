@@ -331,11 +331,15 @@ glance.  This is the only step that touches upstream PNGs — see
 steering signal.
 
 `pak/check.py` is the driver: it imports a bake script,
-reads `SPEC.blend` and `SPEC.upstream_stem`, and runs the diff
+reads `SPEC.blend` and `SPEC.upstream_dat`, and runs the diff
 with no extra path-passing.  `--all` sweeps every bake script
 under `trains/` for a fleet-wide summary; scripts whose SPEC
-lacks `upstream_stem` are skipped with a notice (fill it in
-when the upstream sprite stem is known).
+lacks `upstream_dat` are skipped with a notice (fill it in
+when the upstream dat path is known).  The image paths the
+diff fetches are derived from `upstream_dat`'s `*Image[…]=`
+refs (via `pak/upstream.py::image_stem`), so the SPEC carries
+the dat as the source-of-truth identity rather than mirroring
+image-stem conventions that vary per asset class.
 
 ## What to carry from upstream, tiered
 
@@ -558,7 +562,7 @@ SPEC = Vehicle(
     constraint_next=["any"],
     # … 20-or-so more fields for a complete port
     blend="trains/Carriages/4wheel-1850.blend",
-    upstream_stem="trains/carriages/4wheel-1850-first-lnwr",
+    upstream_dat="trains/4wheel-1850s-first.dat",
 )
 
 if __name__ == "__main__":
@@ -570,9 +574,9 @@ the underlying `bake_vehicle` (fetch-blend / run-render /
 emit-dat).  Both accept either a `Vehicle` or a `list[Vehicle]` —
 shared-sprite multi-object scripts pass `SPECS` to the same entry
 point and the dat-emit step writes one combined dat.  Both
-Vehicles in such a list carry the same `blend=` / `upstream_stem=`
+Vehicles in such a list carry the same `blend=` / `upstream_dat=`
 values; the convention is a local `_BLEND = "..."` /
-`_UPSTREAM_STEM = "..."` at module top referenced from each
+`_UPSTREAM_DAT = "..."` at module top referenced from each
 Vehicle, so a divergence is caught by `_shared_blend`'s assert.
 Distinct-sprite multi-object bake units skip the convenience and
 call `bake_vehicle` directly per output, with distinct `basename`
@@ -787,6 +791,17 @@ is the way-bake driver (Workbench backend, blender-only); see
 remap via `metadata["dat_key"]`.  The freight-image subsystem
 (`freightimage[<dir>]` etc.) is the one area `Vehicle` doesn't
 model yet — see TODO.md.
+
+**Upstream image-ref derivation.**  `upstream.py::image_stem(dat,
+name=)` fetches an upstream dat, finds the matching object (by
+`Name=` for multi-object dats like `citybuildings/com-1870.dat`),
+and returns the pak-relative path stem encoded in its first
+`*Image[…]=` ref — strips the trailing per-image offset, the
+`.<row>.<col>` atlas coords, and any `_<facing>` suffix.  Diff
+harnesses append their per-class extension (`_<facing>.png`,
+`-<season>-<age>_<facing>.png`, `.png` for buildings).  The dat
+is the source-of-truth identity each SPEC carries
+(`upstream_dat=`); image refs follow.
 
 **Materials.**  `materials.py` defines `Material` / `Slot` /
 `Lighting` carried on each building/way SPEC's `materials=` /
