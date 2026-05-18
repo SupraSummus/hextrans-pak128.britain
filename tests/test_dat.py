@@ -24,6 +24,7 @@ from pak.dat import (
     Tree,
     Vehicle,
     Way,
+    building_footprint_centroid,
     emit_bridge,
     emit_building,
     emit_trees,
@@ -560,6 +561,28 @@ class TestBuildingFootprint(unittest.TestCase):
             (0, 0, 0, 0, 0), (0, 1, 0, 0, 0),  # summer: l=0, l=1
             (1, 0, 0, 0, 0), (1, 1, 0, 0, 0),  # winter: l=0, l=1
         ])
+
+
+class TestBuildingFootprintCentroid(unittest.TestCase):
+    def test_square_footprint_constant_across_layouts(self):
+        # 2x2: even/odd dim swap is a no-op, centroid is (0.5, 0.5) for
+        # every L.  Pins the "no-op when dims are square" property.
+        for l in range(4):
+            self.assertEqual(
+                building_footprint_centroid(2, 2, l), (0.5, 0.5),
+            )
+
+    def test_rectangular_footprint_swaps_on_odd_layouts(self):
+        # 2x1: even L has cells (y=0, x=0..1) -> centroid (0.5, 0);
+        # odd L has cells (y=0..1, x=0) -> centroid (0, 0.5).  Mirrors
+        # the engine's per-L `(y, x)` cell-range swap.
+        self.assertEqual(building_footprint_centroid(2, 1, 0), (0.5, 0.0))
+        self.assertEqual(building_footprint_centroid(2, 1, 1), (0.0, 0.5))
+        self.assertEqual(building_footprint_centroid(2, 1, 2), (0.5, 0.0))
+        self.assertEqual(building_footprint_centroid(2, 1, 3), (0.0, 0.5))
+
+    def test_single_tile_is_zero(self):
+        self.assertEqual(building_footprint_centroid(1, 1, 0), (0.0, 0.0))
 
 
 class TestEmitBuilding(unittest.TestCase):
