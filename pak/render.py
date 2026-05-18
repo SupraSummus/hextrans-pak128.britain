@@ -32,7 +32,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import radians
 from pathlib import Path
 
@@ -149,6 +149,15 @@ class Viewpoint:
     # cell size after slicing.  Default 1.0 = honour the blend's
     # authored ortho directly (single-tile, vehicle, way, tree paths).
     fit_ortho_divisor: float = 1.0
+    # Per-tile ortho target -- overrides `fit_ortho_divisor` at render
+    # time by computing `divisor = authored / (per_tile *
+    # fit_ortho_max_dims)`.  Used when the artist sized the blend for
+    # the whole composition rather than per-tile (e.g. stonehenge
+    # ortho=72 over 2x2, per_tile=24 -> divisor 1.5).  Set with
+    # `fit_ortho_max_dims` together; otherwise the divisor stays at
+    # `fit_ortho_divisor`.
+    fit_ortho_per_tile: float | None = None
+    fit_ortho_max_dims: int | None = None
 
 
 def _reload_external_textures(bpy) -> None:
@@ -586,7 +595,17 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     """Create one camera and one SUN light, configured per the Viewpoint
     with fallback to authored values for fields the Viewpoint defers
     (sun_energy=None, ortho_scale=None).  Per-facing pose changes
-    (location, rotation) happen in the render loop."""
+    (location, rotation) happen in the render loop.
+
+    When the Viewpoint defers to authored ortho (`ortho_scale=None`,
+    `fit_kind="none"` path -- `square_building` calibration diff),
+    `fit_ortho_divisor` divides the camera ortho directly: model
+    unchanged (fit identity), camera view narrows, model appears
+    bigger in the canvas.  This is how the `square_building` path
+    normalises across blends that ship at different
+    overall-composition orthos (e.g. stonehenge ortho=72 sized for
+    the whole landscape vs. signalbox ortho=48 sized for `dims·24`)
+    -- the divisor brings them to a common per-tile rate."""
     ortho = (viewpoint.ortho_scale
              if viewpoint.ortho_scale is not None
              else authored.ortho_scale)
@@ -594,6 +613,8 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
         raise SystemExit(
             "Viewpoint declared ortho_scale=None and blend has no ortho camera"
         )
+    if viewpoint.ortho_scale is None:
+        ortho = ortho / viewpoint.fit_ortho_divisor
     cam_data = bpy.data.cameras.new("_render_camera")
     cam_data.type = "ORTHO"
     cam_data.ortho_scale = ortho
@@ -944,7 +965,9 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                  keep_per_facing: bool = False,
                  materials: dict | None = None,
                  lighting=None,
-                 material_id_map: bool = False) -> None:
+                 material_id_map: bool = False,
+                 model_offset: tuple[float, float, float] | None = None,
+                 ) -> None:
     """Render `viewpoint.facings` of the currently loaded blend.  Writes
     `<out_dir>/<name>.png` (atlas).  With `keep_per_facing=True`, also
     writes `<out_dir>/<name>_<label>.png` per facing -- used by the
@@ -968,6 +991,24 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                            viewpoint.strip_material_substrings)
     if viewpoint.engine == "BLENDER_EEVEE":
         _reload_external_textures(bpy)
+    # When the Viewpoint declares a target per-tile ortho, derive the
+    # divisor now that `authored.ortho_scale` is known.  Replaces
+    # `fit_ortho_divisor` so the camera-install + fit steps below see
+    # the right effective ortho.
+    if viewpoint.fit_ortho_per_tile is not None:
+        if viewpoint.fit_ortho_max_dims is None:
+            raise SystemExit(
+                "Viewpoint.fit_ortho_per_tile requires fit_ortho_max_dims"
+            )
+        if authored.ortho_scale is None:
+            raise SystemExit(
+                "Viewpoint.fit_ortho_per_tile needs the blend to declare "
+                "an ortho_scale; got none"
+            )
+        divisor = authored.ortho_scale / (
+            viewpoint.fit_ortho_per_tile * viewpoint.fit_ortho_max_dims
+        )
+        viewpoint = replace(viewpoint, fit_ortho_divisor=divisor)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
     if lighting is not None:
         _apply_lighting(bpy, sun, authored, viewpoint, lighting)
@@ -1009,6 +1050,14 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                         @ M_scale
                         @ mathutils.Matrix.Rotation(radians(facing.model_rot_z_deg), 4, "Z")
                         @ fit)
+            if model_offset is not None:
+                # Pre-translate the mesh by -offset in world coords so
+                # the model's authored centre lands at world origin --
+                # the rotation above then pivots around the model
+                # centre, not around an arbitrary world point.
+                M_target = M_target @ mathutils.Matrix.Translation(
+                    (-model_offset[0], -model_offset[1], -model_offset[2])
+                )
             _apply_facing(records, M_target)
             tmp_path = tmp_dir / f"{facing.label}.png"
             scn.render.filepath = str(tmp_path)
@@ -1091,6 +1140,27 @@ def _parse_args(argv):
                     help="X,Y,L,H — footprint (dims_x, dims_y, layouts, "
                          "heights) for viewpoint=hex_building or "
                          "square_building; required for those modes")
+    ap.add_argument("--model-offset", default=None,
+                    help="X,Y,Z -- where the model's centre sits in the "
+                         "blend's authored world coords.  Pre-translates the "
+                         "mesh by -offset before rotation/fit/etc so the "
+                         "model's effective centre lands at world origin "
+                         "and the layout rotation pivots around it.  Use "
+                         "when the artist authored the model away from "
+                         "world origin (default = identity, honour authoring).")
+    ap.add_argument("--building-ortho-per-tile", default=None, type=float,
+                    help="Target per-tile ortho for the multi-tile bake.  "
+                         "When set, divisor = authored / (per_tile * "
+                         "max(dims_x, dims_y)), computed after the blend's "
+                         "authored ortho is read.  Default None falls back "
+                         "to the viewpoint's `fit_ortho_divisor=max(dims)` "
+                         "heuristic, which assumes the blend was authored "
+                         "at `max(dims) * (authored/max(dims))` per tile "
+                         "(i.e. honour what the artist authored).  Override "
+                         "when the artist sized the camera for the whole "
+                         "composition rather than per-tile -- e.g. "
+                         "stonehenge ortho=72 over a 2x2 footprint, "
+                         "per_tile=24 -> divisor 1.5.")
     ap.add_argument("--materials", default="",
                     help="JSON serialisation of the bake script's "
                          "`MATERIALS = {...}` dict (see pak.materials).  "
@@ -1155,6 +1225,12 @@ def main(argv):
         factory = (building_hex_viewpoint if args.viewpoint == "hex_building"
                    else building_square_viewpoint)
         vp = factory(layouts=l, dims_x=dx, dims_y=dy, heights=h)
+        if args.building_ortho_per_tile is not None:
+            vp = replace(
+                vp,
+                fit_ortho_per_tile=args.building_ortho_per_tile,
+                fit_ortho_max_dims=max(dx, dy),
+            )
     elif args.viewpoint in ("tree_hex", "tree_square"):
         if not args.tree_grid:
             raise SystemExit(
@@ -1181,12 +1257,22 @@ def main(argv):
         from pak.materials import Lighting
         lighting = Lighting.from_jsonable(json.loads(args.lighting))
 
+    model_offset = None
+    if args.model_offset:
+        parts = [float(s) for s in args.model_offset.split(",")]
+        if len(parts) != 3:
+            raise SystemExit(
+                f"--model-offset expects X,Y,Z; got {args.model_offset!r}"
+            )
+        model_offset = tuple(parts)
+
     render_atlas(bpy, mathutils, vp, args.out, args.name,
                  cols_per_row=args.cols_per_row,
                  keep_per_facing=args.keep_per_facing,
                  materials=materials,
                  lighting=lighting,
-                 material_id_map=args.material_id_map)
+                 material_id_map=args.material_id_map,
+                 model_offset=model_offset)
     return 0
 
 

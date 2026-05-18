@@ -90,7 +90,10 @@ def _cell_metric(ours_rgba, up_rgba, *, blur_sigma: float = 3.0):
 
 def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
             *, dims_x: int = 1, dims_y: int = 1,
-            materials: dict | None = None, lighting=None) -> None:
+            materials: dict | None = None, lighting=None,
+            blend_ortho_per_tile: float | None = None,
+            model_offset_xyz: tuple[float, float, float] | None = None,
+            ) -> None:
     script = HERE / "render.py"
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
@@ -99,6 +102,13 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
         "--building-footprint", f"{dims_x},{dims_y},{layouts},1",
         "--keep-per-facing",
     ]
+    if blend_ortho_per_tile is not None:
+        cmd += ["--building-ortho-per-tile", str(blend_ortho_per_tile)]
+    if model_offset_xyz is not None:
+        # `=` form (not space-separated) so argparse doesn't misparse
+        # negative components like "-0.27,..." as a new option flag.
+        cmd += ["--model-offset=" +
+                ",".join(str(v) for v in model_offset_xyz)]
     if materials:
         import json
 
@@ -207,13 +217,10 @@ def _sq_tile_screen_offset(x: float, y: float) -> tuple[float, float]:
     return (64.0 * x - 64.0 * y, 32.0 * x + 32.0 * y)
 
 
-# Per-layout square_building canvas size.  Camera looks at world origin,
-# so world (0, 0, 0) -- the blend footprint centroid by the Britain
-# contributing-graphics spec -- lands at the canvas centre.  The
-# building's tiles fan out around that point per the engine paint
-# convention encoded by `_tile_topleft`.
+# Per-layout square_building canvas size, matching what the
+# `square_building` viewpoint renders into.  Both ours and the
+# upstream stitch land on this canvas.
 _SQ_CANVAS_W = _SQ_CANVAS_H = 512
-_SQ_CANVAS_ORIGIN = (_SQ_CANVAS_W // 2, _SQ_CANVAS_H // 2)
 
 
 # Pixel position of the tile's z=0 ground anchor within its 128×128 cell.
@@ -224,14 +231,28 @@ _SQ_CANVAS_ORIGIN = (_SQ_CANVAS_W // 2, _SQ_CANVAS_H // 2)
 _CELL_GROUND_ANCHOR = (64, 96)
 
 
+# Where world (0, 0, 0) lands on the 512x512 square_building canvas,
+# used as the stitch anchor.  All 4 `_UPSTREAM_NORMAL_CARDINAL`
+# cameras share pitch=60° from vertical and a horizontal distance to
+# the look-at point that puts world (-4.2, 4.2, 0) at canvas centre
+# (rotated per cardinal); world (0, 0, 0) is offset from that by
+# -2.97 world along camera-up, which at the upstream px-per-world
+# rate (10.67 = 512 / 48, where 48 is `per_tile=24 * max(dims)`) lands
+# +31.7 px below canvas centre on screen.  Rounded to +32; direction
+# is invariant under cardinal rotation by symmetry.  Per-asset
+# residual on top of this baseline rides on `Building.blend_model_
+# offset_xyz` (renderer pre-translates the mesh by -offset); the
+# stitch itself uses only this structural anchor.
+_STITCH_CANVAS_ANCHOR = (_SQ_CANVAS_W // 2, _SQ_CANVAS_H // 2 + 32)
+
+
 def _tile_topleft(x: int, y: int,
                   centroid_xy: tuple[float, float]) -> tuple[int, int]:
     """Top-left pixel of tile (y, x)'s 128×128 cell on the layout canvas.
     The cell's `_CELL_GROUND_ANCHOR` pixel lands at the engine
-    `koord_to_screen` offset from `centroid_xy` (in koord units), so the
-    building's footprint centres on canvas where our render anchors
-    world (0, 0, 0)."""
-    cx, cy = _SQ_CANVAS_ORIGIN
+    `koord_to_screen` offset from `centroid_xy` (in koord units),
+    anchored on `_STITCH_CANVAS_ANCHOR`."""
+    cx, cy = _STITCH_CANVAS_ANCHOR
     xc, yc = centroid_xy
     ax, ay = _CELL_GROUND_ANCHOR
     dx, dy = _sq_tile_screen_offset(x - xc, y - yc)
@@ -340,6 +361,9 @@ def run_multitile(
     season: int = 0,
     blur_sigma: float = 3.0,
     name: str | None = None,
+    blend_source: str = "jp",
+    blend_ortho_per_tile: float | None = None,
+    model_offset_xyz: tuple[float, float, float] | None = None,
 ):
     """Render the multi-tile blend through `square_building`, build the
     per-layout stitched upstream canvas from upstream's per-cell PNGs,
@@ -361,16 +385,17 @@ def run_multitile(
     from PIL import Image
 
     from pak.diff import GridCell, compose_grid
-    from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
     from pak.upstream import image_stem
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    blend_path = fetch_blend(blend)
+    blend_path = _resolve_blend(blend, blend_source)
     render_name = Path(blend).stem
     _render(blend_path, out_dir, render_name, layouts,
             dims_x=dims_x, dims_y=dims_y,
-            materials=materials, lighting=lighting)
+            materials=materials, lighting=lighting,
+            blend_ortho_per_tile=blend_ortho_per_tile,
+            model_offset_xyz=model_offset_xyz)
     our_canvases = _load_our_renders(out_dir, render_name, layouts)
 
     up_dat_path = fetch_pak(upstream_dat)
@@ -422,8 +447,6 @@ def run_multitile(
                  title=f"{render_name} per-tile (square)")
 
     # Per-layout stitched diff: one row per L on the full 512×512 canvas.
-    # Upstream's per-cell PNGs paste onto the same tile lattice we sliced
-    # ours from, so the silhouette IoU is apples-to-apples.
     per_layout: list[MultiTileLayout] = []
     stitched_cells: list[GridCell] = []
     for L in range(layouts):
@@ -431,8 +454,9 @@ def run_multitile(
             (k[1], k[2]): _atlas_cell(up_atlas, *up_index[k])
             for k in up_index if k[0] == L
         }
-        up_stitched = _stitch_upstream_layout(cells_by_yx, centroid_by_L[L],
-                                              magic_rgb=MAGIC_PINK)
+        up_stitched = _stitch_upstream_layout(
+            cells_by_yx, centroid_by_L[L], magic_rgb=MAGIC_PINK,
+        )
         m, our_mask, up_mask = _cell_metric(our_canvases[L], up_stitched,
                                             blur_sigma=blur_sigma)
         rec = MultiTileLayout(l=L, iou=m.iou, drgb=m.drgb)
@@ -488,11 +512,30 @@ def _best_permutation(mat) -> list[int]:
     return list(best_perm)
 
 
+def _resolve_blend(blend: str, blend_source: str) -> Path:
+    """Route `blend` to the matching upstream blends repo.  Mirrors
+    `pak.bake._fetch_blend` -- "jp" for jamespetts (default,
+    citybuildings / signals / vehicles / ways), "jh" for JamesHood
+    (attractions, depots, anything jamespetts doesn't carry)."""
+    if blend_source == "jp":
+        from pak.fetch_blend import fetch
+    elif blend_source == "jh":
+        from pak.fetch_jh_blend import fetch
+    else:
+        raise ValueError(
+            f"unknown blend_source={blend_source!r}; expected 'jp' or 'jh'"
+        )
+    return fetch(blend)
+
+
 def _diff_one_season(blend: str, upstream_dat: str, *, layouts: int,
                      out_dir: Path, materials, season_row: int,
                      blur_sigma: float, lighting,
                      row_label_prefix: str = "",
-                     name: str | None = None):
+                     name: str | None = None,
+                     blend_source: str = "jp",
+                     blend_ortho_per_tile: float | None = None,
+                     model_offset_xyz: tuple[float, float, float] | None = None):
     """Render `blend`, diff each layout against the `season_row` row
     of the upstream atlas (derived from `upstream_dat`'s `BackImage`
     refs), and return `(grid_cells, mat, perm, drgb)`.
@@ -502,15 +545,16 @@ def _diff_one_season(blend: str, upstream_dat: str, *, layouts: int,
     a combined grid.
     """
     from pak.diff import GridCell
-    from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
     from pak.upstream import image_stem
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    blend_path = fetch_blend(blend)
+    blend_path = _resolve_blend(blend, blend_source)
     render_name = Path(blend).stem
     _render(blend_path, out_dir, render_name, layouts,
-            materials=materials, lighting=lighting)
+            materials=materials, lighting=lighting,
+            blend_ortho_per_tile=blend_ortho_per_tile,
+            model_offset_xyz=model_offset_xyz)
     up_path = fetch_pak(f"{image_stem(upstream_dat, name=name)}.png")
     up_cells = _split_upstream(up_path, layouts, season_row=season_row)
     our_rgba = _load_our_renders(out_dir, render_name, layouts)
@@ -537,7 +581,10 @@ def run(blend: str, upstream_dat: str, *, layouts: int, out_dir: Path,
         materials: dict | None = None, season_row: int = 0,
         grid_name: str = "grid.png", blur_sigma: float = 3.0,
         lighting=None, title: str | None = None,
-        name: str | None = None):
+        name: str | None = None,
+        blend_source: str = "jp",
+        blend_ortho_per_tile: float | None = None,
+        model_offset_xyz: tuple[float, float, float] | None = None):
     """Render `blend` through `square_building`, diff each layout
     against the columns of the upstream atlas (derived from
     `upstream_dat`'s `BackImage` refs), return (matrix, permutation, drgb).
@@ -554,6 +601,9 @@ def run(blend: str, upstream_dat: str, *, layouts: int, out_dir: Path,
         blend, upstream_dat, layouts=layouts, out_dir=out_dir,
         materials=materials, season_row=season_row,
         blur_sigma=blur_sigma, lighting=lighting, name=name,
+        blend_source=blend_source,
+        blend_ortho_per_tile=blend_ortho_per_tile,
+        model_offset_xyz=model_offset_xyz,
     )
     compose_grid(cells, out_path=out_dir / grid_name,
                  strip_magic_rgb=MAGIC_PINK, title=title)
@@ -566,6 +616,9 @@ def run_seasonal(
     blend_winter: str, materials_winter: dict | None = None,
     lighting=None, blur_sigma: float = 3.0,
     name: str | None = None,
+    blend_source: str = "jp",
+    blend_ortho_per_tile: float | None = None,
+    model_offset_xyz: tuple[float, float, float] | None = None,
 ):
     """Diff summer then winter against the matching upstream rows and
     write **one** combined grid (`grid.png`) covering both seasons —
@@ -579,12 +632,18 @@ def run_seasonal(
         materials=materials, season_row=0,
         blur_sigma=blur_sigma, lighting=lighting,
         row_label_prefix="summer ", name=name,
+        blend_source=blend_source,
+        blend_ortho_per_tile=blend_ortho_per_tile,
+        model_offset_xyz=model_offset_xyz,
     )
     winter_cells, *winter_stats = _diff_one_season(
         blend_winter, upstream_dat, layouts=layouts, out_dir=out_dir,
         materials=materials_winter, season_row=1,
         blur_sigma=blur_sigma, lighting=lighting,
         row_label_prefix="winter ", name=name,
+        blend_source=blend_source,
+        blend_ortho_per_tile=blend_ortho_per_tile,
+        model_offset_xyz=model_offset_xyz,
     )
     compose_grid(
         summer_cells + winter_cells,

@@ -314,6 +314,23 @@ def bake_bridge_main(spec: Bridge, file: str) -> Path:
     return bake_bridge(spec, basename=path.stem, out_dir=path.parent)
 
 
+_BLEND_FETCHERS = {"jp": fetch, "jh": fetch_jh}
+
+
+def _fetch_blend(blend: str, source: str) -> Path:
+    """Resolve `blend` against the upstream repo named by `source`.
+    `"jp"` -> jamespetts (`fetch_blend`), `"jh"` -> JamesHood
+    (`fetch_jh_blend`).  Building/attraction blends typically live in
+    JamesHood; vehicles / ways / signals / citybuildings in jamespetts."""
+    try:
+        fetcher = _BLEND_FETCHERS[source]
+    except KeyError as e:
+        raise ValueError(
+            f"unknown blend_source={source!r}; expected one of {sorted(_BLEND_FETCHERS)}"
+        ) from e
+    return fetcher(blend)
+
+
 def _render_building_season(
     *, blend: str, name: str, out_dir: Path, spec: Building,
     materials: dict[str, Material] | None,
@@ -321,7 +338,7 @@ def _render_building_season(
 ) -> Path:
     """Render one season's atlas to `<out_dir>/<name>.png` and return
     the path.  One blender subprocess per call."""
-    blend_path = fetch(blend)
+    blend_path = _fetch_blend(blend, spec.blend_source)
     # One atlas row per `(season, height)` stripe; each row holds
     # `layouts * dims_x * dims_y` cells (layouts span columns).  See
     # `pak.dat.emit_building` for the matching row/col formula.
@@ -338,6 +355,13 @@ def _render_building_season(
         f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
         "--cols-per-row", str(cells_per_row),
     ]
+    if spec.blend_ortho_per_tile is not None:
+        cmd += ["--building-ortho-per-tile", str(spec.blend_ortho_per_tile)]
+    if spec.blend_model_offset_xyz is not None:
+        # `=` form (not space-separated) so argparse doesn't misparse
+        # negative components like "-0.27,..." as a new option flag.
+        cmd += ["--model-offset=" +
+                ",".join(str(v) for v in spec.blend_model_offset_xyz)]
     if materials:
         from pak.materials import to_jsonable
         cmd += ["--materials", json.dumps(to_jsonable(materials))]
