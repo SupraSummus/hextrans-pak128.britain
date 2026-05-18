@@ -52,7 +52,17 @@ class Facing:
     footprint cell to world origin per facing so the standard hex
     camera renders that single cell's content.  `model_scale` scales
     the mesh uniformly after fit — used by tree bakes to render the
-    same model at successive growth stages."""
+    same model at successive growth stages.
+
+    `slices` opts the facing into image-space slicing: one Blender
+    render produces N atlas cells, each a W×W crop centred at
+    `(canvas_width/2 + cx_px, canvas_height/2 + cy_px)`.  Used by the
+    multi-tile building viewpoint — the whole footprint renders once
+    at a wide canvas with the model untranslated, then crops at the
+    hex screen positions of each `(qx, ry)` koord deliver the per-tile
+    sprites.  Default `None` keeps the legacy 1-cell-per-facing path.
+    Slice labels become the atlas's per-cell labels in `_print_atlas_
+    summary` output."""
     label: str
     camera_location: tuple[float, float, float]
     camera_rotation_euler: tuple[float, float, float]  # radians
@@ -60,6 +70,7 @@ class Facing:
     model_rot_z_deg: float = 0.0  # rotation applied to the mesh after fit
     model_translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
     model_scale: float = 1.0
+    slices: list[tuple[str, tuple[int, int]]] | None = None
 
 
 @dataclass
@@ -119,6 +130,25 @@ class Viewpoint:
     # JH duplicates suffix-vary the same logical material across
     # twins (`Rail.000`/`.001`/`.002`/`.003`, `Ballast`/`Ballast.001`).
     strip_material_substrings: tuple[str, ...] = ()
+    # Blender render resolution.  None falls back to a square
+    # `image_width × image_width` canvas (the original behaviour).  Used
+    # by image-space slicing (multi-tile building hex viewpoint) to
+    # render a wide canvas covering the full footprint at the standard
+    # per-pixel world rate.  Atlas cells stay at `image_width × image_
+    # width`; the larger canvas is sliced into multiple cells per facing
+    # (`Facing.slices`).
+    canvas_width: int | None = None
+    canvas_height: int | None = None
+    # Divisor applied to the blend's authored ortho_scale before
+    # `_compute_fit` reads it under `fit_kind="hex"`.  Multi-tile
+    # building blends are authored at `ortho_scale = dims · per-tile-
+    # ortho` (the artist sized the camera to fit the whole footprint
+    # at the standard per-tile pixel rate); dividing by `max(dims_x,
+    # dims_y)` recovers the per-tile-ortho the fit-scale should
+    # actually use, so the rendered building lands at upstream's per-
+    # cell size after slicing.  Default 1.0 = honour the blend's
+    # authored ortho directly (single-tile, vehicle, way, tree paths).
+    fit_ortho_divisor: float = 1.0
 
 
 def _reload_external_textures(bpy) -> None:
@@ -587,8 +617,8 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     sun.rotation_mode = "XYZ"
 
     scn = bpy.context.scene
-    scn.render.resolution_x = viewpoint.image_width
-    scn.render.resolution_y = viewpoint.image_width
+    scn.render.resolution_x = viewpoint.canvas_width or viewpoint.image_width
+    scn.render.resolution_y = viewpoint.canvas_height or viewpoint.image_width
     scn.render.resolution_percentage = 100
     scn.render.film_transparent = True
     scn.render.image_settings.color_mode = "RGBA"
@@ -949,8 +979,10 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
         sidecar.write_text(json.dumps(mat_to_id, indent=2, sort_keys=True))
     elif viewpoint.engine == "BLENDER_EEVEE" and materials:
         _bind_textures_via_nodes(bpy, materials)
+    effective_ortho = (authored.ortho_scale / viewpoint.fit_ortho_divisor
+                       if authored.ortho_scale is not None else None)
     fit = _compute_fit(mathutils, records, viewpoint.fit_kind,
-                       authored.ortho_scale)
+                       effective_ortho)
     extrinsic = (mathutils.Matrix(viewpoint.extrinsic) if viewpoint.extrinsic
                  else mathutils.Matrix.Identity(4))
 
@@ -961,6 +993,9 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
 
     scn = bpy.context.scene
     cells = []
+    sprite_w = viewpoint.image_width
+    canvas_w = viewpoint.canvas_width or sprite_w
+    canvas_h = viewpoint.canvas_height or sprite_w
     try:
         for facing in viewpoint.facings:
             cam.location = facing.camera_location
@@ -978,9 +1013,44 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
             tmp_path = tmp_dir / f"{facing.label}.png"
             scn.render.filepath = str(tmp_path)
             bpy.ops.render.render(animation=False, write_still=True)
-            cells.append((facing.label, _load_rgba(bpy, tmp_path)))
+            rendered = _load_rgba(bpy, tmp_path)
             if keep_per_facing:
                 shutil.copy(tmp_path, out_dir / f"{name}_{facing.label}.png")
+            if facing.slices is None:
+                # Legacy 1-cell-per-facing path: the rendered image *is*
+                # the cell (canvas == sprite size by construction).
+                cells.append((facing.label, rendered))
+            else:
+                # Image-space slicing.  `_load_rgba` flipped Blender's
+                # bottom-up render to top-down, so slice offsets follow
+                # image coords: cx_px > 0 right of canvas centre, cy_px
+                # > 0 below.  One W×W cell per slice, padded with zero
+                # alpha where the crop runs off the canvas edge.
+                cx0 = canvas_w / 2.0
+                cy0 = canvas_h / 2.0
+                for slice_label, (cx_px, cy_px) in facing.slices:
+                    x0 = int(round(cx0 + cx_px - sprite_w / 2))
+                    y0 = int(round(cy0 + cy_px - sprite_w / 2))
+                    cell = np.zeros((sprite_w, sprite_w, 4), dtype=np.float32)
+                    sx0 = max(0, -x0)
+                    sy0 = max(0, -y0)
+                    dx0 = max(0, x0)
+                    dy0 = max(0, y0)
+                    cw = min(sprite_w - sx0, canvas_w - dx0)
+                    ch = min(sprite_w - sy0, canvas_h - dy0)
+                    if cw > 0 and ch > 0:
+                        cell[sy0:sy0 + ch, sx0:sx0 + cw] = (
+                            rendered[dy0:dy0 + ch, dx0:dx0 + cw]
+                        )
+                    cells.append((slice_label, cell))
+                    if keep_per_facing:
+                        # Per-slice PNG, top-down (cell array already is
+                        # top-down because _load_rgba flipped on load).
+                        from PIL import Image as _PILImage
+                        _bytes = (cell * 255).clip(0, 255).astype("uint8")
+                        _PILImage.fromarray(_bytes, "RGBA").save(
+                            out_dir / f"{name}_{slice_label}.png"
+                        )
 
         cols = cols_per_row or len(cells)
         rows = (len(cells) + cols - 1) // cols
