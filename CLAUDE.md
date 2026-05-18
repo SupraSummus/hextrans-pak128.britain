@@ -968,12 +968,17 @@ by `test_square_synth`).
 `ruff` runs `ruff check .` against `pyproject.toml`'s
 `[tool.ruff.lint]`.  Ruleset is scoped to **bug classes the rest of
 the system wouldn't catch faster** (F undefined-name / unused-import,
-W whitespace, I import sorting, UP outdated typing); stylistic-only
-checks are dropped (E501 line length, E702 intentional `a; b` pairs,
-E741 `l` collides with the engine's `(l, y, x)` building-layout loop
-convention).  Same philosophy as "Test value rules" below — catch
-the bug, skip the noise.  Net real-bug catch on adoption was near-
-zero; the value is prophylactic.
+W whitespace, I import sorting, UP outdated typing, B bugbear,
+PLE pylint errors, NPY numpy correctness, RUF100 unused noqa,
+A builtin shadowing); stylistic-only checks are dropped (E501 line
+length, E702 intentional `a; b` pairs, E741 `l` collides with the
+engine's `(l, y, x)` building-layout loop convention).  Selection
+is explicit per code-group rather than wildcard-with-ignores, so
+new ruff releases don't quietly extend either side -- the bar for
+adding a group is "found a bug in this codebase or has near-zero
+false-positive rate".  Same philosophy as "Test value rules"
+below — catch the bug, skip the noise.  Net real-bug catch on
+adoption was near-zero; the value is prophylactic.
 
 Full vehicle/way *render* rebake is not wired — the per-asset blend
 fetch + Cycles cost (~minutes per asset) makes a full sweep too

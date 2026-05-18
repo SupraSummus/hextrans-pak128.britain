@@ -51,7 +51,7 @@ HEIGHT_STEP = 8
 # Re-exported from `pak.way` so the constant has a single source of truth
 # and `pak.way` (pure-Python ribi vocab + hex geometry) doesn't have to
 # pull in numpy via this module just to read it.
-from .way import HEX_TILE_RADIUS  # noqa: E402,F401
+from .way import HEX_TILE_RADIUS  # noqa: E402
 
 # Shear z-coefficient: post-shear render-frame y = world_y/√3 +
 # world_z * HEX_SHEAR_Z_COEF (see `hex_proj_shear` below).  Set to

@@ -322,7 +322,7 @@ def building_square_viewpoint(
     step = 360.0 / layouts
     facings: list[Facing] = []
     for l in range(layouts):
-        label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
+        _label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
         facings.append(Facing(
             label=f"L{l}_Y0_X0_H0",
             camera_location=loc,
@@ -599,7 +599,7 @@ def tree_square_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
     here by name.  EEVEE engine matches the buildings path's BI
     substitute.
     """
-    label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[0]  # S
+    _label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[0]  # S
     return Viewpoint(
         name="tree_square",
         image_width=DEFAULT_W,

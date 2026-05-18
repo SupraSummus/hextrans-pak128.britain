@@ -12,7 +12,14 @@ extend-exclude = [".cache", "out"]
 # UP: pyupgrade -- modernise typing.Optional, quoted annotations, etc.
 # B: flake8-bugbear -- real bug classes (B905 silent zip truncation,
 # B007 unused loop vars hinting at typos).
-select = ["F", "E", "W", "I", "UP", "B"]
+# PLE: pylint error subset -- bad super calls, format string
+# mismatches, return in __init__.
+# NPY: numpy correctness -- legacy np.random, numpy-2 deprecations.
+# RUF100: unused noqa directives (the rest of the RUF group is mostly
+# stylistic against this codebase's conventions -- `×` in docstrings,
+# `_list_field()` dataclass factory, class-level constant lists).
+# A: flake8-builtins -- shadowing list/type/id as parameter or local.
+select = ["F", "E", "W", "I", "UP", "B", "PLE", "NPY", "RUF100", "A"]
 ignore = ["E501", "E702", "E741"]
 
 [tool.ruff.lint.isort]
