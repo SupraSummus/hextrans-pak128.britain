@@ -81,7 +81,7 @@ def _draw_wall(buf: np.ndarray, geom: hex_synth.HexGeom, wall: int) -> None:
     for x, y in anchors:
         hex_synth.draw_line(buf, x, y, x, y - POST_HEIGHT, FENCE_COLOR_RGB)
     for r in RAIL_OFFSETS:
-        for (x0, y0), (x1, y1) in zip(anchors, anchors[1:]):
+        for (x0, y0), (x1, y1) in zip(anchors, anchors[1:], strict=False):
             hex_synth.draw_line(buf, x0, y0 - r, x1, y1 - r, FENCE_COLOR_RGB)
 
 

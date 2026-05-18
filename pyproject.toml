@@ -10,7 +10,9 @@ extend-exclude = [".cache", "out"]
 # layout-loop convention -- see CLAUDE.md "Building-bake architecture").
 # I: import sorting (subsumes isort).
 # UP: pyupgrade -- modernise typing.Optional, quoted annotations, etc.
-select = ["F", "E", "W", "I", "UP"]
+# B: flake8-bugbear -- real bug classes (B905 silent zip truncation,
+# B007 unused loop vars hinting at typos).
+select = ["F", "E", "W", "I", "UP", "B"]
 ignore = ["E501", "E702", "E741"]
 
 [tool.ruff.lint.isort]

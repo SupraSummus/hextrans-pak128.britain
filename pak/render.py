@@ -830,7 +830,7 @@ def _apply_facing(records, M_target) -> None:
     """Rewrite each mesh's vertices to `M_target @ canonical_world_co`.
     Called once per facing; matrix_world stays the identity."""
     for obj, orig in records:
-        for v, oc in zip(obj.data.vertices, orig):
+        for v, oc in zip(obj.data.vertices, orig, strict=True):
             v.co = M_target @ oc
         obj.data.update()
 

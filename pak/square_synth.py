@@ -123,7 +123,7 @@ class SquareGeom:
     corner_labels = ("SW", "SE", "NE", "NW")
     corner_world_xy = SQUARE_CORNER_XY
     corner_projected_xy = list(zip(SQUARE_CORNER_PROJECTED_X,
-                                   SQUARE_CORNER_PROJECTED_Y))
+                                   SQUARE_CORNER_PROJECTED_Y, strict=True))
     all_chords = SQUARE_ALL_CHORDS
     full_path = SQUARE_FULL_PATH
 

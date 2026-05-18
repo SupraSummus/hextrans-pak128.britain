@@ -147,7 +147,7 @@ def _compose_grid(our_rgba, up_cells, our_masks, up_masks,
     grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
     draw = ImageDraw.Draw(grid)
 
-    for i, (ours, up_idx) in enumerate(zip(our_rgba, perm)):
+    for i, (ours, up_idx) in enumerate(zip(our_rgba, perm, strict=True)):
         label = f"L{i}~c{up_idx}"
         draw.text((PAD + i * (CELL + PAD) + 4, 2), label, fill=(0, 0, 0, 255))
         # Strip magic-pink before pasting upstream cell so the

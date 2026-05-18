@@ -151,7 +151,7 @@ def make_grid(ours_cells: list[np.ndarray],
     """Stacked grid: ours on top row, upstream on bottom, one column per cell."""
     n = len(ours_cells)
     grid = np.zeros((2 * cell_h, n * cell_w, 4), dtype=np.uint8)
-    for i, (o, u) in enumerate(zip(ours_cells, upstream_cells)):
+    for i, (o, u) in enumerate(zip(ours_cells, upstream_cells, strict=True)):
         grid[:cell_h, i * cell_w:(i + 1) * cell_w] = o
         if u.shape[-1] == 3:
             u = np.dstack([u, np.full(u.shape[:2], 255, dtype=np.uint8)])

@@ -99,7 +99,7 @@ class SlopeVocabulary(unittest.TestCase):
 
     def test_double_labels_have_suffix(self):
         for (single, edge_a), (double, edge_b) in zip(
-                SLOPE_HEX_ENTRIES, SLOPE_HEX_DOUBLE_ENTRIES):
+                SLOPE_HEX_ENTRIES, SLOPE_HEX_DOUBLE_ENTRIES, strict=True):
             self.assertEqual(edge_a, edge_b)
             self.assertEqual(double, f"{single}_double")
 
