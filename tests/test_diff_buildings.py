@@ -19,7 +19,16 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 from PIL import Image
 
-from pak.diff_buildings import _best_permutation, _iou_matrix, _split_upstream, summarise
+from pak.diff_buildings import (
+    MultiTileCell,
+    _best_permutation,
+    _iou_matrix,
+    _parse_backimage_entries,
+    _split_upstream,
+    _upstream_dat_path,
+    format_multitile_table,
+    summarise,
+)
 
 
 class TestSplitUpstream(unittest.TestCase):
@@ -111,6 +120,93 @@ class TestIoUMatrix(unittest.TestCase):
         b = np.array([[False, True], [True, False]])
         mat = _iou_matrix([a, b], [a, b])
         np.testing.assert_array_equal(mat, np.eye(2))
+
+
+class TestUpstreamDatPath(unittest.TestCase):
+    def test_strips_images_subdir_from_britain_pattern(self):
+        self.assertEqual(
+            _upstream_dat_path("signalboxes/images/mechanical-signalbox-large.png"),
+            "signalboxes/mechanical-signalbox-large.dat",
+        )
+
+    def test_keeps_sibling_dat_when_no_images_subdir(self):
+        self.assertEqual(
+            _upstream_dat_path("ways/cssr.png"),
+            "ways/cssr.dat",
+        )
+
+
+class TestParseBackimageEntries(unittest.TestCase):
+    def _write_dat(self, body: str):
+        from pathlib import Path
+        fp = NamedTemporaryFile(suffix=".dat", delete=False, mode="w")
+        fp.write(body)
+        fp.close()
+        return Path(fp.name)
+
+    def test_extracts_backimage_indices_and_atlas_coords(self):
+        # Trimmed slice of the signalbox dat shape.
+        dat = self._write_dat(
+            "obj=building\n"
+            "BackImage[0][0][0][0][0][0]=images/x.0.0\n"
+            "BackImage[1][2][3][4][5][6]=images/x.7.11\n"
+            "----------\n"
+        )
+        entries = _parse_backimage_entries(dat)
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0], dict(
+            l=0, y=0, x=0, h=0, phase=0, season=0, row=0, col=0,
+        ))
+        self.assertEqual(entries[1], dict(
+            l=1, y=2, x=3, h=4, phase=5, season=6, row=7, col=11,
+        ))
+
+    def test_ignores_non_backimage_keys(self):
+        dat = self._write_dat(
+            "obj=building\n"
+            "Name=x\nLevel=1\n"
+            "FrontImage[0][0][0][0][0][0]=images/x.0.0\n"
+            "BackImage[0][0][0][0][0][0]=images/x.1.1\n"
+            "----------\n"
+        )
+        entries = _parse_backimage_entries(dat)
+        self.assertEqual([(e["row"], e["col"]) for e in entries], [(1, 1)])
+
+    def test_ignores_unparseable_image_refs(self):
+        # BackImage entries with a `-` value (engine convention for an
+        # empty slot at fewer-layout assets) parse the key but skip
+        # the entry, since there's no atlas coord to slice.
+        dat = self._write_dat(
+            "obj=building\n"
+            "BackImage[0][0][0][0][0][0]=-\n"
+            "BackImage[1][0][0][0][0][0]=images/x.0.1\n"
+            "----------\n"
+        )
+        entries = _parse_backimage_entries(dat)
+        self.assertEqual([(e["l"], e["row"], e["col"]) for e in entries],
+                         [(1, 0, 1)])
+
+
+class TestFormatMultitileTable(unittest.TestCase):
+    def test_empty_input_returns_empty_string(self):
+        self.assertEqual(format_multitile_table([]), "")
+
+    def test_renders_alignment_and_summary_row(self):
+        rows = [
+            MultiTileCell(l=0, y=0, x=0, h=0, phase=0, season=0,
+                          our_row=0, our_col=0, up_row=0, up_col=0, iou=0.10),
+            MultiTileCell(l=0, y=0, x=1, h=0, phase=0, season=0,
+                          our_row=0, our_col=1, up_row=0, up_col=1, iou=0.30),
+        ]
+        out = format_multitile_table(rows)
+        lines = out.splitlines()
+        self.assertEqual(len(lines), 4)  # header + 2 rows + summary
+        # Phase + season included unconditionally (alignment stays
+        # consistent when a future asset uses them).
+        self.assertIn("p0 s0", lines[1])
+        self.assertIn("p0 s0", lines[2])
+        # Summary shows min/mean/max of the IoU column.
+        self.assertIn("0.100 / 0.200 / 0.300", lines[3])
 
 
 if __name__ == "__main__":

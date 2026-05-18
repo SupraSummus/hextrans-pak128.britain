@@ -164,10 +164,20 @@ class TestComposeGrid(unittest.TestCase):
             out = Path(tmp) / "grid.png"
             compose_grid(cells, out_path=out)
             with Image.open(out) as img:
-                # cell_px=128, pad=8, label_h=18 →
-                #   w = 3*(128+8) + 8 = 416
-                #   h = 3*(128+8) + 8 + 18 = 434
-                self.assertEqual(img.size, (416, 434))
+                # cell_px=128, pad=8, label_h=18, gutter_w=label_h=18,
+                # 3 cells, no title →
+                #   w = 18 + 3*(128+8) + 8 = 434  (3 cols ours/up/XOR)
+                #   h = 3*(128+8) + 8 + 18 = 434  (3 rows, one per cell)
+                self.assertEqual(img.size, (434, 434))
+
+    def test_title_adds_a_label_h_band_at_top(self):
+        cells = [self._cell()]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "grid.png"
+            compose_grid(cells, out_path=out, title="x")
+            with Image.open(out) as img:
+                # +label_h (18) to height vs the no-title case.
+                self.assertEqual(img.size[1], 1 * (128 + 8) + 8 + 18 + 18)
 
     def test_strip_magic_rgb_does_not_mutate_caller_array(self):
         # Buildings pass MAGIC_PINK to strip the keyed pixels before paste;

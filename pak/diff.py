@@ -188,30 +188,54 @@ class GridCell:
 def compose_grid(cells: list[GridCell], *,
                  out_path: Path,
                  strip_magic_rgb: tuple[int, int, int] | None = None,
+                 title: str | None = None,
                  cell_px: int = 128, pad: int = 8, label_h: int = 18) -> None:
-    """Three-row diff grid (ours / upstream / silhouette-XOR) written to
-    `out_path`.  One column per `GridCell`; `label` drawn above each.
+    """Three-column diff grid (ours / upstream / silhouette-XOR) written
+    to `out_path`.  One row per `GridCell`; `label` drawn to the left of
+    each row, column headers drawn above.  Vertical orientation suits
+    long multi-cell asset diffs — scroll instead of pan.
 
     `strip_magic_rgb`: if upstream PNGs are RGB-with-key (the building
     case), pixels matching this colour are zeroed-alpha before pasting
     so the checker background reads through rather than rendering as
     solid pink.  Vehicles / trees ship upstream as proper RGBA and pass
     `None`.
+
+    `title`: optional header drawn above the column-header band so a
+    saved grid PNG self-identifies (asset name, season, etc.) when
+    opened in isolation.
     """
     from PIL import Image, ImageDraw
 
-    cols = len(cells)
-    rows = 3
-    w = cols * (cell_px + pad) + pad
-    h = rows * (cell_px + pad) + pad + label_h
+    rows = len(cells)
+    cols = 3
+    col_headers = ("ours", "upstream", "XOR (red=ours, blue=upstream)")
+    title_h = label_h if title else 0
+    # Left gutter holds per-row cell labels rendered sideways (one
+    # PIL.Image per row, rotated 90deg CCW) so they read bottom-to-
+    # top alongside their cell.  Width matches `label_h` to mirror
+    # the column-header band on top.
+    gutter_w = label_h
+    w = gutter_w + cols * (cell_px + pad) + pad
+    h = title_h + rows * (cell_px + pad) + pad + label_h
 
     bg = checker(cell_px)
     grid = Image.new("RGBA", (w, h), (245, 245, 245, 255))
     draw = ImageDraw.Draw(grid)
 
+    if title:
+        draw.text((pad, 2), title, fill=(0, 0, 0, 255))
+
+    header_y = title_h
+    for c, name in enumerate(col_headers):
+        x = gutter_w + pad + c * (cell_px + pad)
+        draw.text((x + 4, header_y + 2), name, fill=(0, 0, 0, 255))
+
     for i, cell in enumerate(cells):
-        x = pad + i * (cell_px + pad)
-        draw.text((x + 4, 2), cell.label, fill=(0, 0, 0, 255))
+        y = title_h + label_h + pad + i * (cell_px + pad)
+        strip = Image.new("RGBA", (cell_px, gutter_w), (245, 245, 245, 255))
+        ImageDraw.Draw(strip).text((4, 2), cell.label, fill=(0, 0, 0, 255))
+        grid.paste(strip.rotate(90, expand=True), (0, y))
         ours_img = Image.fromarray(cell.ours_rgba, "RGBA")
         up_arr = cell.up_rgba
         if strip_magic_rgb is not None:
@@ -222,12 +246,18 @@ def compose_grid(cells: list[GridCell], *,
                      & (up_arr[..., 2] == b))
             up_arr[keyed, 3] = 0
         up_img = Image.fromarray(up_arr, "RGBA")
-        grid.paste(Image.alpha_composite(bg, ours_img), (x, label_h + pad))
-        grid.paste(Image.alpha_composite(bg, up_img),
-                   (x, label_h + pad + cell_px + pad))
-        grid.paste(Image.fromarray(xor_image(cell.our_mask, cell.up_mask),
-                                   "RGBA"),
-                   (x, label_h + pad + 2 * (cell_px + pad)))
+        x_ours = gutter_w + pad
+        x_up = x_ours + cell_px + pad
+        x_xor = x_up + cell_px + pad
+        grid.paste(Image.alpha_composite(bg, ours_img), (x_ours, y))
+        grid.paste(Image.alpha_composite(bg, up_img), (x_up, y))
+        # White backdrop for the XOR cell so red/blue/grey marks pop
+        # off the grid's light-grey card background.
+        xor_rgba = Image.fromarray(
+            xor_image(cell.our_mask, cell.up_mask), "RGBA",
+        )
+        white = Image.new("RGBA", (cell_px, cell_px), (255, 255, 255, 255))
+        grid.paste(Image.alpha_composite(white, xor_rgba), (x_xor, y))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     grid.save(out_path)
