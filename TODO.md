@@ -338,6 +338,55 @@ multiply facings accordingly.  Seasons (the `s` axis) and
 height-stacking (the `h` axis) are already plumbed end-to-end and
 tested — same axis-multiplication pattern.
 
+**Bridge port stops at square-projection calibration.**
+`pak.diff_bridge` (Image / Start / Ramp diff against the upstream
+atlas cells) and `pak.diff_bridge_overview` (graphical fleet view)
+exist; `bridge_square_viewpoint` renders the JH bridge blends through
+the normal-alignment cameras with way-material stripping; one bridge
+family (plate-girder) is wired into the overview tool's `CASES`.
+What doesn't exist yet: a `Bridge` dataclass in `pak.dat`, a
+`bake_bridge_main` driver, any per-asset bake script, the hex
+projection pass, or a `.pak` artifact.  The calibration probe is
+groundwork — not a port.  Per-tile IoU 0.66-0.91 against upstream
+through `bridge_square` viewpoint, calibrated bar is 0.93.  Concrete
+next moves when porting bridges matters: (a) model the `Obj=bridge`
+schema in `pak.dat.Bridge` from the upstream `plate-girder.dat`
+shape (BackImage/FrontImage/BackStart/FrontStart/BackRamp/FrontRamp
+× direction × variant keys, plus dat-level `pillar_distance`,
+`max_weight`, `max_length`, `pillar_asymmetric`); (b) write
+`bake_bridge` mirroring `bake_way` but emitting the multi-row
+atlas; (c) add `bridge_hex_viewpoint` for the hex render pass.
+
+**Plate-girder variant 0 (`BackImage` / `Start` / `Ramp` without
+trailing `2`) lacks a JH source.**  JH's `end.blend` and
+`slope.blend` ship the steeper-slope abutment that geometrically
+matches upstream's variant 2 cells (`BackImage2` / `Start2` /
+`Ramp2`); per-facing IoU 0.66-0.91 vs 0.52-0.65 against variant 0.
+The variant 0 cells in upstream show a gentler-slope abutment
+(visually obvious in `pak.diff_bridge_overview`'s output grid).
+`straight-end.blend` (a shared blob across the four viaduct families
+in JH) was the obvious candidate but IoU 0.48-0.51 against Start v0
+and 0.30 against Ramp v0 — not it.  Concrete next move when v0
+fidelity matters: probe two-blend compositions (load `straight.blend`
++ `end.blend` into one scene with `end` positioned at the abutment
+end and re-render through `bridge_square`) and check whether the
+gentler-slope silhouette emerges; if not, an authored blend the JH
+repo doesn't carry is the only path.
+
+**N/E facing asymmetry on plate-girder end/slope.**  S/W facings
+land at IoU 0.81-0.91 against variant 2 Start/Ramp cells while N/E
+sit at 0.66-0.76 — uniform 15-25 point gap.  Probed a 180 deg model
+rotation on the N / E facings only; those views collapse onto S/W
+views (the bridge-end abutment is approximately 4-fold symmetric
+about Z), so 180 deg is the wrong rotation.  Other model rotations
+(90 deg, 270 deg), Y-axis mirroring, and multi-blend compositions
+haven't been probed.  Concrete next move when uniformity matters:
+run `pak.diff_bridge --match` with the model rotated 90 / 180 / 270
+deg and after a Y-mirror, look for a cleaner permutation, lock it
+in if one appears.  If no rotation closes the gap, the asymmetry is
+JH-vs-upstream geometric drift the probe cannot heal — accept as
+ceiling and move on.
+
 **Climate texture not yet hex-native.**  `climate_texture` is
 vendored from upstream pak128.Britain verbatim (see
 `grounds/climate_texture.{png,dat}`) as biome-art-without-tile-

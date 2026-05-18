@@ -108,6 +108,17 @@ class Viewpoint:
     # rendered PNGs don't show (presumably hidden via a separate
     # render-time script that doesn't ship with the blend).
     strip_meshes: tuple[str, ...] = ("Sphere",)
+    # Mesh objects whose any material's name CONTAINS one of these
+    # substrings get stripped too.  Used by `bridge_square_viewpoint`
+    # to drop the way (Rail / Chair / Wood (sleepers) / Ballast /
+    # Tarmac) the JH bridge blends ship as authoring reference —
+    # the upstream Image / Start / Ramp cells are way-agnostic
+    # (magic-pink-keyed for the engine to paint the way on top), so
+    # anything carrying a way material has no business in the bridge
+    # silhouette.  Substring matching rather than full names because
+    # JH duplicates suffix-vary the same logical material across
+    # twins (`Rail.000`/`.001`/`.002`/`.003`, `Ballast`/`Ballast.001`).
+    strip_material_substrings: tuple[str, ...] = ()
 
 
 def _reload_external_textures(bpy) -> None:
@@ -501,16 +512,25 @@ class BlendAuthored:
     sun_energy: float | None = None
 
 
-def strip_scene(bpy, strip_meshes: tuple[str, ...] | set[str] = ("Sphere",)) -> BlendAuthored:
+def strip_scene(
+    bpy,
+    strip_meshes: tuple[str, ...] | set[str] = ("Sphere",),
+    strip_material_substrings: tuple[str, ...] | set[str] = (),
+) -> BlendAuthored:
     """Capture authored Camera/Sun parameters into a BlendAuthored, then
     remove the corresponding scene objects so the Viewpoint can install
     its own.  `strip_meshes` names extra mesh objects to drop on entry
     (default `("Sphere",)` -- upstream's sun-visualisation parent mesh;
-    Lamp.001 is parented to it and goes via the LIGHT branch).  Also
+    Lamp.001 is parented to it and goes via the LIGHT branch).
+    `strip_material_substrings` drops mesh objects whose any material
+    slot's name contains one of the given substrings -- the bridge
+    path uses this to remove way-material meshes (Rail/Chair/...)
+    without enumerating per-blend mesh-name variants.  Also
     consumed by `pak/bake_way.py` -- ways install their own camera +
     sun from a Projection and discard the BlendAuthored return value."""
     authored = BlendAuthored()
     strip_names = set(strip_meshes)
+    subs = tuple(strip_material_substrings)
     for obj in list(bpy.context.scene.objects):
         if obj.type == "CAMERA":
             if authored.ortho_scale is None and obj.data.type == "ORTHO":
@@ -522,6 +542,11 @@ def strip_scene(bpy, strip_meshes: tuple[str, ...] | set[str] = ("Sphere",)) -> 
                 authored.sun_energy = float(la.energy)
             bpy.data.objects.remove(obj, do_unlink=True)
         elif obj.name in strip_names:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        elif obj.type == "MESH" and subs and any(
+            ms.material and any(s in ms.material.name for s in subs)
+            for ms in obj.material_slots
+        ):
             bpy.data.objects.remove(obj, do_unlink=True)
     return authored
 
@@ -909,7 +934,8 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
 
     import numpy as np
 
-    authored = strip_scene(bpy, viewpoint.strip_meshes)
+    authored = strip_scene(bpy, viewpoint.strip_meshes,
+                           viewpoint.strip_material_substrings)
     if viewpoint.engine == "BLENDER_EEVEE":
         _reload_external_textures(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
@@ -976,7 +1002,8 @@ def _parse_args(argv):
     ap.add_argument("--name", required=True)
     ap.add_argument("--viewpoint", required=True,
                     choices=["hex", "square", "hex_building", "square_building",
-                             "fence_square", "tree_hex", "tree_square"])
+                             "fence_square", "bridge_square", "bridge_hex",
+                             "tree_hex", "tree_square"])
     ap.add_argument("--tree-grid", default=None,
                     help="AGES,SEASONS — grid size for viewpoint=tree_hex/"
                          "tree_square; SEASONS controls leaf-colour overrides "
@@ -1017,6 +1044,8 @@ def main(argv):
     from pak.viewpoints import (
         HEX_VIEWPOINT,
         SQUARE_VIEWPOINT,
+        bridge_hex_viewpoint,
+        bridge_square_viewpoint,
         building_hex_viewpoint,
         building_square_viewpoint,
         fence_square_viewpoint,
@@ -1031,6 +1060,10 @@ def main(argv):
         vp = SQUARE_VIEWPOINT
     elif args.viewpoint == "fence_square":
         vp = fence_square_viewpoint()
+    elif args.viewpoint == "bridge_square":
+        vp = bridge_square_viewpoint()
+    elif args.viewpoint == "bridge_hex":
+        vp = bridge_hex_viewpoint()
     elif args.viewpoint in ("hex_building", "square_building"):
         if not args.building_footprint:
             raise SystemExit(
