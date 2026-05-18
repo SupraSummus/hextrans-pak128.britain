@@ -15,6 +15,9 @@ docstring for the calibration story).
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
+
 import numpy as np
 
 # Upstream pak128.Britain's transparency key colour.  RGB PNGs with this
@@ -135,3 +138,96 @@ def xor_image(mask_a: np.ndarray, mask_b: np.ndarray) -> np.ndarray:
     img[only_b] = (60, 90, 230, 255)
     img[inter] = (180, 180, 180, 255)
     return img
+
+
+@dataclass(frozen=True)
+class CellMetric:
+    """Per-cell silhouette IoU + XOR pixel count + mean RGB delta.  The
+    three numbers each diff harness reports per facing / layout / (age,
+    season) cell; per-class wrappers add their own keying fields around
+    these (see `diff_upstream.FacingMetric`, `diff_trees.CellMetric`)."""
+    iou: float
+    xor_px: int
+    drgb: float
+
+
+def cell_metric(ours_rgba: np.ndarray, up_rgba: np.ndarray, *,
+                alpha_threshold: int = 0,
+                magic_rgb: tuple[int, int, int] | None = None,
+                blur_sigma: float = 0.0,
+                ) -> tuple[CellMetric, np.ndarray, np.ndarray]:
+    """Silhouette IoU + symmetric-difference pixel count + RGB delta for
+    one (ours, upstream) cell pair, plus the two silhouette masks the
+    metric was computed against.  Callers reuse the masks for the XOR
+    grid (or, in the buildings case, the IoU permutation matrix) without
+    recomputing them."""
+    our_mask = silhouette_mask(ours_rgba, alpha_threshold=alpha_threshold,
+                               magic_rgb=magic_rgb)
+    up_mask = silhouette_mask(up_rgba, alpha_threshold=alpha_threshold,
+                              magic_rgb=magic_rgb)
+    metric = CellMetric(
+        iou=iou(our_mask, up_mask),
+        xor_px=int((our_mask ^ up_mask).sum()),
+        drgb=drgb_intersection(ours_rgba, up_rgba, our_mask, up_mask,
+                               blur_sigma=blur_sigma),
+    )
+    return metric, our_mask, up_mask
+
+
+@dataclass(frozen=True)
+class GridCell:
+    """One column of a 3-row diff grid: render-pair plus the masks used
+    for the XOR row.  `label` is drawn above the column."""
+    ours_rgba: np.ndarray
+    up_rgba: np.ndarray
+    our_mask: np.ndarray
+    up_mask: np.ndarray
+    label: str
+
+
+def compose_grid(cells: list[GridCell], *,
+                 out_path: Path,
+                 strip_magic_rgb: tuple[int, int, int] | None = None,
+                 cell_px: int = 128, pad: int = 8, label_h: int = 18) -> None:
+    """Three-row diff grid (ours / upstream / silhouette-XOR) written to
+    `out_path`.  One column per `GridCell`; `label` drawn above each.
+
+    `strip_magic_rgb`: if upstream PNGs are RGB-with-key (the building
+    case), pixels matching this colour are zeroed-alpha before pasting
+    so the checker background reads through rather than rendering as
+    solid pink.  Vehicles / trees ship upstream as proper RGBA and pass
+    `None`.
+    """
+    from PIL import Image, ImageDraw
+
+    cols = len(cells)
+    rows = 3
+    w = cols * (cell_px + pad) + pad
+    h = rows * (cell_px + pad) + pad + label_h
+
+    bg = checker(cell_px)
+    grid = Image.new("RGBA", (w, h), (245, 245, 245, 255))
+    draw = ImageDraw.Draw(grid)
+
+    for i, cell in enumerate(cells):
+        x = pad + i * (cell_px + pad)
+        draw.text((x + 4, 2), cell.label, fill=(0, 0, 0, 255))
+        ours_img = Image.fromarray(cell.ours_rgba, "RGBA")
+        up_arr = cell.up_rgba
+        if strip_magic_rgb is not None:
+            up_arr = up_arr.copy()
+            r, g, b = strip_magic_rgb
+            keyed = ((up_arr[..., 0] == r)
+                     & (up_arr[..., 1] == g)
+                     & (up_arr[..., 2] == b))
+            up_arr[keyed, 3] = 0
+        up_img = Image.fromarray(up_arr, "RGBA")
+        grid.paste(Image.alpha_composite(bg, ours_img), (x, label_h + pad))
+        grid.paste(Image.alpha_composite(bg, up_img),
+                   (x, label_h + pad + cell_px + pad))
+        grid.paste(Image.fromarray(xor_image(cell.our_mask, cell.up_mask),
+                                   "RGBA"),
+                   (x, label_h + pad + 2 * (cell_px + pad)))
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    grid.save(out_path)

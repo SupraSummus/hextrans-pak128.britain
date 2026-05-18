@@ -91,44 +91,20 @@ def _render(blend_path: Path, out_dir: Path, name: str) -> None:
 
 def _compose(ours_dir: Path, up_paths: dict[str, Path], name: str, views: list[str], out_grid: Path) -> list[FacingMetric]:
     import numpy as np
-    from PIL import Image, ImageDraw
+    from PIL import Image
 
-    from pak.diff import checker, drgb_intersection, iou, silhouette_mask, xor_image
+    from pak.diff import GridCell, cell_metric, compose_grid
 
-    CELL, PAD, LH = 128, 8, 18
-    cols, rows = len(views), 3
-    W = cols * (CELL + PAD) + PAD
-    H = rows * (CELL + PAD) + PAD + LH
-
-    bg = checker(CELL)
-    grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
-    draw = ImageDraw.Draw(grid)
-
+    cells: list[GridCell] = []
     metrics: list[FacingMetric] = []
-    for i, v in enumerate(views):
-        draw.text((PAD + i * (CELL + PAD) + CELL // 2 - 6, 2), v, fill=(0, 0, 0, 255))
-        ours = Image.open(ours_dir / f"{name}_{v}.png").convert("RGBA")
-        up = Image.open(up_paths[v]).convert("RGBA")
-        x = PAD + i * (CELL + PAD)
-        grid.paste(Image.alpha_composite(bg, ours), (x, LH + PAD))
-        grid.paste(Image.alpha_composite(bg, up), (x, LH + PAD + CELL + PAD))
-        a = np.asarray(ours, dtype=np.int16)
-        b = np.asarray(up, dtype=np.int16)
+    for v in views:
+        ours = np.asarray(Image.open(ours_dir / f"{name}_{v}.png").convert("RGBA"))
+        up = np.asarray(Image.open(up_paths[v]).convert("RGBA"))
+        m, om, um = cell_metric(ours, up, alpha_threshold=16)
+        metrics.append(FacingMetric(facing=v, iou=m.iou, xor_px=m.xor_px, drgb=m.drgb))
+        cells.append(GridCell(ours, up, om, um, v))
 
-        am = silhouette_mask(a, alpha_threshold=16)
-        bm = silhouette_mask(b, alpha_threshold=16)
-        xor_px = int((am ^ bm).sum())
-        metrics.append(FacingMetric(
-            facing=v,
-            iou=iou(am, bm),
-            xor_px=xor_px,
-            drgb=drgb_intersection(a, b, am, bm),
-        ))
-        grid.paste(Image.fromarray(xor_image(am, bm), "RGBA"),
-                   (x, LH + PAD + 2 * (CELL + PAD)))
-
-    out_grid.parent.mkdir(parents=True, exist_ok=True)
-    grid.save(out_grid)
+    compose_grid(cells, out_path=out_grid)
     return metrics
 
 

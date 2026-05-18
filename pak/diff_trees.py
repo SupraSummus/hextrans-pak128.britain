@@ -76,47 +76,30 @@ def _compose(
     name: str, ages: int, seasons: int, out_grid: Path,
 ) -> list[CellMetric]:
     import numpy as np
-    from PIL import Image, ImageDraw
+    from PIL import Image
 
-    from pak.diff import checker, drgb_intersection, iou, silhouette_mask, xor_image
+    from pak.diff import GridCell, cell_metric, compose_grid
 
-    CELL, PAD, LH = 128, 8, 18
-    cols, rows = ages, seasons * 3  # ours / upstream / XOR per season
-    W = cols * (CELL + PAD) + PAD
-    H = rows * (CELL + PAD) + PAD + LH
+    if seasons != 1:
+        # Phase-1 scope is summer only (per module docstring); the
+        # multi-season grid layout (stacked 3-row blocks, one per
+        # season) isn't wired yet.  Re-introduce when the first
+        # `seasons=2` tree ports — at which point `compose_grid`
+        # itself probably wants a multi-block mode.
+        raise NotImplementedError("multi-season tree grid composition not wired")
 
-    bg = checker(CELL)
-    grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
-    draw = ImageDraw.Draw(grid)
-    for a in range(ages):
-        draw.text((PAD + a * (CELL + PAD) + CELL // 2 - 18, 2),
-                  f"age {a}", fill=(0, 0, 0, 255))
-
+    cells: list[GridCell] = []
     metrics: list[CellMetric] = []
-    for s in range(seasons):
-        for a in range(ages):
-            ours = Image.open(ours_dir / f"{name}_A{a}_S{s}.png").convert("RGBA")
-            up = Image.open(up_paths[(a, s)]).convert("RGBA")
-            col_x = PAD + a * (CELL + PAD)
-            row_y0 = LH + PAD + s * 3 * (CELL + PAD)
-            grid.paste(Image.alpha_composite(bg, ours), (col_x, row_y0))
-            grid.paste(Image.alpha_composite(bg, up), (col_x, row_y0 + CELL + PAD))
+    s = 0
+    for a in range(ages):
+        ours = np.asarray(Image.open(ours_dir / f"{name}_A{a}_S{s}.png").convert("RGBA"))
+        up = np.asarray(Image.open(up_paths[(a, s)]).convert("RGBA"))
+        m, om, um = cell_metric(ours, up, alpha_threshold=16)
+        metrics.append(CellMetric(age=a, season=s, iou=m.iou,
+                                  xor_px=m.xor_px, drgb=m.drgb))
+        cells.append(GridCell(ours, up, om, um, f"age {a}"))
 
-            a_arr = np.asarray(ours, dtype=np.int16)
-            b_arr = np.asarray(up, dtype=np.int16)
-            am = silhouette_mask(a_arr, alpha_threshold=16)
-            bm = silhouette_mask(b_arr, alpha_threshold=16)
-            metrics.append(CellMetric(
-                age=a, season=s,
-                iou=iou(am, bm),
-                xor_px=int((am ^ bm).sum()),
-                drgb=drgb_intersection(a_arr, b_arr, am, bm),
-            ))
-            grid.paste(Image.fromarray(xor_image(am, bm), "RGBA"),
-                       (col_x, row_y0 + 2 * (CELL + PAD)))
-
-    out_grid.parent.mkdir(parents=True, exist_ok=True)
-    grid.save(out_grid)
+    compose_grid(cells, out_path=out_grid)
     return metrics
 
 

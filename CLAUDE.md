@@ -798,8 +798,9 @@ layout survives even though 2.80+ dropped the
 one-shot seeder for paste-ready `materials={...}` blocks.
 
 **Diff (calibration / regression).**  `diff.py` carries the shared
-silhouette IoU / dRGB / XOR primitives; per-class harnesses
-specialise on top — `diff_upstream` (vehicles), `diff_buildings`
+silhouette IoU / dRGB / XOR primitives plus the `cell_metric` +
+`compose_grid` helpers every per-class harness composes against;
+specialisations live in `diff_upstream` (vehicles), `diff_buildings`
 (square-projection layout-permutation matrix), `diff_trees`,
 `diff_grounds` (parametric grounds via `SquareGeom`), `diff_fence`.
 `MAGIC_PINK` is the canonical transparency key; alpha threshold on

@@ -14,11 +14,23 @@ Run from the repo root:
 from __future__ import annotations
 
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
-from pak.diff import MAGIC_PINK, drgb_intersection, iou, silhouette_mask, xor_image
+from pak.diff import (
+    MAGIC_PINK,
+    GridCell,
+    cell_metric,
+    compose_grid,
+    drgb_intersection,
+    iou,
+    silhouette_mask,
+    xor_image,
+)
 
 
 class TestSilhouetteMask(unittest.TestCase):
@@ -120,6 +132,56 @@ class TestXORImage(unittest.TestCase):
         np.testing.assert_array_equal(img[0, 1], (230, 60, 60, 255))    # a only
         np.testing.assert_array_equal(img[0, 2], (60, 90, 230, 255))    # b only
         np.testing.assert_array_equal(img[0, 3], (0, 0, 0, 0))          # neither
+
+
+class TestCellMetric(unittest.TestCase):
+    def test_returns_metric_and_both_masks(self):
+        # 4x4 RGBA: identical opaque 2x2 patch at (1:3, 1:3); rest transparent.
+        a = np.zeros((4, 4, 4), dtype=np.uint8)
+        a[1:3, 1:3] = (10, 20, 30, 255)
+        b = a.copy()
+        m, am, bm = cell_metric(a, b)
+        self.assertEqual(m.iou, 1.0)
+        self.assertEqual(m.xor_px, 0)
+        self.assertEqual(am.shape, (4, 4))
+        self.assertEqual(am.sum(), 4)
+        np.testing.assert_array_equal(am, bm)
+
+
+class TestComposeGrid(unittest.TestCase):
+    """`compose_grid` is geometry-heavy (cell-count → image dims); pin
+    the shape so silent drift in a future kwarg/loop edit is caught."""
+
+    def _cell(self):
+        rgba = np.zeros((128, 128, 4), dtype=np.uint8)
+        rgba[16:48, 16:48] = (200, 100, 50, 255)
+        mask = silhouette_mask(rgba)
+        return GridCell(rgba, rgba, mask, mask, "x")
+
+    def test_image_dims_match_cell_count(self):
+        cells = [self._cell() for _ in range(3)]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "grid.png"
+            compose_grid(cells, out_path=out)
+            with Image.open(out) as img:
+                # cell_px=128, pad=8, label_h=18 →
+                #   w = 3*(128+8) + 8 = 416
+                #   h = 3*(128+8) + 8 + 18 = 434
+                self.assertEqual(img.size, (416, 434))
+
+    def test_strip_magic_rgb_does_not_mutate_caller_array(self):
+        # Buildings pass MAGIC_PINK to strip the keyed pixels before paste;
+        # the caller's array must not get clobbered (they reuse it elsewhere).
+        rgba = np.zeros((128, 128, 4), dtype=np.uint8)
+        rgba[..., :3] = MAGIC_PINK
+        rgba[..., 3] = 255
+        original = rgba.copy()
+        cell = GridCell(rgba, rgba, np.zeros((128, 128), bool),
+                        np.zeros((128, 128), bool), "x")
+        with tempfile.TemporaryDirectory() as tmp:
+            compose_grid([cell], out_path=Path(tmp) / "g.png",
+                         strip_magic_rgb=MAGIC_PINK)
+        np.testing.assert_array_equal(rgba, original)
 
 
 if __name__ == "__main__":

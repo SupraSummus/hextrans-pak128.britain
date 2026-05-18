@@ -697,16 +697,6 @@ probe in the bake driver to see if any of them carry a thinner
 small-tree silhouette upstream uses for age 0.  Soft trigger;
 the rendered atlas reads fine without it.
 
-**Tree IoU+dRGB metric is duplicated across three diff harnesses.**
-`pak/diff_trees.py`, `pak/diff_upstream.py` and `pak/diff_buildings.py`
-all compute the same per-cell silhouette IoU, XOR pixel count, and
-intersection-mean dRGB; the checker-background grid composition is
-also near-identical.  Not refactoring before a fourth diff harness
-makes the abstraction shape obvious; concrete next move when the
-shape clarifies: extract `_iou_drgb(ours_rgba, up_rgba) ->
-CellMetric` plus a `compose_grid(cells, layout_fn)` to a shared
-`pak.diff_common` module.  Soft trigger.
-
 **Tree blends missing for Pine + NorwaySpruce.**  Upstream
 `trees/tree.dat` ships four species (NorwaySpruce, EnglishOak,
 Beech, Pine).  `Pak128.Britain-blends` only carries `trees/oak.
