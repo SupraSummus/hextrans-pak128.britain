@@ -490,7 +490,7 @@ HEX_CORNER_PROJECTED_Y = [ 0,  1,  1,  0, -1, -1]
 
 # Finish the HexGeom Geom interface now that the hex tables exist.
 HexGeom.corner_world_xy = HEX_CORNER_XY
-HexGeom.corner_projected_xy = list(zip(HEX_CORNER_PROJECTED_X, HEX_CORNER_PROJECTED_Y))
+HexGeom.corner_projected_xy = list(zip(HEX_CORNER_PROJECTED_X, HEX_CORNER_PROJECTED_Y, strict=True))
 HexGeom.all_chords = HEX_ALL_CHORDS
 HexGeom.full_path = HEX_FULL_PATH
 

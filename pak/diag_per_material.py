@@ -268,8 +268,8 @@ def _print_catalog_summary(all_stats: dict[str, dict[str, list[dict]]]) -> None:
         lambda: {"contrib": 0.0, "n_assets": 0, "n_px": 0,
                  "ours_sum": [0.0, 0.0, 0.0], "up_sum": [0.0, 0.0, 0.0]}
     )
-    for asset, seasons in all_stats.items():
-        for season, stats in seasons.items():
+    for _asset, seasons in all_stats.items():
+        for _season, stats in seasons.items():
             if stats is None:
                 continue
             for r in stats:

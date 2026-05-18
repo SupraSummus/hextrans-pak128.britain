@@ -76,7 +76,7 @@ class TestBuildingViewpoints(unittest.TestCase):
         vp = building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1)
         expected = sun_rotation_for_camera(0.0)
         for f in vp.facings:
-            for got, want in zip(f.sun_rotation_euler, expected):
+            for got, want in zip(f.sun_rotation_euler, expected, strict=True):
                 self.assertAlmostEqual(got, want, places=6)
 
     def test_engine_per_viewpoint(self):

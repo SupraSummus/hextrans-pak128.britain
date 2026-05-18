@@ -56,7 +56,7 @@ def _diag_one(path: Path) -> None:
     head_chunks = list(_iter_chunks(head))
     wt_chunks = list(_iter_chunks(wt))
     print("chunks (HEAD vs working; ** = differ):")
-    for (th, lh), (tw, lw) in zip(head_chunks, wt_chunks):
+    for (th, lh), (tw, lw) in zip(head_chunks, wt_chunks, strict=False):
         mark = "**" if (th, lh) != (tw, lw) else "  "
         print(f"  {mark} {th} {lh:>8}    {tw} {lw:>8}")
     if len(head_chunks) != len(wt_chunks):
@@ -84,7 +84,7 @@ def _diag_one(path: Path) -> None:
     print(f"mean abs per-channel delta (over differing pixels): "
           f"{float(np.abs(diff[nonzero]).mean()):.3f}")
     ys, xs = np.where(nonzero)
-    for y, x in list(zip(ys, xs))[:8]:
+    for y, x in list(zip(ys, xs, strict=True))[:8]:
         print(f"  pixel ({x},{y}): HEAD={tuple(head_px[y, x])} "
               f"working={tuple(wt_px[y, x])}")
 
