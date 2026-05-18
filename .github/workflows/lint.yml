@@ -54,12 +54,20 @@ jobs:
       - name: Re-run parametric ground bakers
         run: make bake-grounds
       - name: Re-render the Blender-driven determinism sample
-        # One vehicle + one way is enough to exercise both
-        # pak/render.py and pak/bake_way.py.  Add an entry when a
-        # third pipeline shape lands, not before.
+        # One asset per pipeline shape: vehicle (pak/render.py
+        # standard atlas, Cycles), way (pak/bake_way.py Workbench),
+        # bridge (pak/bake.py per-piece render + stitch, EEVEE), and
+        # the pilot building (pak/bake.py multi-season stitching via
+        # _stitch_seasons, EEVEE).  res_1600_kg_01 is the asset the
+        # building bake was calibrated against -- exercises both the
+        # summer/winter blend pair and the materials/lighting tuned
+        # path.  Add an entry when a new pipeline shape lands, not
+        # before.
         run: |
           python3 -m trains._4wheel_1850s_first
           python3 -m ways.cssr
+          python3 -m ways.plate_girder
+          python3 -m citybuildings.res_1600_kg_01
       - name: Verify byte-identical output
         run: git diff --exit-code
       - name: Diagnose PNG drift (only on failure)

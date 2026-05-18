@@ -1082,6 +1082,11 @@ def _parse_args(argv):
     ap.add_argument("--keep-per-facing", action="store_true",
                     help="write per-facing PNGs alongside the atlas (used by diff)")
     ap.add_argument("--cols-per-row", type=int, default=None)
+    ap.add_argument("--bridge-piece", default=None,
+                    choices=["image", "start", "ramp"],
+                    help="piece kind for viewpoint=bridge_hex (image=3-axis "
+                         "span, start/ramp=6-dir endpoint); required for that "
+                         "viewpoint")
     ap.add_argument("--building-footprint", default=None,
                     help="X,Y,L,H — footprint (dims_x, dims_y, layouts, "
                          "heights) for viewpoint=hex_building or "
@@ -1133,7 +1138,11 @@ def main(argv):
     elif args.viewpoint == "bridge_square":
         vp = bridge_square_viewpoint()
     elif args.viewpoint == "bridge_hex":
-        vp = bridge_hex_viewpoint()
+        if not args.bridge_piece:
+            raise SystemExit(
+                "--viewpoint bridge_hex requires --bridge-piece image|start|ramp"
+            )
+        vp = bridge_hex_viewpoint(args.bridge_piece)
     elif args.viewpoint in ("hex_building", "square_building"):
         if not args.building_footprint:
             raise SystemExit(

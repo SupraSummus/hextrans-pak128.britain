@@ -25,17 +25,22 @@ from pathlib import Path
 
 from pak import REPO_ROOT
 from pak.dat import (
+    HEX_BRIDGE_ATLAS_COLS,
+    HEX_BRIDGE_PIECE_ORDER,
     TREE_AGE_COUNT,
+    Bridge,
     Building,
     Tree,
     Vehicle,
     Way,
+    emit_bridge,
     emit_building,
     emit_trees,
     emit_vehicles,
     emit_way,
 )
 from pak.fetch_blend import fetch
+from pak.fetch_jh_blend import fetch as fetch_jh
 from pak.materials import Material
 
 _RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
@@ -208,6 +213,124 @@ def bake_way_main(spec: Way, file: str) -> Path:
     """
     path = Path(file).resolve()
     return bake_way(spec, basename=path.stem, out_dir=path.parent)
+
+
+def _bridge_piece_blends(spec: Bridge) -> dict[str, str]:
+    """Resolve `(piece, blend_path)` for every piece in
+    `HEX_BRIDGE_PIECE_ORDER`.  All three pieces are required today;
+    partial coverage (span-only / start-only) isn't supported until
+    a real asset needs it."""
+    blends = {
+        "image": spec.blend_image,
+        "start": spec.blend_start,
+        "ramp":  spec.blend_ramp,
+    }
+    missing = [p for p in HEX_BRIDGE_PIECE_ORDER if blends[p] is None]
+    if missing:
+        raise ValueError(
+            f"Bridge SPEC missing piece blends: {missing} "
+            f"(need blend_image, blend_start, blend_ramp)"
+        )
+    return blends
+
+
+def _render_bridge_piece(
+    *, blend: str, name: str, out_dir: Path, piece: str,
+) -> Path:
+    """Render one piece blend through `bridge_hex_viewpoint(piece)`
+    into `<out_dir>/<name>.png` and return the path.  One blender
+    subprocess per call."""
+    blend_path = fetch_jh(blend)
+    cmd = [
+        "blender", "-b", str(blend_path),
+        "--python-exit-code", "1",
+        "-P", str(_RENDER_SCRIPT),
+        "--",
+        "--out", str(out_dir),
+        "--name", name,
+        "--viewpoint", "bridge_hex",
+        "--bridge-piece", piece,
+    ]
+    print("$", " ".join(cmd), flush=True)
+    subprocess.run(cmd, check=True)
+    return out_dir / f"{name}.png"
+
+
+def _stitch_bridge_atlas(
+    piece_pngs: dict[str, Path],
+    out_path: Path,
+) -> None:
+    """Stitch per-piece single-row PNGs into the canonical hex bridge
+    atlas at `out_path`.  Rows follow `HEX_BRIDGE_PIECE_ORDER` (image
+    on top); each row is padded to `HEX_BRIDGE_ATLAS_COLS` cells wide
+    so the narrower image row's 3 axis cells land flush-left with the
+    trailing cells transparent."""
+    from PIL import Image
+    sizes = {Image.open(p).size for p in piece_pngs.values()}
+    heights = {h for _, h in sizes}
+    if len(heights) != 1:
+        raise RuntimeError(
+            f"bridge piece PNGs have mismatched cell heights: {sorted(sizes)}"
+        )
+    # All renders are square `DEFAULT_W`-sized cells; one row's height
+    # equals one cell's edge length.
+    (cell,) = heights
+    atlas = Image.new(
+        "RGBA",
+        (HEX_BRIDGE_ATLAS_COLS * cell, len(HEX_BRIDGE_PIECE_ORDER) * cell),
+        (0, 0, 0, 0),
+    )
+    for row, piece in enumerate(HEX_BRIDGE_PIECE_ORDER):
+        atlas.paste(Image.open(piece_pngs[piece]).convert("RGBA"),
+                    (0, row * cell))
+    atlas.save(out_path)
+
+
+def bake_bridge(spec: Bridge, *, basename: str, out_dir: Path) -> Path:
+    """Fetch the piece blends, render the hex bridge atlas, emit the
+    dat.
+
+    Per-piece renders (`<basename>__<piece>.png`) go through
+    `bridge_hex_viewpoint(piece)` -- 3 facings for the image span,
+    6 each for start / ramp endpoints -- then `_stitch_bridge_atlas`
+    composes them into `<out_dir>/<basename>.png` matching
+    `pak.dat.emit_bridge`'s row formula (image / start / ramp).
+
+    See TODO.md -> "Hex bridge cell coverage" for the depth-clipped
+    Back/Front, variant 2 + season 1, and engine-schema follow-ups
+    visible in the emitted dat.  Returns the dat path.
+    """
+    piece_blends = _bridge_piece_blends(spec)
+    piece_pngs: dict[str, Path] = {}
+    for piece, blend in piece_blends.items():
+        piece_name = f"{basename}__{piece}"
+        piece_pngs[piece] = _render_bridge_piece(
+            blend=blend, name=piece_name, out_dir=out_dir, piece=piece,
+        )
+
+    _stitch_bridge_atlas(piece_pngs, out_dir / f"{basename}.png")
+    for p in piece_pngs.values():
+        p.unlink()
+
+    out_dat = emit_bridge(spec, out_dir=out_dir, basename=basename)
+    try:
+        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
+    except ValueError:
+        print(f"wrote {out_dat}", flush=True)
+    return out_dat
+
+
+def bake_bridge_main(spec: Bridge, file: str) -> Path:
+    """Convenience for single-bridge bake scripts.
+
+    Derives `out_dir` and `basename` from the calling script's
+    `__file__`, so each bake script's bottom collapses to:
+
+        if __name__ == "__main__":
+            bake_bridge_main(SPEC, __file__)
+    """
+    path = Path(file).resolve()
+    return bake_bridge(spec, basename=path.stem, out_dir=path.parent)
 
 
 def _render_building_season(

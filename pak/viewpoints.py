@@ -339,25 +339,66 @@ def building_square_viewpoint(
     )
 
 
-def bridge_hex_viewpoint() -> Viewpoint:
-    """Hex Viewpoint for the JH bridge blends — quick-and-dirty port of
-    `bridge_square_viewpoint` onto the hex camera + hex shear.
+# Model rotation per hex bridge label.  Default model heading is
+# south (rot z=0); each label rotates the model so the named edge
+# faces the hex camera.  Both image (axis) and start/ramp (dir)
+# labels live in this one table so adding a label updates one place.
+# Pulled per-piece below via `HEX_BRIDGE_PIECE_LABELS` from
+# `pak.dat` -- single source of truth for label set + order.
+_HEX_BRIDGE_MODEL_ROT_DEG: dict[str, float] = {
+    # Axes: 3 orientations 60deg apart (axial -- which end is near
+    # doesn't matter, model symmetry handles the flip).
+    "n_s":     0.0,
+    "ne_sw":  60.0,
+    "nw_se": 120.0,
+    # Directions: 6 orientations 60deg apart.
+    "n":  180.0,
+    "ne": 240.0,
+    "se": 300.0,
+    "s":    0.0,
+    "sw":  60.0,
+    "nw": 120.0,
+}
 
-    Renders all 8 hex facings (S/SW/W/NW/N/NE/E/SE) through the
-    project's standard hex camera with the same way-material strip
-    rules as the square probe.  Bridge geometry is z-shifted up by
-    `HEX_HEIGHT_LEVEL_WORLD_Z` so the deck sits where the engine
-    expects elevated way geometry — same shift `building_hex_viewpoint`
-    uses for the `height` axis.  No cell-anchoring beyond that yet;
-    this is "show what the blend looks like under hex projection",
-    not a calibrated bridge bake.
+
+def bridge_hex_viewpoint(piece: str) -> Viewpoint:
+    """Hex Viewpoint for a JH bridge piece blend (image / start / ramp).
+
+    `piece` selects which label set from `HEX_BRIDGE_PIECE_LABELS` to
+    render -- 3 axial for `image`, 6 directional for `start` / `ramp`.
+    Per-label model rotation comes from `_HEX_BRIDGE_MODEL_ROT_DEG`;
+    the camera, sun and projection match `HEX_VIEWPOINT`.  Per-piece
+    JH blends (`ways/<family>/{straight,end,slope}.blend`) drop in
+    directly.
+
+    Way material substrings (`Rail` / `Chair` / `Wood` / `Ballast` /
+    `Tarmac`) and the JH backdrop planes (`Plane.005` / `Plane.007`)
+    are stripped on entry -- same set as the square calibration
+    viewpoint.  Depth-clipped Back/Front separation is not yet
+    implemented; `pak.bake.bake_bridge` emits Back and Front pointing
+    at the same atlas cell (see TODO.md -> "Hex bridge cell coverage").
+
+    EEVEE rasteriser + authored-sun (`sun_energy=None`, the blend's
+    own value) scaled by `_BI_TO_EEVEE_SUN_SCALE`, matching the
+    buildings path.  Bridges are static structural assets in the
+    same calibration regime as buildings (upstream BI authoring,
+    PBR substitution under EEVEE), and EEVEE is byte-stable across
+    CI runners where Cycles drifts on AVX2 transcendentals / embree
+    -- see CLAUDE.md -> "CI" -> "Lint" for the engine-choice
+    rationale.
     """
+    from pak.dat import HEX_BRIDGE_PIECE_LABELS
+    if piece not in HEX_BRIDGE_PIECE_LABELS:
+        raise ValueError(
+            f"bridge_hex_viewpoint: piece must be one of "
+            f"{sorted(HEX_BRIDGE_PIECE_LABELS)}, got {piece!r}"
+        )
     return Viewpoint(
-        name="bridge_hex",
+        name=f"bridge_hex_{piece}",
         image_width=DEFAULT_W,
         ortho_scale=2.0 * HEX_TILE_RADIUS,
-        sun_energy=_SUN_ENERGY,
-        sun_energy_scale=1.0,
+        sun_energy=None,
+        sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE,
         fit_kind="hex",
         extrinsic=hex_proj_shear(),
         facings=[
@@ -365,11 +406,12 @@ def bridge_hex_viewpoint() -> Viewpoint:
                 label=label,
                 camera_location=_HEX_CAM_LOC,
                 camera_rotation_euler=_HEX_CAM_ROT,
-                sun_rotation_euler=_HEX_SUN_ROT,
-                model_rot_z_deg=rot,
+                sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
+                model_rot_z_deg=_HEX_BRIDGE_MODEL_ROT_DEG[label],
             )
-            for label, rot in _HEX_FACINGS
+            for label in HEX_BRIDGE_PIECE_LABELS[piece]
         ],
+        engine="BLENDER_EEVEE",
         strip_meshes=("Sphere", "Plane.005", "Plane.007"),
         strip_material_substrings=(
             "Rail", "Chair", "Wood", "Ballast", "Tarmac",

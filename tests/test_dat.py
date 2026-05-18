@@ -16,11 +16,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from pak.dat import (
+    HEX_BRIDGE_PIECE_LABELS,
+    HEX_BRIDGE_PIECE_ORDER,
     TREE_AGE_COUNT,
+    Bridge,
     Building,
     Tree,
     Vehicle,
     Way,
+    emit_bridge,
     emit_building,
     emit_trees,
     emit_vehicles,
@@ -28,6 +32,7 @@ from pak.dat import (
     iter_building_cells,
     layouts_default,
     parse,
+    port_bridge,
     port_building,
     port_vehicle,
     port_way,
@@ -337,6 +342,129 @@ class TestPortWay(unittest.TestCase):
     def test_rejects_non_way_obj(self):
         with self.assertRaisesRegex(ValueError, "not obj=way"):
             port_way([("obj", "vehicle"), ("name", "X")])
+
+
+class TestEmitBridge(unittest.TestCase):
+    def _emit(self, b: Bridge) -> str:
+        with TemporaryDirectory() as d:
+            emit_bridge(b, out_dir=Path(d), basename="x")
+            return (Path(d) / "x.dat").read_text()
+
+    def test_minimal_skips_none(self):
+        text = self._emit(Bridge(name="A", waytype="track"))
+        lines = text.splitlines()
+        self.assertEqual(lines[0], "obj=bridge")
+        self.assertEqual(lines[1], "name=A")
+        self.assertEqual(lines[2], "waytype=track")
+        # Unset scalars are skipped; the only body lines before the
+        # first image ref are the stub icon/cursor (emit_bridge fills
+        # them in when the SPEC left them None).
+        body = lines[3:lines.index("BackImage[n_s][0]=./x.0.0")]
+        self.assertEqual(body, ["icon=./x.0.0", "cursor=./x.1.0"])
+
+    def test_emits_back_and_front_for_each_label(self):
+        text = self._emit(Bridge(name="A", waytype="track"))
+        for row, piece in enumerate(HEX_BRIDGE_PIECE_ORDER):
+            key = piece.capitalize()  # image -> Image, start -> Start, ramp -> Ramp
+            for col, label in enumerate(HEX_BRIDGE_PIECE_LABELS[piece]):
+                cell = f"./x.{row}.{col}"
+                self.assertIn(f"Back{key}[{label}][0]={cell}\n", text)
+                self.assertIn(f"Front{key}[{label}][0]={cell}\n", text)
+        # Sanity on the totals: every label has both a Back and Front
+        # line, no extras.
+        total_labels = sum(len(v) for v in HEX_BRIDGE_PIECE_LABELS.values())
+        self.assertEqual(text.count("[0]=./x."), 2 * total_labels)
+
+    def test_emits_set_scalars_in_field_order(self):
+        text = self._emit(Bridge(
+            name="X", waytype="track",
+            intro_year=1890, topspeed=160,
+            cost=2760000, pillar_distance=2,
+        ))
+        prefixes = [l.split("=")[0] for l in text.splitlines()[:6]]
+        # Field order in the dataclass: name, waytype, ..., intro_year,
+        # ..., topspeed, ..., cost, ..., pillar_distance.
+        self.assertEqual(prefixes, ["obj", "name", "waytype",
+                                    "intro_year", "topspeed", "cost"])
+
+    def test_icon_and_cursor_overrides_keep_spec_value(self):
+        text = self._emit(Bridge(name="A", waytype="track",
+                                 icon="./custom.9.9", cursor="./other.8.8"))
+        self.assertIn("icon=./custom.9.9", text)
+        self.assertIn("cursor=./other.8.8", text)
+
+
+class TestPortBridge(unittest.TestCase):
+    def test_round_trips_through_seed_python(self):
+        original = Bridge(
+            name="PlateGirder", waytype="track", copyright="kieron/James",
+            intro_year=1890, intro_month=9,
+            retire_year=1949, retire_month=1,
+            topspeed=160, max_weight=400, max_length=4,
+            cost=2760000, maintenance=100,
+            has_own_way_graphics=0,
+            pillar_distance=2, pillar_asymmetric=1,
+        )
+        src = seed_python(original)
+        roundtripped = eval(src, {"Bridge": Bridge})
+        self.assertEqual(roundtripped, original)
+
+    def test_drops_upstream_image_refs(self):
+        # Upstream Back/FrontImage / Start / Ramp and the variant-2
+        # cousins (BackImage2 etc.) must not surface as kwargs
+        # (would TypeError on construction).
+        entries = [
+            ("obj", "bridge"), ("name", "X"), ("waytype", "track"),
+            ("BackImage[NS][0]",  "./images/x.0.5,0,32"),
+            ("FrontStart[E][1]",  "./images/x-snow.1.1,0,32"),
+            ("BackRamp[N][0]",    "./images/x.0.6"),
+            ("BackImage2[EW][0]", "./images/x.2.4,0,32"),
+            ("backPillar[S][0]",  "./images/x.4.3"),
+        ]
+        b = port_bridge(entries)
+        self.assertEqual(b.name, "X")
+
+    def test_drops_icon_and_cursor_on_port(self):
+        # Same convention as port_way: upstream icon/cursor cells live
+        # under the stripped images/ dir; emit_bridge fills in stub
+        # refs pointing at existing atlas cells.
+        entries = [
+            ("obj", "bridge"), ("name", "X"), ("waytype", "track"),
+            ("icon", "> ./images/x.4.0"),
+            ("cursor", "./images/x.4.1"),
+        ]
+        b = port_bridge(entries)
+        self.assertIsNone(b.icon)
+        self.assertIsNone(b.cursor)
+        with TemporaryDirectory() as d:
+            text = emit_bridge(b, out_dir=Path(d), basename="x").read_text()
+        self.assertIn("icon=./x.0.0", text)
+        self.assertIn("cursor=./x.1.0", text)
+        self.assertNotIn("images/", text)
+
+    def test_harvests_engine_scalars(self):
+        # Lift directly from the upstream plate-girder.dat shape -- the
+        # exact field set port_bridge needs to harvest for a paste-
+        # ready SPEC.  Casing varies in upstream dats; lookup is case-
+        # insensitive.
+        entries = [
+            ("obj", "bridge"), ("Name", "PlateGirder"),
+            ("waytype", "track"), ("copyright", "kieron/James"),
+            ("intro_year", "1890"), ("retire_year", "1949"),
+            ("topspeed", "160"), ("max_weight", "400"),
+            ("cost", "2760000"), ("maintenance", "100"),
+            ("pillar_distance", "2"), ("pillar_asymmetric", "1"),
+            ("has_own_way_graphics", "0"),
+        ]
+        b = port_bridge(entries)
+        self.assertEqual(b.name, "PlateGirder")
+        self.assertEqual(b.topspeed, 160)
+        self.assertEqual(b.cost, 2760000)
+        self.assertEqual(b.pillar_asymmetric, 1)
+
+    def test_rejects_non_bridge_obj(self):
+        with self.assertRaisesRegex(ValueError, "not obj=bridge"):
+            port_bridge([("obj", "way"), ("name", "X")])
 
 
 class TestBuildingFootprint(unittest.TestCase):

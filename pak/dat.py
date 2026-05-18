@@ -74,6 +74,40 @@ _HEX_FACINGS: tuple[str, ...] = ("S", "SW", "W", "NW", "N", "NE", "E", "SE")
 _HEX_WAY_LABELS: tuple[str, ...] = ("-",) + tuple(label for label, _ in HEX_ENTRIES)
 _HEX_WAY_ATLAS_COLS: int = 8
 
+# Hex bridge atlas layout.  Single source of truth shared with
+# `pak.bake.bake_bridge` (stitches piece renders to match) and
+# `pak.viewpoints.bridge_hex_viewpoint` (rotates the model to render
+# each label).  Drift across the three modules surfaces in-engine as
+# wrong-axis or wrong-direction sprites.
+#
+# Three piece kinds, one row each:
+#
+# * `image` (BackImage / FrontImage) is *axial* — a straight span
+#   connects two opposite hex edges, so 3 distinct orientations:
+#       n_s     N edge <-> S edge
+#       ne_sw   NE edge <-> SW edge
+#       nw_se   NW edge <-> SE edge
+# * `start` (BackStart / FrontStart) — abutment at one of the 6 hex
+#   edges; 6 cells in `pak.way.SLOPE_HEX_ENTRIES` order (cw from N).
+# * `ramp` (BackRamp / FrontRamp) — ramp at one of the 6 hex edges;
+#   same 6 labels as start.
+#
+# Atlas: row 0 image (cols 0..2; cols 3..5 transparent), row 1 start
+# (cols 0..5), row 2 ramp (cols 0..5).  The hex-engine bridge schema
+# is unverified -- hex `bridge_writer.cc` is the authoritative key
+# source; tokens here are translated from upstream's square
+# [NS]/[EW] / [N]/[S]/[E]/[W] keys (see TODO.md -> "Hex bridge cell
+# coverage").
+HEX_BRIDGE_PIECE_ORDER: tuple[str, ...] = ("image", "start", "ramp")
+HEX_BRIDGE_PIECE_LABELS: dict[str, tuple[str, ...]] = {
+    "image": ("n_s", "ne_sw", "nw_se"),
+    "start": ("n", "ne", "se", "s", "sw", "nw"),
+    "ramp":  ("n", "ne", "se", "s", "sw", "nw"),
+}
+HEX_BRIDGE_ATLAS_COLS: int = max(
+    len(labels) for labels in HEX_BRIDGE_PIECE_LABELS.values()
+)
+
 
 def _list_field(*, dat_key: str | None = None) -> Any:
     """Indexed-list field with an optional dat-key override.
@@ -268,6 +302,79 @@ class Way:
 
 _WAY_FIELDS_SCALAR: tuple[str, ...] = tuple(
     f.name for f in fields(Way) if not f.metadata.get("bake_meta")
+)
+
+
+@dataclass
+class Bridge:
+    """A `obj=bridge` definition.  Fields cover the upstream Britain
+    schema (`plate-girder.dat` shape: gameplay scalars + per-direction
+    per-variant per-season Back/Front Image / Start / Ramp cells).
+    Image refs are derived from the baked hex bridge atlas at emit
+    time -- SPECs hold gameplay data + the three piece-blend paths
+    only.
+
+    The hex bridge bake renders three JH-sourced blends -- one per
+    piece kind (image span, start abutment, ramp) -- through
+    `bridge_hex_viewpoint(piece)`, stitches the per-piece atlases
+    into one `<basename>.png` (see `_HEX_BRIDGE_*` above), and writes
+    image refs against that layout.  Only variant-1 (no `2` suffix)
+    and season 0 are emitted on the first pass; variant 2,
+    snow / season 1 and depth-clipped Front cells are deferred -- see
+    TODO.md -> "Hex bridge cell coverage" for the follow-up list.
+
+    Order of fields = canonical emit order.  Unset scalars (`None`)
+    are skipped on emit.
+    """
+    # Required
+    name: str
+    waytype: str
+
+    # Identity / metadata
+    copyright: str | None = None
+
+    # Lifecycle
+    intro_year: int | None = None
+    intro_month: int | None = None
+    retire_year: int | None = None
+    retire_month: int | None = None
+
+    # Performance / load
+    topspeed: int | None = None
+    max_weight: int | None = None
+    max_length: int | None = None
+
+    # Economics
+    cost: int | None = None
+    maintenance: int | None = None
+
+    # Engine behaviour
+    has_own_way_graphics: int | None = None
+    pillar_distance: int | None = None
+    pillar_asymmetric: int | None = None
+
+    # Toolbar / placement.  Defaulted to existing atlas cells in
+    # `emit_bridge` when unset, matching the `Way` convention --
+    # `bridge_builder_t::lookup` picks the bridge up as a buildable
+    # default rather than failing on a missing icon ref.
+    icon: str | None = None
+    cursor: str | None = None
+
+    # Bake-pipeline metadata.  Not emitted into the dat.  Three blend
+    # paths -- one per piece kind -- because JH ships the plate-
+    # girder family as three separate `.blend` files
+    # (straight / end / slope); `bake_bridge` renders each through
+    # `bridge_hex_viewpoint(piece)` and stitches the per-piece atlases
+    # into one PNG.  All three are required; partial families need a
+    # `_bridge_piece_blends` change first.
+    blend_image: str | None = _bake_meta()
+    blend_start: str | None = _bake_meta()
+    blend_ramp: str | None = _bake_meta()
+    upstream_stem: str | None = _bake_meta()
+
+
+_BRIDGE_FIELDS_SCALAR: tuple[str, ...] = tuple(
+    f.name for f in fields(Bridge) if not f.metadata.get("bake_meta")
 )
 
 
@@ -601,6 +708,54 @@ def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
     return out_path
 
 
+# dat-key prefix per piece kind -- the engine reads e.g.
+# `BackImage[<axis>][<season>]` for image, `BackRamp[<dir>][<season>]`
+# for ramp.  Capitalisation matches upstream's plate-girder.dat.
+_HEX_BRIDGE_PIECE_KEYS: dict[str, str] = {
+    "image": "Image",
+    "start": "Start",
+    "ramp":  "Ramp",
+}
+
+
+def emit_bridge(bridge: Bridge, *, out_dir: Path, basename: str) -> Path:
+    """Write `<out_dir>/<basename>.dat` from a Bridge.
+
+    Emits every set scalar plus, per piece in `HEX_BRIDGE_PIECE_ORDER`,
+    one `Back<Key>[<label>][0]` and one `Front<Key>[<label>][0]` per
+    label in `HEX_BRIDGE_PIECE_LABELS[piece]`.  Front points at the
+    same atlas cell as Back -- depth-clipped slicing is deferred, so
+    the bridge silhouette is fully opaque over crossing vehicles
+    until then (TODO.md -> "Hex bridge cell coverage").
+
+    The PNG must live at `<out_dir>/<basename>.png` and match the
+    canonical hex bridge atlas layout (`HEX_BRIDGE_*` above) --
+    `pak.bake.bake_bridge` is the producer.  Returns the dat path.
+    """
+    bridge = replace(
+        bridge,
+        cursor=bridge.cursor or f"./{basename}.1.0",
+        icon=bridge.icon or f"./{basename}.0.0",
+    )
+    lines: list[str] = ["obj=bridge"]
+    for name in _BRIDGE_FIELDS_SCALAR:
+        v = getattr(bridge, name)
+        if v is not None:
+            lines.append(f"{name}={v}")
+
+    for row, piece in enumerate(HEX_BRIDGE_PIECE_ORDER):
+        key = _HEX_BRIDGE_PIECE_KEYS[piece]
+        for col, label in enumerate(HEX_BRIDGE_PIECE_LABELS[piece]):
+            cell = f"./{basename}.{row}.{col}"
+            lines.append(f"Back{key}[{label}][0]={cell}")
+            lines.append(f"Front{key}[{label}][0]={cell}")
+    lines.append("----------")
+
+    out_path = out_dir / f"{basename}.dat"
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
 def emit_trees(
     trees: list[Tree], *, out_dir: Path, basename: str,
     age_overrides: dict[tuple[int, int], tuple[int, int]] | None = None,
@@ -860,6 +1015,51 @@ def port_way(object_entries: list[tuple[str, str]]) -> Way:
             kwargs[kl] = _coerce(v)
 
     return Way(**kwargs)
+
+
+_BRIDGE_PORT_DROP_PREFIXES: tuple[str, ...] = (
+    "backimage", "frontimage", "backstart", "frontstart",
+    "backramp", "frontramp", "backpillar", "frontpillar",
+)
+
+
+def port_bridge(object_entries: list[tuple[str, str]]) -> Bridge:
+    """Convert one parsed upstream `obj=bridge` object to a `Bridge`.
+
+    Seeder for new bridge bakes -- produces a paste-ready
+    `Bridge(...)` source via `seed_python`.  Harvests every scalar
+    `Bridge` field the upstream dat sets; per-cell image refs
+    (`BackImage[...]`, `FrontStart[...]`, etc., and their `2`-suffixed
+    variant cousins) are dropped -- the hex bake re-emits them from
+    its own atlas.  `icon` / `cursor` are also dropped (upstream's
+    values point at `./images/<name>.X.Y` cells stripped from
+    history); `emit_bridge` defaults them to existing atlas cells
+    so the bridge picks up as a buildable default.
+
+    Variant-2 keys (`BackImage2`, etc.) are dropped on the same
+    prefix-match -- only one variant is bake-side modelled yet.
+    """
+    lookup = {k.lower(): v for k, v in object_entries}
+    if lookup.get("obj", "").lower() != "bridge":
+        raise ValueError(f"not obj=bridge: {lookup.get('obj')!r}")
+
+    scalars = set(_BRIDGE_FIELDS_SCALAR)
+    kwargs: dict = {}
+    for k, v in object_entries:
+        kl = k.lower()
+        prefix = kl.split("[", 1)[0]
+        # Drop image refs (`backimage`, `backimage2`, `frontstart`, …)
+        # uniformly by prefix-rstrip-digits -- variant-2 cousins differ
+        # only by a trailing `2` we want to ignore.
+        prefix_no_variant = prefix.rstrip("0123456789")
+        if prefix_no_variant in _BRIDGE_PORT_DROP_PREFIXES:
+            continue
+        if kl in ("icon", "cursor"):
+            continue
+        if kl in scalars and not _INDEX_RE.search(k):
+            kwargs[kl] = _coerce(v)
+
+    return Bridge(**kwargs)
 
 
 def _harvest_indexed(entries: list[tuple[str, str]], base: str) -> list[str]:
