@@ -82,6 +82,15 @@ def _resolve_building_layouts(spec: Building) -> Building:
     return replace(spec, layouts=hex_layouts_default(spec.dims_x, spec.dims_y))
 
 
+def _print_wrote(out_dat: Path) -> None:
+    """`wrote <path>` line, repo-relative when possible (tests bake to tmp dirs)."""
+    try:
+        rel = out_dat.relative_to(REPO_ROOT)
+    except ValueError:
+        rel = out_dat
+    print(f"wrote {rel}", flush=True)
+
+
 def _shared_blend(specs: list, basename: str) -> str:
     """Return the single `blend` path shared across a SPECS list.
 
@@ -140,20 +149,12 @@ def bake_vehicle(
     subprocess.run(cmd, check=True)
 
     out_dat = emit_vehicles(specs, out_dir=out_dir, basename=basename)
-    try:
-        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
-    except ValueError:
-        print(f"wrote {out_dat}", flush=True)
+    _print_wrote(out_dat)
     return out_dat
 
 
 def bake_main(spec: Vehicle | list[Vehicle], file: str) -> Path:
-    """Convenience for bake scripts that render one blend per script.
-
-    Derives `out_dir` and `basename` from the calling script's
-    `__file__`.  Accepts either a single `Vehicle` (`SPEC`) or a
-    list (`SPECS` for shared-sprite variants).
-    """
+    """`bake_vehicle` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_vehicle(spec, basename=path.stem, out_dir=path.parent)
 
@@ -195,22 +196,12 @@ def bake_way(spec: Way, *, basename: str, out_dir: Path) -> Path:
     subprocess.run(cmd, check=True)
 
     out_dat = emit_way(spec, out_dir=out_dir, basename=basename)
-    try:
-        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
-    except ValueError:
-        print(f"wrote {out_dat}", flush=True)
+    _print_wrote(out_dat)
     return out_dat
 
 
 def bake_way_main(spec: Way, file: str) -> Path:
-    """Convenience for single-way bake scripts.
-
-    Derives `out_dir` and `basename` from the calling script's
-    `__file__`, so each bake script's bottom collapses to:
-
-        if __name__ == "__main__":
-            bake_way_main(SPEC, __file__)
-    """
+    """`bake_way` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_way(spec, basename=path.stem, out_dir=path.parent)
 
@@ -313,22 +304,12 @@ def bake_bridge(spec: Bridge, *, basename: str, out_dir: Path) -> Path:
         p.unlink()
 
     out_dat = emit_bridge(spec, out_dir=out_dir, basename=basename)
-    try:
-        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
-    except ValueError:
-        print(f"wrote {out_dat}", flush=True)
+    _print_wrote(out_dat)
     return out_dat
 
 
 def bake_bridge_main(spec: Bridge, file: str) -> Path:
-    """Convenience for single-bridge bake scripts.
-
-    Derives `out_dir` and `basename` from the calling script's
-    `__file__`, so each bake script's bottom collapses to:
-
-        if __name__ == "__main__":
-            bake_bridge_main(SPEC, __file__)
-    """
+    """`bake_bridge` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_bridge(spec, basename=path.stem, out_dir=path.parent)
 
@@ -444,10 +425,7 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
             p.unlink()
 
     out_dat = emit_building(spec, out_dir=out_dir, basename=basename)
-    try:
-        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
-    except ValueError:
-        print(f"wrote {out_dat}", flush=True)
+    _print_wrote(out_dat)
     return out_dat
 
 
@@ -499,10 +477,7 @@ def bake_tree(
         specs, out_dir=out_dir, basename=basename,
         age_overrides=clamp_age_overrides(seasons=seasons, ages=ages),
     )
-    try:
-        print(f"wrote {out_dat.relative_to(REPO_ROOT)}", flush=True)
-    except ValueError:
-        print(f"wrote {out_dat}", flush=True)
+    _print_wrote(out_dat)
     return out_dat
 
 
@@ -530,14 +505,7 @@ def bake_tree_main(
     ages: int = 4,
     viewpoint: str = "tree_hex",
 ) -> Path:
-    """Convenience for single-tree bake scripts.
-
-    Derives `out_dir` and `basename` from the calling script's
-    `__file__`, so each bake script's bottom collapses to:
-
-        if __name__ == "__main__":
-            bake_tree_main(SPEC, __file__)
-    """
+    """`bake_tree` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_tree(
         spec, basename=path.stem, out_dir=path.parent,
@@ -546,13 +514,6 @@ def bake_tree_main(
 
 
 def bake_building_main(spec: Building, file: str) -> Path:
-    """Convenience for single-building bake scripts.
-
-    Derives `out_dir` and `basename` from the calling script's
-    `__file__`, so each bake script's bottom collapses to:
-
-        if __name__ == "__main__":
-            bake_building_main(SPEC, __file__)
-    """
+    """`bake_building` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_building(spec, basename=path.stem, out_dir=path.parent)

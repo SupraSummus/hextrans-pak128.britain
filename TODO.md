@@ -176,26 +176,6 @@ sidecar is open but on hold (legacy-renderer dependency we'd
 rather not carry -- see "Pixel-perfect building match needs UVs"
 for the framing).
 
-**Building square-projection diff has a ~1px AA-filter residual.**
-The silhouette XOR row shows a ~1px column of ours-only red at the
-building's left edge across L0/L1/L2 and on the right edge for L3.
-Traced to its source: by projecting every visible mesh vertex of
-`res_1600_kg_01` analytically through each cardinal camera and
-comparing against (a) our render's silhouette bbox and (b) the
-upstream PNG's silhouette bbox, our render lands within sub-pixel
-of analytical (e.g. S cardinal analytic left=0.64, our render
-left=pixel 0) while upstream's left is at pixel 1 -- consistently
-1 px right of analytical across all four cardinals.  Our silhouette
-is 128 px wide; upstream's is 127 px wide.  Almost certainly the
-saved `filtertype=2, gauss=1.5` Gaussian AA filter in upstream's
-.blend (BI's edge-eating filter at 1.5 px width) contracting
-upstream's silhouette by ~0.5 px on each side; EEVEE's TAA at 8
-samples doesn't.  Closing it requires running BI 2.79b (the
-legacy-renderer-debt path we've ruled out) or replicating BI's
-Gaussian filter footprint in EEVEE post-process.  Filed as a known
-residual; no concrete next move planned -- the diff harness is a
-regression check on our own pipeline, not a calibration target.
-
 **Per-material dRGB attribution surfaced two systematic gaps.**
 `pak.diag_per_material --all` (added this session) aggregates by
 material name across the catalog and reveals the dominant
