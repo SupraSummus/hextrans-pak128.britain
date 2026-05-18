@@ -55,6 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pak import REPO_ROOT
+from pak.dat import building_footprint_centroid
 from pak.diff import MAGIC_PINK, cell_metric, drgb_intersection, iou, silhouette_mask
 
 HERE = Path(__file__).resolve().parent
@@ -199,44 +200,63 @@ def _upstream_dat_path(upstream_stem: str) -> str:
 
 
 # Simutrans Standard dimetric tile lattice: koord +x heads SE on screen,
-# koord +y heads SW.  Multi-tile cells (y, x) place at this offset around
-# the building's koord (0, 0) origin.
-def _sq_tile_screen_offset(x: int, y: int) -> tuple[int, int]:
-    return (64 * x - 64 * y, 32 * x + 32 * y)
+# koord +y heads SW.  Multi-tile cells place at this offset around the
+# building's koord (0, 0) origin.  Accepts floats so per-layout centroid
+# shifts can use the same formula.
+def _sq_tile_screen_offset(x: float, y: float) -> tuple[float, float]:
+    return (64.0 * x - 64.0 * y, 32.0 * x + 32.0 * y)
 
 
 # Per-layout square_building canvas size.  Camera looks at world origin,
-# so world (0, 0, 0) lands at the canvas centre; tile (0, 0)'s cell
-# centre sits at the same place, and other tiles fan out per
-# `_sq_tile_screen_offset`.
+# so world (0, 0, 0) -- the blend footprint centroid by the Britain
+# contributing-graphics spec -- lands at the canvas centre.  The
+# building's tiles fan out around that point per the engine paint
+# convention encoded by `_tile_topleft`.
 _SQ_CANVAS_W = _SQ_CANVAS_H = 512
 _SQ_CANVAS_ORIGIN = (_SQ_CANVAS_W // 2, _SQ_CANVAS_H // 2)
 
 
-def _tile_topleft(x: int, y: int) -> tuple[int, int]:
-    """Top-left pixel of tile (y, x)'s 128×128 cell on the layout canvas."""
+# Pixel position of the tile's z=0 ground anchor within its 128×128 cell.
+# Simutrans dimetric convention: ground sits at (64, 96) -- bottom of
+# the diamond -- NOT cell centre.  Anchoring upstream cells at the
+# ground point (rather than cell centre) matches where the engine
+# paints them.
+_CELL_GROUND_ANCHOR = (64, 96)
+
+
+def _tile_topleft(x: int, y: int,
+                  centroid_xy: tuple[float, float]) -> tuple[int, int]:
+    """Top-left pixel of tile (y, x)'s 128×128 cell on the layout canvas.
+    The cell's `_CELL_GROUND_ANCHOR` pixel lands at the engine
+    `koord_to_screen` offset from `centroid_xy` (in koord units), so the
+    building's footprint centres on canvas where our render anchors
+    world (0, 0, 0)."""
     cx, cy = _SQ_CANVAS_ORIGIN
-    sx, sy = _sq_tile_screen_offset(x, y)
-    return (cx + sx - 64, cy + sy - 64)
+    xc, yc = centroid_xy
+    ax, ay = _CELL_GROUND_ANCHOR
+    dx, dy = _sq_tile_screen_offset(x - xc, y - yc)
+    return (int(round(cx + dx)) - ax, int(round(cy + dy)) - ay)
 
 
-def _crop_cell(canvas, x: int, y: int):
+def _crop_cell(canvas, x: int, y: int,
+               centroid_xy: tuple[float, float]):
     """Crop the 128×128 cell for tile (y, x) from a 512×512 layout
-    canvas."""
-    x0, y0 = _tile_topleft(x, y)
+    canvas, aligned to the same per-layout centroid the stitch uses."""
+    x0, y0 = _tile_topleft(x, y, centroid_xy)
     return canvas[y0:y0 + 128, x0:x0 + 128]
 
 
-def _stitch_upstream_layout(cells_by_yx, *, magic_rgb):
+def _stitch_upstream_layout(cells_by_yx, centroid_xy, *, magic_rgb):
     """Build a 512×512 RGBA canvas with each upstream 128×128 cell pasted
-    at its tile (y, x) screen position.  Background fills with
-    `magic_rgb` so upstream's transparency convention survives stitch."""
+    at its tile (y, x) screen position around `centroid_xy`.  Background
+    fills with `magic_rgb` so upstream's transparency convention
+    survives stitch."""
     import numpy as np
     canvas = np.empty((_SQ_CANVAS_H, _SQ_CANVAS_W, 4), dtype=np.uint8)
     canvas[..., :3] = magic_rgb
     canvas[..., 3] = 255
     for (y, x), cell in cells_by_yx.items():
-        x0, y0 = _tile_topleft(x, y)
+        x0, y0 = _tile_topleft(x, y, centroid_xy)
         keyed = (cell[..., :3] == magic_rgb).all(axis=-1)
         sub = canvas[y0:y0 + 128, x0:x0 + 128]
         sub[~keyed] = cell[~keyed]
@@ -367,6 +387,16 @@ def run_multitile(
             f"no upstream cells at season={season} in {up_dat_path.name}"
         )
 
+    # Per-layout footprint centroid in (x, y) koord units, derived from
+    # (dims_x, dims_y, L) -- the engine's even/odd `(y, x)` cell-range
+    # swap in `building_writer.cc`.  Spec-side geometry; both passes use
+    # it to centre the dat's tile lattice around our render's world
+    # origin.
+    centroid_by_L = {
+        L: building_footprint_centroid(dims_x, dims_y, L)
+        for L in range(layouts)
+    }
+
     # Per-cell diff: one row per (L, y, x).  Our cell is the 128×128
     # crop of our 512×512 render at the tile screen offset; upstream's
     # is its committed atlas cell.
@@ -375,7 +405,7 @@ def run_multitile(
     for k in sorted(up_index):
         l, y, x, h, p, s = k
         up_cell = _atlas_cell(up_atlas, *up_index[k])
-        our_cell = _crop_cell(our_canvases[l], x, y)
+        our_cell = _crop_cell(our_canvases[l], x, y, centroid_by_L[l])
         m, our_mask, up_mask = _cell_metric(our_cell, up_cell,
                                             blur_sigma=blur_sigma)
         rec = MultiTileCell(l=l, y=y, x=x, h=h, phase=p, season=s,
@@ -399,7 +429,8 @@ def run_multitile(
             (k[1], k[2]): _atlas_cell(up_atlas, *up_index[k])
             for k in up_index if k[0] == L
         }
-        up_stitched = _stitch_upstream_layout(cells_by_yx, magic_rgb=MAGIC_PINK)
+        up_stitched = _stitch_upstream_layout(cells_by_yx, centroid_by_L[L],
+                                              magic_rgb=MAGIC_PINK)
         m, our_mask, up_mask = _cell_metric(our_canvases[L], up_stitched,
                                             blur_sigma=blur_sigma)
         rec = MultiTileLayout(l=L, iou=m.iou, drgb=m.drgb)

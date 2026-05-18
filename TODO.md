@@ -319,28 +319,65 @@ when the second multi-tile building ports: if it renders at the
 wrong size, give SPEC a `blend_ortho_override` bake-meta field
 (per-asset, explicit, no auto-fit).
 
-**Open: multi-tile calibration diff residual position offset.**
-`diff_buildings.run_multitile` renders the blend through the multi-
-tile `square_building` viewpoint (per-cardinal 512² canvases,
-camera looks at world origin, model unrotated) and compares against
-upstream's per-cell PNGs re-stitched onto a 512² canvas at the
-square dimetric tile lattice anchored on koord (0, 0).  Both sides
-single-projection, so IoU + dRGB are calibration-grade in shape.
-Emits `grid_tiles.png` (per (L, y, x) cell) and `grid_stitched.png`
-(per layout, full canvas).  First user (mechanical-signalbox-large):
-silhouette pixel-count ratios 0.99–1.04 (scale matches), but a
-global per-layout shift of dy≈+35 px and dx ranging ±40 px drops
-per-tile IoU to 0.03 on the non-origin tile and per-layout stitched
-IoU to 0.37–0.40.  Two candidate causes: (a) our render places
-world origin at canvas centre but upstream's stage-2 crop convention
-anchors tile (0, 0) at a different canvas position than tile-centre,
-making our stitch positionally off; (b) the building's authored
-centroid is at world (3, -1.9, 7) rather than (0, 0, 0), and
-upstream's render compensates with a per-asset model translation
-we don't apply.  Concrete next move: render a probe asset with a
-known-centred bbox to disambiguate, or hunt the upstream-side
-translation in `render_SimutransRender_pak128Britain-65.py`.  Once
-the offset closes the diff becomes a real FAIL_IOU gate.
+**Open: multi-tile calibration diff residual per-layout offset.**
+`diff_buildings.run_multitile` pins rotation (`model_rot_z =
+(2·step·l) % 360` on `square_building`) and stitches upstream's per-
+cell PNGs around `pak.dat.building_footprint_centroid(dims_x, dims_y,
+l)` with each cell's ground anchor at pixel (64, 96).  On mechanical-
+signalbox-large worst-stitched IoU is 0.557, mean dRGB 3.7.
+Centroid-aligned IoU (shift each layout's upstream stitch by its
+bbox-centre offset to ours) jumps to 0.98+ across all four layouts
+and mean dRGB to 0.8 -- the residual is positional drift, not a
+shape mismatch.  Per-layout offsets ours-minus-upstream: L0 (+4, +7),
+L1 (-9, +9), L2 (-8, +18), L3 (+14, +15).  Cam math says world (0,
+0, 0) renders at canvas y=287.7 not 256 (cam doesn't point at
+origin), empirically verified by rendering a marker; shifting the
+stitch anchor to (256, 288) overshoots so upstream stage-2 has a
+different anchor convention we don't fully replicate.  Per-layout
+variation likely comes from upstream's BI silhouette edges sitting
+different from our Cycles equivalents on the building's asymmetric
+y-mass -- upstream stitched bbox y-centres are nearly constant across
+L (233-235) while ours span 241-251.  Concrete next move: when the
+second multi-tile building ports, check whether the offset pattern
+(sign, magnitude) is consistent -- if so, reverse-engineer the
+stage-2 anchor convention; if not, treat as renderer-mismatch
+residual and gate FAIL_IOU against centroid-aligned IoU rather than
+raw stitched IoU.
+
+**Open: hex vs square building viewpoints disagree on footprint
+centring.**  `building_hex_viewpoint` shifts slice positions by
+`hex_tile_screen_offset(max(dims)-1, max(dims)-1) / 2` (constant per
+asset, max-dim-corner-midpoint).  `diff_buildings` -- via
+`pak.dat.building_footprint_centroid` -- uses the per-layout (y, x)
+centroid that varies between even and odd L on rectangular footprints
+because of the engine's dims swap in `building_writer.cc`.  For a 2x1
+building these differ by half a tile on the odd layouts.  Only the
+diff side is calibrated (matches upstream); the hex side hasn't been
+visually validated under hextrans yet so the discrepancy hasn't
+bitten.  Concrete next move when the first multi-tile hex bake hits
+the engine: if seam alignment is off on odd layouts, port the
+`building_footprint_centroid` rule into `building_hex_viewpoint`'s
+slice centring (replace `max(dims)/2` with the per-L centroid via
+`hex_tile_screen_offset(centroid_x, centroid_y)`).  Either side
+calling into the same SPEC-level helper avoids future drift.
+
+**Open: 4-layout rotation formula is signalbox-pinned, not proven.**
+The `model_rot_z = (2·step·l) % 360` formula in
+`building_square_viewpoint` was chosen on visual evidence from
+mechanical-signalbox-large (it produces the face arrangement matching
+upstream's stitched cells).  Metric-optimal would have been `180°
+for L in (1, 2)` -- worst per-layout IoU 0.774 vs the formula's
+0.557 -- but the cam-relative rotations under that pattern are
+(-45°, 45°, -45°, 45°), only two distinct values alternating per L
+rather than advancing by `step` per L.  The formula gives 4 distinct
+cam-relative angles (-45°, 45°, 135°, 225°), one per layout, which
+is the natural 4-rotation cycle for a 4-layout building; the
+silhouette IoU residual is positional drift on the asymmetric
+y-mass, not a wrong formula choice.  Concrete next move: when the
+second multi-tile building ports, re-test both patterns; if the
+formula consistently matches the face arrangement at lower silhouette
+IoU, the IoU gate needs centroid-aligned scoring.  If a different
+asset prefers the `(1, 2)` pattern, the formula isn't universal.
 
 **Open: winter-pass for signalboxes.**  `seasons=2` requires
 a `-snow.blend` sibling; the upstream blends repo doesn't ship

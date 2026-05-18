@@ -609,6 +609,21 @@ def iter_building_cells(b: Building):
                         yield s, l, y, x, h
 
 
+def building_footprint_centroid(
+    dims_x: int, dims_y: int, layout: int,
+) -> tuple[float, float]:
+    """Per-layout footprint centroid in (x, y) koord units.  Mirrors the
+    engine's even/odd `(y, x)` cell-range swap from `building_writer.cc`
+    (even layouts span [dims_y, dims_x], odd layouts swap to
+    [dims_x, dims_y]).  Used to anchor render canvases and stitch
+    upstream cells so a building authored with its model centred on
+    world (0, 0, 0) lands its footprint midpoint at the canvas centre,
+    same convention either side of the calibration diff."""
+    if layout & 1:
+        return ((dims_y - 1) / 2.0, (dims_x - 1) / 2.0)
+    return ((dims_x - 1) / 2.0, (dims_y - 1) / 2.0)
+
+
 def parse(path: Path) -> list[list[tuple[str, str]]]:
     """Parse a `.dat` into a list of objects.
 

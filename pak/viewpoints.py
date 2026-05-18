@@ -309,6 +309,17 @@ def building_square_viewpoint(
             f"square_building supports up to {len(_UPSTREAM_NORMAL_CARDINAL)} "
             f"layouts (cardinal cameras); got {layouts}"
         )
+    # Per-layout model rotation around world Z.  Cam rotates `step` per
+    # L (`_UPSTREAM_NORMAL_CARDINAL` cardinal order); model rotating
+    # `2·step·l` makes the cam-relative building advance `+step` per L
+    # step instead of `-step` -- matching the player's map-rotation
+    # direction so each L shows the building from a distinct cam-relative
+    # angle.  For 4 layouts: 0°, 180°, 0°, 180°.  Pinned on the signalbox
+    # by the rendered building's face arrangement matching upstream's
+    # stitched cells.  See TODO.md -> "Multi-tile calibration diff
+    # residual per-layout offset" for the per-L positional drift this
+    # leaves and the open question of generalising the formula.
+    step = 360.0 / layouts
     facings: list[Facing] = []
     for l in range(layouts):
         label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
@@ -317,7 +328,7 @@ def building_square_viewpoint(
             camera_location=loc,
             camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
             sun_rotation_euler=sun_rotation_for_camera(cam_z),
-            model_rot_z_deg=0.0,
+            model_rot_z_deg=(2.0 * step * l) % 360.0,
         ))
     canvas_w = canvas_h = 512 if multi_tile else None
     return Viewpoint(
