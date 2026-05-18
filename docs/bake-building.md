@@ -6,7 +6,7 @@ bake-unit conventions).
 Buildings (`Obj=building` — attractions, monuments, city
 buildings, townhalls, HQs, stops, extensions) port via the same
 shape as vehicles: a typed `Building` SPEC in a per-asset bake
-script with inline bake-meta (`blend=`, `upstream_stem=`,
+script with inline bake-meta (`blend=`, `upstream_dat=`,
 `materials=`, `blend_winter=`, `materials_winter=`, `lighting=`),
 and `bake_building_main(SPEC, __file__)` at the bottom.  The
 rendering side multiplies out into per-cell renders driven by

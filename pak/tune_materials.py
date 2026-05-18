@@ -205,10 +205,11 @@ def run(bake_path: Path, season: str = "summer", max_iters: int = 50) -> None:
         materials = dict(spec.materials or {})
         season_row = 0
     lighting = spec.lighting
-    upstream_stem = spec.upstream_stem
+    from pak.upstream import image_stem
+    upstream_png = f"{image_stem(spec.upstream_dat, name=spec.name)}.png"
 
     blend_path = fetch_blend(blend)
-    up_path = fetch_pak(upstream_stem)
+    up_path = fetch_pak(upstream_png)
     up_arr = np.array(Image.open(up_path).convert("RGB"))
     layouts = min(up_arr.shape[1] // 128, 4)
 

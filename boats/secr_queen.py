@@ -36,7 +36,7 @@ SPEC = Vehicle(
     payload_by_class=[0, 450, 0, 125],
     comfort_by_class=[0, 95, 0, 165],
     blend="boats/secr-queen.blend",
-    upstream_stem="boats/images/secr-queen",
+    upstream_dat="boats/secr-queen.dat",
 )
 
 

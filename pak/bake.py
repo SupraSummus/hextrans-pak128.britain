@@ -2,7 +2,7 @@
 
 A bake script declares one `SPEC` (or `SPECS` list) plus, at
 `__main__` time, a single `bake_*_main(SPEC, __file__)` call.
-Everything the bake pipeline needs — `blend`, `upstream_stem`,
+Everything the bake pipeline needs — `blend`, `upstream_dat`,
 `materials`, `blend_winter`, `materials_winter`, `lighting`,
 `strip` — lives on the SPEC itself as bake-pipeline metadata
 (see `pak.dat._bake_meta`).  The dat emitters skip those fields;
@@ -11,7 +11,7 @@ the renderer.
 
 Multi-object bake units call `bake_vehicle` once per output,
 passing distinct `basename` per call.  Shared-sprite multi-object
-units (SPECS list) all carry the same blend / upstream_stem /
+units (SPECS list) all carry the same blend / upstream_dat /
 materials values on every Vehicle in the list -- typically via a
 local `_BLEND = "..."` variable referenced from each Vehicle's
 `blend=`; `bake_vehicle` asserts they match and uses the first.

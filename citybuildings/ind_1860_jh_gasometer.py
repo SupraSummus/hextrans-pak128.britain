@@ -29,7 +29,7 @@ SPEC = Building(
     mail_demand=0,
     class_proportion_jobs=[50, 50, 0, 0, 0],
     blend="citybuildings/1860-gasometer.blend",
-    upstream_stem="citybuildings/images/ind/1860-gasometer.png",
+    upstream_dat="citybuildings/ind-1860.dat",
     materials=MATERIALS,
 )
 

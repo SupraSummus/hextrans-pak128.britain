@@ -28,7 +28,7 @@ SPEC = Building(
     mail_demand=4,
     class_proportion=[0, 5, 40, 50, 5],
     blend="citybuildings/1920-detatched-house-2f.blend",
-    upstream_stem="citybuildings/images/res/1920-detatched-house-2f.png",
+    upstream_dat="citybuildings/res-1920.dat",
     materials=MATERIALS,
 )
 

@@ -28,7 +28,7 @@ SPEC = Building(
     class_proportion=[0, 1, 69, 25, 5],
     class_proportion_jobs=[2, 8, 80, 8, 2],
     blend="citybuildings/70-small-office.blend",
-    upstream_stem="citybuildings/images/com/70-small-office.png",
+    upstream_dat="citybuildings/com-70.dat",
     materials=MATERIALS,
 )
 

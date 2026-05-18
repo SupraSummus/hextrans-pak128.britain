@@ -32,7 +32,7 @@ SPEC = Building(
     population_and_visitor_demand_capacity=38,
     class_proportion=[0, 20, 65, 15, 0],
     blend="citybuildings/1870-townhouse-3f.blend",
-    upstream_stem="citybuildings/images/res/1870-townhouse-3f.png",
+    upstream_dat="citybuildings/res-1870.dat",
     materials=MATERIALS,
 )
 

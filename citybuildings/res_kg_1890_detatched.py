@@ -27,7 +27,7 @@ SPEC = Building(
     population_and_visitor_demand_capacity=18,
     class_proportion=[0, 40, 5, 55, 0],
     blend="citybuildings/1890-detatched-house-3f.blend",
-    upstream_stem="citybuildings/images/res/1890-detatched-house-3f.png",
+    upstream_dat="citybuildings/res-1890.dat",
     materials=MATERIALS,
 )
 

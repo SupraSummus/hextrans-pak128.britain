@@ -13,10 +13,12 @@ full 5-row atlas.
 
 Run as:
 
-    python3 pak/diff_trees.py <blend_path> <upstream_stem> [--ages 4]
+    python3 pak/diff_trees.py <blend_path> <upstream_dat> [--ages 4]
 
-`<upstream_stem>` is the prefix before the season/age suffix --
-`trees/oak` resolves to `trees/oak-summer-0_S.png` and friends.
+`<upstream_dat>` is the upstream pak dat path (e.g. `trees/oak.dat`);
+the image-stem prefix is derived from its `image[…]=` refs and the
+diff harness appends `-<season>-<age>_<facing>.png` to land on the
+upstream PNGs.
 """
 from __future__ import annotations
 
@@ -52,7 +54,7 @@ class CellMetric:
 def _parse(argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("blend", help="path within the blends repo, e.g. trees/oak.blend")
-    ap.add_argument("stem", help="upstream filename stem, e.g. trees/oak (matches <stem>-<season>-<age>_S.png)")
+    ap.add_argument("upstream_dat", help="upstream pak dat path, e.g. trees/oak.dat")
     ap.add_argument("--ages", type=int, default=4)
     ap.add_argument("--seasons", type=int, default=1, help="render-side season count; phase 1 = 1 (summer only)")
     ap.add_argument("--out", default=None)
@@ -103,23 +105,31 @@ def _compose(
     return metrics
 
 
-def run(blend: str, stem: str, *, ages: int, seasons: int, out_dir: Path) -> list[CellMetric]:
+def run(blend: str, upstream_dat: str, *, ages: int, seasons: int,
+        out_dir: Path, name: str | None = None) -> list[CellMetric]:
     """Render `blend` through tree_square, diff every (age, season) cell
-    against `<stem>-<season>-<age>_S.png`, return per-cell metrics."""
+    against `<stem>-<season>-<age>_S.png` (with `<stem>` derived from
+    `upstream_dat`'s `image[…]` refs), return per-cell metrics.
+
+    `name` selects which object in a multi-object upstream dat to read
+    image refs from (most tree dats are single-object so it can be left
+    unset)."""
     from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
+    from pak.upstream import image_stem
 
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)
-    name = Path(blend).stem
-    _render(blend_path, out_dir, name, ages, seasons)
+    render_name = Path(blend).stem
+    _render(blend_path, out_dir, render_name, ages, seasons)
 
+    stem = image_stem(upstream_dat, name=name)
     up_paths: dict[tuple[int, int], Path] = {}
     for s in range(seasons):
         tag = _SEASON_TAGS[s]
         for a in range(ages):
             up_paths[(a, s)] = fetch_pak(f"{stem}-{tag}-{a}_S.png")
-    return _compose(out_dir, up_paths, name, ages, seasons, out_dir / "grid.png")
+    return _compose(out_dir, up_paths, render_name, ages, seasons, out_dir / "grid.png")
 
 
 def format_table(metrics: list[CellMetric]) -> str:
@@ -131,8 +141,8 @@ def format_table(metrics: list[CellMetric]) -> str:
 
 def main(argv: list[str]) -> int:
     args = _parse(argv)
-    out_dir = Path(args.out) if args.out else REPO_ROOT / "out" / "diff_trees" / Path(args.stem).name
-    metrics = run(args.blend, args.stem, ages=args.ages, seasons=args.seasons, out_dir=out_dir)
+    out_dir = Path(args.out) if args.out else REPO_ROOT / "out" / "diff_trees" / Path(args.upstream_dat).stem
+    metrics = run(args.blend, args.upstream_dat, ages=args.ages, seasons=args.seasons, out_dir=out_dir)
     print(f"wrote {out_dir / 'grid.png'}")
     print(format_table(metrics))
     worst = min(m.iou for m in metrics)

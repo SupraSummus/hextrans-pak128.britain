@@ -30,7 +30,7 @@ SPEC = Bridge(
     blend_image="ways/plate_girder/straight.blend",
     blend_start="ways/plate_girder/end.blend",
     blend_ramp="ways/plate_girder/slope.blend",
-    upstream_stem="ways/images/plate-girder",
+    upstream_dat="ways/plate-girder.dat",
 )
 
 
