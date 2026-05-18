@@ -1,26 +1,49 @@
-This repo is a port of pak128.Britain to the hex-grid engine
-`SupraSummus/hextrans` — see `CLAUDE.md` and `TODO.md` for current
-status.  The text below is preserved verbatim from upstream's
-pre-fork 2009 readme and describes the original Simutrans pakset,
-not this port.
+# pak128.Britain (hex port)
 
----
+A port of the [pak128.Britain][upstream-pak] pakset to the hex-grid
+engine [`SupraSummus/hextrans`][engine].  Forked from the
+Simutrans-Extended flavour at `jamespetts/simutrans-pak128.britain`;
+sprites are re-rendered from the upstream
+[blends repo][blends] through a hex camera.
 
-Pak128.Britain 1.0 (beta) - 7th July 2009
+## Status
 
-INTRODUCTION
-Pak128.Britain is a graphics set (pak) for Simutrans.  It requires a Simutrans executable in order to play.  This version is compatible with Simutrans version 102.1 - it has not been tested fully with earlier versions of Simutrans and may not work fully.  Use of the latest version of Simutrans is therefore recommended.  
+Work in progress and **unplayable** until a critical mass of
+ground, way and vehicle assets has been baked.  The engine itself
+is not yet shipping either.  `TODO.md` tracks which assets have
+crossed the line; `CLAUDE.md` documents the porting conventions
+and bake pipeline.
 
-COMPATIBILITY
-This release of pak128.Britain 1.0 is the first standalone release of pak128.Britain, i.e. it does not require any other graphics objects to run (unlike previous pre-release versions in the 0.x series which required elements of pak128 in order to run).  There are many new objects since the release of 0.03 and as such this version is NOT compatible with previous versions of pak128.Britain.  You will therefore not be able to continue using save games saved in the 0.0x with 1.0.  However, the pakset is still a work in progress and many items are still missing or unfinished - please bear with us or consider contributing yourself :-)
+## Building
 
-LICENCE
-Pak128.Britain is released open source under the terms of the Artistic License.  Please read licence.txt for details.
+```
+make MAKEOBJ=<path to makeobj from hextrans> clean all archives
+```
 
-TECHNICAL ISSUES
-If there are any technical issues (e.g. error messages, crashes) please make a post in "bugs" board of the Simutrans Forum - http://forum.simutrans.com/index.php?board=8.0 - Please also state which version of the Simutrans executable you are using and which operating system.
+`makeobj` is built from the [`SupraSummus/hextrans`][engine] tree;
+it diverges from upstream Simutrans `makeobj` for hex schema
+support.  Sound effects and the boot-screen deliverables are
+fetched at build time from the SHA-pinned upstream pak via
+`pak.lock`; sprite blends are fetched at bake time via
+`blends.lock`.  `.github/workflows/build.yml` publishes nightly
+archives to the repo's `Nightly` GitHub release.
 
-GAMEPLAY NOTES
-This version is a beta version - there are many aspects of the pakset which are incomplete, missing, or not well-balanced for gameplay.  There may also be bugs present in the pakset which have not been weeded out.  If you have spotted any graphical glitches or other problems with the pakset, please post these in the pak128.Britain forum.  Also if you have any comments to make on the balancing of the gameplay (e.g. financial, industry production, vehicle acceleration, etc.) please post these in the pak128.Britain board of the simutrans forum: http://forum.simutrans.com/index.php?board=51.0 . In particular please note that there are currently no monorails and only a limited number of planes and boats available in the game.  If you really want to use these in a pak128.Britain game, other simutrans graphics objects of 128x128 tilesize (e.g.pak128, pak128.German, pak128.Japan) will also run in pak128.Britain, although they may look out of place and will not be balanced from a gameplay point of view.  Most of all though, we hope you enjoy playing pak128.Britain - please provide feedback on the forum, look forward to future releases, and consider contributing to the drawing of new graphics and balancing of existing ones!
+## Documentation
 
-See CHANGELOG.md for upstream release history through 2011.
+* `CLAUDE.md` — porting conventions, bake pipeline, repo strategy.
+* `TODO.md` — open work, blockers, suspected bugs.
+* `docs/` — per-class bake architecture notes (`bake-building.md`,
+  `bake-tree.md`, `bake-way.md`).
+* `CHANGELOG.md` — upstream 2009–2011 release history (pre-fork);
+  this fork's history is in `git log`.
+
+## Licence
+
+Released open source under the Artistic License.  See
+[`licence.txt`](licence.txt).  Sprite source blends and the
+upstream `.dat` catalog inherit their licences from the upstream
+repos linked above.
+
+[upstream-pak]: https://github.com/jamespetts/simutrans-pak128.britain
+[engine]: https://github.com/SupraSummus/hextrans
+[blends]: https://github.com/jamespetts/Pak128.Britain-blends
