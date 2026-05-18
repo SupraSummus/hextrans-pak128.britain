@@ -322,6 +322,113 @@ def building_square_viewpoint(
     )
 
 
+def bridge_hex_viewpoint() -> Viewpoint:
+    """Hex Viewpoint for the JH bridge blends — quick-and-dirty port of
+    `bridge_square_viewpoint` onto the hex camera + hex shear.
+
+    Renders all 8 hex facings (S/SW/W/NW/N/NE/E/SE) through the
+    project's standard hex camera with the same way-material strip
+    rules as the square probe.  Bridge geometry is z-shifted up by
+    `HEX_HEIGHT_LEVEL_WORLD_Z` so the deck sits where the engine
+    expects elevated way geometry — same shift `building_hex_viewpoint`
+    uses for the `height` axis.  No cell-anchoring beyond that yet;
+    this is "show what the blend looks like under hex projection",
+    not a calibrated bridge bake.
+    """
+    return Viewpoint(
+        name="bridge_hex",
+        image_width=DEFAULT_W,
+        ortho_scale=2.0 * HEX_TILE_RADIUS,
+        sun_energy=_SUN_ENERGY,
+        sun_energy_scale=1.0,
+        fit_kind="hex",
+        extrinsic=hex_proj_shear(),
+        facings=[
+            Facing(
+                label=label,
+                camera_location=_HEX_CAM_LOC,
+                camera_rotation_euler=_HEX_CAM_ROT,
+                sun_rotation_euler=_HEX_SUN_ROT,
+                model_rot_z_deg=rot,
+            )
+            for label, rot in _HEX_FACINGS
+        ],
+        strip_meshes=("Sphere", "Plane.005", "Plane.007"),
+        strip_material_substrings=(
+            "Rail", "Chair", "Wood", "Ballast", "Tarmac",
+        ),
+    )
+
+
+def bridge_square_viewpoint() -> Viewpoint:
+    """4-cardinal Viewpoint for the JamesHood bridge blends (e.g.
+    `ways/plate_girder/straight.blend`).
+
+    JH bridge blends ship one ORTHO camera at the upstream normal-
+    alignment "E" slot `(-10, -10, 11.6)` with `ortho_scale=12.0` —
+    same convention as buildings/fence rather than the vehicle path's
+    pinned 24.  Use the blend's authored ortho_scale (`None` here):
+    bridges in upstream are rendered at "building scale" so a single
+    span fills the cell width (`Back[NS]` measures 104 px wide on the
+    128 px cell, matching JH's 9 world unit bridge at ortho=12).  The
+    `,0,32` y-shift on every `BackImage` / `FrontImage` line in the dat
+    is a runtime draw offset — both upstream and our sprite content
+    share it, so the diff itself doesn't see that offset.
+
+    Strip the way (rails, sleepers, chairs, ballast, road tarmac) by
+    material-substring match — `Rail` / `Chair` / `Wood` (sleepers) /
+    `Ballast` / `Tarmac` — and the two authoring-context planes
+    `Plane.005` (an 8×8 ground reference) + `Plane.007` (a 5.5×8.3
+    backdrop) by name.  Upstream Image / Start / Ramp cells are
+    way-agnostic (magic-pink-keyed where the way goes, so the engine
+    paints the actual way on top at draw), so anything carrying a
+    way material has no business in the bridge silhouette.
+    Material-substring rather than mesh-name because JH's bridge
+    blends suffix-vary the same logical material across twins
+    (`Rail.000/.001/.002/.003`, `Wood`/`Wood.001`, `Ballast`/
+    `Ballast.001`) and re-use mesh names like `Cube` for very
+    different material content across the straight/end/slope/pillar
+    set.  Cycles backend matches the vehicle path's BI substitute;
+    bridges don't use the EEVEE PBR scaling factor buildings need."""
+    # Per-facing model rotation: keep at 0 across all four cameras.
+    # JH's bridge-end and bridge-slope geometry is roughly 4-fold
+    # symmetric about Z (a brick abutment plus symmetric deck edges)
+    # — verified empirically by rotating the model 180° on the N / E
+    # facings and finding those views collapse onto the S / W views
+    # (same IoU rows in `--match`, same upstream-cell best matches).
+    # Once the model lacks geometric features that distinguish the
+    # four cardinal ends, no per-facing rotation can lift the N/E
+    # cells above the S/W ceiling: it's the bridge-end abutment as
+    # seen from N or E, which IS what JH's blend models.  The
+    # remaining IoU gap on N/E (0.66-0.76 vs S/W's 0.81-0.91) is
+    # presumably a small asymmetry between upstream's authoring and
+    # JH's reconstruction, not recoverable from the JH blend alone.
+    facings = [
+        Facing(
+            label=label,
+            camera_location=loc,
+            camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
+            sun_rotation_euler=sun_rotation_for_camera(cam_z),
+            model_rot_z_deg=0.0,
+        )
+        for label, cam_z, loc in _UPSTREAM_NORMAL_CARDINAL
+    ]
+    return Viewpoint(
+        name="bridge_square",
+        image_width=DEFAULT_W,
+        ortho_scale=None,  # use blend's authored 12.0
+        sun_energy=_SUN_ENERGY,
+        sun_energy_scale=1.0,
+        fit_kind="none",
+        extrinsic=None,
+        facings=facings,
+        strip_meshes=("Sphere", "Plane.005", "Plane.007"),
+        strip_material_substrings=(
+            "Rail", "Chair", "Wood", "Ballast", "Tarmac",
+        ),
+    )
+
+
 def fence_square_viewpoint() -> Viewpoint:
     """4-cardinal Viewpoint for `grounds/fence.blend` rendered against
     the upstream square cells (`pak/diff_fence.py`).
