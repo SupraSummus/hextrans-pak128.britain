@@ -75,25 +75,25 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
     if isinstance(spec, Building):
         multitile = spec.dims_x > 1 or spec.dims_y > 1 or spec.heights > 1
         if multitile:
-            # Per-cell visual diff driven by upstream's dat.  Reads the
-            # committed atlas + dat (the hex bake's output, sibling of
-            # the bake script) rather than re-rendering — cross-
-            # projection IoU isn't a calibration target, so the value
-            # is the side-by-side eyeball.  See `run_multitile`'s
-            # docstring for why this path doesn't gate FAIL_IOU.
-            our_dat = script.with_suffix(".dat")
-            our_png = script.with_suffix(".png")
-            if not our_dat.exists() or not our_png.exists():
-                print(f"{script.name}: multi-tile diff needs committed "
-                      f"{our_dat.name} + {our_png.name}; run the bake first")
-                return None
-            rows = diff_buildings.run_multitile(
-                stem, our_dat, our_png, out_dir=out_dir,
+            # Calibration-grade multi-tile diff: render through
+            # `square_building` at the multi-tile footprint, slice into
+            # per-tile cells via the square dimetric tile lattice, and
+            # also compare the full-canvas stitched silhouette.  Emits
+            # `grid_tiles.png` + `grid_stitched.png` side by side.
+            spec_layouts = spec.layouts if spec.layouts is not None else 4
+            per_cell, per_layout = diff_buildings.run_multitile(
+                blend, stem,
+                dims_x=spec.dims_x, dims_y=spec.dims_y, layouts=spec_layouts,
+                out_dir=out_dir,
+                materials=spec.materials, lighting=spec.lighting,
             )
-            print(f"wrote {out_dir / 'grid.png'}")
-            print(diff_buildings.format_multitile_table(rows))
-            print("cross-projection IoU — informational, not a FAIL gate")
-            return min(r.iou for r in rows), None, 0.0, None
+            print(f"wrote {out_dir / 'grid_tiles.png'}")
+            print(diff_buildings.format_multitile_table(per_cell))
+            print(f"wrote {out_dir / 'grid_stitched.png'}")
+            print(diff_buildings.format_multitile_layout_table(per_layout))
+            worst = min(r.iou for r in per_layout)
+            drgb_mean = sum(r.drgb for r in per_layout) / len(per_layout)
+            return worst, None, diff_buildings.FAIL_IOU, drgb_mean
         # Read the layout count off the upstream PNG width rather than
         # SPEC.layouts.  SPEC.layouts is None for most ports (resolved
         # to hex_layouts_default at bake time, which is the hex-port's

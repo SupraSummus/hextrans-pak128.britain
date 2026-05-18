@@ -18,16 +18,23 @@ two differences from the vehicle harness:
    our renderer writes proper RGBA.  Silhouette masks normalise across
    both via `_silhouette_mask`.
 
-`run_multitile` is the multi-tile path — reads upstream's dat to
-enumerate `(l, y, x, h, phase, season)` cells, slices both the
-committed hex atlas (our bake's output) and the upstream square atlas
-per their dat refs, and composes a per-cell side-by-side grid.  No
-rendering: it's a regression check on what we ship, not a calibration
-of what we'd re-bake.  Per-cell IoU is cross-projection (hex vs
-square) so it sits in the report as a relative ranking, not a
-FAIL_IOU gate — see TODO.md → "Closed (not pursued)" for why
-absolute calibration against the shipped multi-tile atlas isn't a
-reachable target.
+`run_multitile` is the multi-tile path — renders the blend through
+the multi-tile `square_building` viewpoint (one full-canvas Facing
+per layout at 512²) and compares against upstream's per-cell PNGs
+on the same tile lattice.  Two grids drop out:
+
+  * `grid_tiles.png` — one row per (L, y, x).  Our cell is the
+    128×128 crop of our 512² render at the tile screen offset;
+    upstream's is its committed atlas cell at the dat-referenced
+    (row, col).
+  * `grid_stitched.png` — one row per layout on the full 512²
+    canvas.  Upstream's per-cell PNGs paste onto a 512² magic-pink
+    canvas at the same tile lattice; ours is the render unchanged.
+
+Both axes are single-projection (square vs square), so IoU + dRGB
+are calibration-grade rather than cross-projection.  See TODO.md →
+"Multi-tile calibration diff residual position offset" for the
+current residual + the diagnostic next moves.
 
 Run via the more ergonomic `pak/check.py` driver (which reads `BLEND`
 and `UPSTREAM_STEM` from the bake script), or directly:
@@ -48,7 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pak import REPO_ROOT
-from pak.diff import MAGIC_PINK, drgb_intersection, iou, silhouette_mask
+from pak.diff import MAGIC_PINK, cell_metric, drgb_intersection, iou, silhouette_mask
 
 HERE = Path(__file__).resolve().parent
 # Worst-of-best across `res_1600_kg_01`'s four layouts measures 0.905;
@@ -69,14 +76,26 @@ def _silhouette_mask(rgba):
     return silhouette_mask(rgba, alpha_threshold=0, magic_rgb=MAGIC_PINK)
 
 
+def _cell_metric(ours_rgba, up_rgba, *, blur_sigma: float = 3.0):
+    """Per-class wrapper around `pak.diff.cell_metric` that pins the
+    building convention (`alpha_threshold=0`, `magic_rgb=MAGIC_PINK`).
+    Returns `(CellMetric, our_mask, up_mask)`."""
+    return cell_metric(
+        ours_rgba, up_rgba,
+        alpha_threshold=0, magic_rgb=MAGIC_PINK,
+        blur_sigma=blur_sigma,
+    )
+
+
 def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
+            *, dims_x: int = 1, dims_y: int = 1,
             materials: dict | None = None, lighting=None) -> None:
     script = HERE / "render.py"
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
         "--out", str(out_dir), "--name", name,
         "--viewpoint", "square_building",
-        "--building-footprint", f"1,1,{layouts},1",
+        "--building-footprint", f"{dims_x},{dims_y},{layouts},1",
         "--keep-per-facing",
     ]
     if materials:
@@ -179,132 +198,222 @@ def _upstream_dat_path(upstream_stem: str) -> str:
     return str(p.parent / f"{asset}.dat")
 
 
+# Simutrans Standard dimetric tile lattice: koord +x heads SE on screen,
+# koord +y heads SW.  Multi-tile cells (y, x) place at this offset around
+# the building's koord (0, 0) origin.
+def _sq_tile_screen_offset(x: int, y: int) -> tuple[int, int]:
+    return (64 * x - 64 * y, 32 * x + 32 * y)
+
+
+# Per-layout square_building canvas size.  Camera looks at world origin,
+# so world (0, 0, 0) lands at the canvas centre; tile (0, 0)'s cell
+# centre sits at the same place, and other tiles fan out per
+# `_sq_tile_screen_offset`.
+_SQ_CANVAS_W = _SQ_CANVAS_H = 512
+_SQ_CANVAS_ORIGIN = (_SQ_CANVAS_W // 2, _SQ_CANVAS_H // 2)
+
+
+def _tile_topleft(x: int, y: int) -> tuple[int, int]:
+    """Top-left pixel of tile (y, x)'s 128×128 cell on the layout canvas."""
+    cx, cy = _SQ_CANVAS_ORIGIN
+    sx, sy = _sq_tile_screen_offset(x, y)
+    return (cx + sx - 64, cy + sy - 64)
+
+
+def _crop_cell(canvas, x: int, y: int):
+    """Crop the 128×128 cell for tile (y, x) from a 512×512 layout
+    canvas."""
+    x0, y0 = _tile_topleft(x, y)
+    return canvas[y0:y0 + 128, x0:x0 + 128]
+
+
+def _stitch_upstream_layout(cells_by_yx, *, magic_rgb):
+    """Build a 512×512 RGBA canvas with each upstream 128×128 cell pasted
+    at its tile (y, x) screen position.  Background fills with
+    `magic_rgb` so upstream's transparency convention survives stitch."""
+    import numpy as np
+    canvas = np.empty((_SQ_CANVAS_H, _SQ_CANVAS_W, 4), dtype=np.uint8)
+    canvas[..., :3] = magic_rgb
+    canvas[..., 3] = 255
+    for (y, x), cell in cells_by_yx.items():
+        x0, y0 = _tile_topleft(x, y)
+        keyed = (cell[..., :3] == magic_rgb).all(axis=-1)
+        sub = canvas[y0:y0 + 128, x0:x0 + 128]
+        sub[~keyed] = cell[~keyed]
+    return canvas
+
+
 @dataclass(frozen=True)
 class MultiTileCell:
-    """One row of `run_multitile`'s report — the per-cell key plus the
-    atlas coordinates we found on each side and the cross-projection
-    silhouette IoU.  Atlas coords let a caller open the source PNG and
-    locate the cell when a number looks off."""
+    """One per-(L, y, x, h, phase, season) cell metric.
+
+    Both sides are square-projection (ours sliced from the
+    `square_building` render at the tile screen offset; upstream from
+    its committed per-cell PNG), so IoU and dRGB are calibration-grade
+    rather than cross-projection."""
     l: int
     y: int
     x: int
     h: int
     phase: int
     season: int
-    our_row: int
-    our_col: int
-    up_row: int
-    up_col: int
     iou: float
+    drgb: float
 
     @property
     def label(self) -> str:
-        """Per-cell key string shared between the grid label and the
-        text table — keeps grid + table in lockstep when phase/season
-        cells eventually arrive."""
         return (f"L{self.l} y{self.y} x{self.x} h{self.h} "
                 f"p{self.phase} s{self.season}")
 
 
-def format_multitile_table(rows: list[MultiTileCell]) -> str:
-    """Aligned text table for `run_multitile`'s per-cell report."""
+@dataclass(frozen=True)
+class MultiTileLayout:
+    """One per-layout stitched-canvas metric — full 512×512 silhouette
+    IoU + colour over the whole footprint (no tile boundary crops)."""
+    l: int
+    iou: float
+    drgb: float
+
+    @property
+    def label(self) -> str:
+        return f"L{self.l} stitched"
+
+
+def _format_metric_table(rows, label_w: int = 22) -> str:
+    """Shared per-row aligned table; works for both `MultiTileCell` and
+    `MultiTileLayout` (both expose `.label`, `.iou`, `.drgb`)."""
     if not rows:
         return ""
-    head = (
-        f"  {'cell':<18}  {'ours':>7}  {'upstream':>9}  {'IoU':>5}"
-    )
+    head = f"  {'cell':<{label_w}}  {'IoU':>5}  {'dRGB':>5}"
     body = [
-        f"  {r.label:<18}  "
-        f"{r.our_row:>2}.{r.our_col:<4}  "
-        f"{r.up_row:>4}.{r.up_col:<4}  "
-        f"{r.iou:>5.3f}"
+        f"  {r.label:<{label_w}}  {r.iou:>5.3f}  {r.drgb:>5.1f}"
         for r in rows
     ]
     ious = [r.iou for r in rows]
+    drgbs = [r.drgb for r in rows]
+    # Summary: worst IoU (what would gate FAIL_IOU) + mean dRGB
+    # (calibration headline, mirrors `summarise` for the single-tile run).
     summary = (
-        f"  {'min/mean/max':<18}  {'':>7}  {'':>9}  "
-        f"{min(ious):.3f} / {sum(ious) / len(ious):.3f} / {max(ious):.3f}"
+        f"  {'worst / mean':<{label_w}}  "
+        f"{min(ious):>5.3f}  {sum(drgbs) / len(drgbs):>5.1f}"
     )
     return "\n".join([head, *body, summary])
 
 
+def format_multitile_table(rows: list[MultiTileCell]) -> str:
+    """Aligned per-cell text table for `run_multitile`."""
+    return _format_metric_table(rows)
+
+
+def format_multitile_layout_table(rows: list[MultiTileLayout]) -> str:
+    """Aligned per-layout text table for `run_multitile`'s stitched
+    pass."""
+    return _format_metric_table(rows, label_w=14)
+
+
 def run_multitile(
-    upstream_stem: str, our_dat: Path, our_png: Path, *, out_dir: Path,
+    blend: str, upstream_stem: str, *,
+    dims_x: int, dims_y: int, layouts: int,
+    out_dir: Path,
+    materials: dict | None = None,
+    lighting=None,
     season: int = 0,
+    blur_sigma: float = 3.0,
 ):
-    """Per-cell visual diff for a multi-tile building.
+    """Render the multi-tile blend through `square_building`, build the
+    per-layout stitched upstream canvas from upstream's per-cell PNGs,
+    and emit two diff grids:
 
-    Reads upstream's dat (source of truth on which `(l,y,x,h,phase,
-    season)` cells exist and where they land in the atlas) and our
-    own emitted dat (which `iter_building_cells` produced for our hex
-    bake), slices both atlases, composes a per-cell side-by-side grid
-    at `out_dir/grid.png`, and returns a list of `MultiTileCell`
-    records for the text report.
+      * `grid_tiles.png` -- per-cell side-by-side, one row per (L, y, x)
+        cell.  Our cell is the 128×128 crop of our 512×512 render at the
+        tile (y, x) screen offset; upstream's is its committed cell.
+      * `grid_stitched.png` -- per-layout side-by-side on the full
+        512×512 canvas (ours unchanged, upstream's per-cell PNGs pasted
+        onto a 512×512 magic-pink canvas at the same tile lattice).
 
-    No rendering — both sides come from committed atlases, so the path
-    is a regression check against what we ship, not a calibration of
-    what we'd re-bake.  Per-cell IoU is cross-projection (ours hex,
-    upstream square dimetric); useful as a relative ranking across
-    cells, not a FAIL_IOU gate.  See the module docstring + the TODO
-    "Closed (not pursued)" entry for why absolute calibration against
-    the shipped multi-tile atlas isn't a reachable target.
+    Both axes are square-vs-square so IoU and dRGB are absolute
+    calibration metrics.  Returns `(per_cell, per_layout)` lists.
+
+    `season` picks which upstream cells to compare against (0=summer).
     """
     import numpy as np
     from PIL import Image
 
     from pak.diff import GridCell, compose_grid
+    from pak.fetch_blend import fetch as fetch_blend
     from pak.fetch_pak import fetch as fetch_pak
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    blend_path = fetch_blend(blend)
+    render_name = Path(blend).stem
+    _render(blend_path, out_dir, render_name, layouts,
+            dims_x=dims_x, dims_y=dims_y,
+            materials=materials, lighting=lighting)
+    our_canvases = _load_our_renders(out_dir, render_name, layouts)
+
     up_dat_path = fetch_pak(_upstream_dat_path(upstream_stem))
     up_png_path = fetch_pak(upstream_stem)
     up_atlas = np.asarray(Image.open(up_png_path).convert("RGBA"))
-    our_atlas = np.asarray(Image.open(our_png).convert("RGBA"))
-
-    def index(entries):
-        return {(e["l"], e["y"], e["x"], e["h"], e["phase"], e["season"]):
-                (e["row"], e["col"]) for e in entries}
-
-    up_index = index(_parse_backimage_entries(up_dat_path))
-    our_index = index(_parse_backimage_entries(our_dat))
-
-    # Restrict to the requested season; our bake doesn't ship winter
-    # yet, so seasons that exist upstream but not in our atlas drop.
-    keys = sorted(
-        k for k in up_index if k in our_index and k[5] == season
-    )
-    if not keys:
+    # Upstream cells indexed by (L, y, x, h, p, s) -> (row, col); the
+    # requested season filters everything else out.
+    up_index = {
+        (e["l"], e["y"], e["x"], e["h"], e["phase"], e["season"]):
+            (e["row"], e["col"])
+        for e in _parse_backimage_entries(up_dat_path)
+        if e["season"] == season
+    }
+    if not up_index:
         raise SystemExit(
-            f"no overlapping (l,y,x,h,phase,season={season}) cells "
-            f"between upstream {up_dat_path.name} and our {our_dat.name}"
+            f"no upstream cells at season={season} in {up_dat_path.name}"
         )
 
-    cells: list[GridCell] = []
-    rows: list[MultiTileCell] = []
-    for k in keys:
-        our_r, our_c = our_index[k]
-        up_r, up_c = up_index[k]
-        up_cell = _atlas_cell(up_atlas, up_r, up_c)
-        our_cell = _atlas_cell(our_atlas, our_r, our_c)
-        our_mask = _silhouette_mask(our_cell)
-        up_mask = _silhouette_mask(up_cell)
+    # Per-cell diff: one row per (L, y, x).  Our cell is the 128×128
+    # crop of our 512×512 render at the tile screen offset; upstream's
+    # is its committed atlas cell.
+    per_cell: list[MultiTileCell] = []
+    tile_grid_cells: list[GridCell] = []
+    for k in sorted(up_index):
         l, y, x, h, p, s = k
-        row = MultiTileCell(
-            l=l, y=y, x=x, h=h, phase=p, season=s,
-            our_row=our_r, our_col=our_c,
-            up_row=up_r, up_col=up_c,
-            iou=iou(our_mask, up_mask),
-        )
-        rows.append(row)
-        cells.append(GridCell(
+        up_cell = _atlas_cell(up_atlas, *up_index[k])
+        our_cell = _crop_cell(our_canvases[l], x, y)
+        m, our_mask, up_mask = _cell_metric(our_cell, up_cell,
+                                            blur_sigma=blur_sigma)
+        rec = MultiTileCell(l=l, y=y, x=x, h=h, phase=p, season=s,
+                            iou=m.iou, drgb=m.drgb)
+        per_cell.append(rec)
+        tile_grid_cells.append(GridCell(
             ours_rgba=our_cell, up_rgba=up_cell,
-            our_mask=our_mask, up_mask=up_mask,
-            label=row.label,
+            our_mask=our_mask, up_mask=up_mask, label=rec.label,
         ))
-    compose_grid(cells, out_path=out_dir / "grid.png",
+    compose_grid(tile_grid_cells, out_path=out_dir / "grid_tiles.png",
                  strip_magic_rgb=MAGIC_PINK,
-                 title=f"{our_dat.stem} (season {season})")
-    return rows
+                 title=f"{render_name} per-tile (square)")
+
+    # Per-layout stitched diff: one row per L on the full 512×512 canvas.
+    # Upstream's per-cell PNGs paste onto the same tile lattice we sliced
+    # ours from, so the silhouette IoU is apples-to-apples.
+    per_layout: list[MultiTileLayout] = []
+    stitched_cells: list[GridCell] = []
+    for L in range(layouts):
+        cells_by_yx = {
+            (k[1], k[2]): _atlas_cell(up_atlas, *up_index[k])
+            for k in up_index if k[0] == L
+        }
+        up_stitched = _stitch_upstream_layout(cells_by_yx, magic_rgb=MAGIC_PINK)
+        m, our_mask, up_mask = _cell_metric(our_canvases[L], up_stitched,
+                                            blur_sigma=blur_sigma)
+        rec = MultiTileLayout(l=L, iou=m.iou, drgb=m.drgb)
+        per_layout.append(rec)
+        stitched_cells.append(GridCell(
+            ours_rgba=our_canvases[L], up_rgba=up_stitched,
+            our_mask=our_mask, up_mask=up_mask, label=rec.label,
+        ))
+    compose_grid(stitched_cells, out_path=out_dir / "grid_stitched.png",
+                 strip_magic_rgb=MAGIC_PINK,
+                 cell_px=_SQ_CANVAS_W,
+                 title=f"{render_name} per-layout stitched")
+
+    return per_cell, per_layout
 
 
 def _load_our_renders(our_dir: Path, name: str, layouts: int):

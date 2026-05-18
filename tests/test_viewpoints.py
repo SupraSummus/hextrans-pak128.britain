@@ -161,13 +161,22 @@ class TestBuildingHexMultiTile(unittest.TestCase):
 
 
 class TestBuildingSquareViewpoint(unittest.TestCase):
-    """Square calibration viewpoint stays single-tile-only.  Multi-tile
-    diff against the shipped 4x4 atlas is upstream-private (see
-    TODO.md -> 'Multi-tile building port')."""
+    """Square calibration viewpoint supports multi-tile via a wider
+    full-canvas Facing per layout (no per-cell slicing).  Heights > 1
+    is still unsupported."""
 
-    def test_multi_tile_raises(self):
+    def test_multi_tile_returns_full_canvas_facings(self):
+        vp = building_square_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        self.assertEqual(len(vp.facings), 4)
+        # Multi-tile: canvas widened to 512x512, no per-cell slices.
+        self.assertEqual(vp.canvas_width, 512)
+        self.assertEqual(vp.canvas_height, 512)
+        for f in vp.facings:
+            self.assertIsNone(f.slices)
+
+    def test_multi_height_raises(self):
         with self.assertRaises(NotImplementedError):
-            building_square_viewpoint(layouts=4, dims_x=2, dims_y=1)
+            building_square_viewpoint(layouts=4, dims_x=1, dims_y=1, heights=2)
 
 
 if __name__ == "__main__":

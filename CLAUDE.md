@@ -802,9 +802,12 @@ silhouette IoU / dRGB / XOR primitives plus the `cell_metric` +
 `compose_grid` helpers every per-class harness composes against;
 specialisations live in `diff_upstream` (vehicles), `diff_buildings`
 (square-projection layout-permutation matrix for single-tile;
-`run_multitile` for multi-tile, which reads both dats and slices the
-committed atlases per `backimage[L][y][x][h][p][s]` ref — non-
-calibration eyeball, cross-projection IoU), `diff_trees`,
+`run_multitile` for multi-tile, which renders the blend through the
+multi-tile `square_building` viewpoint, slices our 512² canvas at the
+tile lattice, and stitches upstream's per-cell PNGs back onto the same
+lattice — emits `grid_tiles.png` per (L, y, x) cell plus
+`grid_stitched.png` per layout, both square-vs-square so the IoU is
+calibration-grade), `diff_trees`,
 `diff_grounds` (parametric grounds via `SquareGeom`), `diff_fence`.
 `MAGIC_PINK` is the canonical transparency key; alpha threshold on
 `silhouette_mask` tunes per class (vehicles/trees `>16`,
