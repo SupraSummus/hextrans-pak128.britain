@@ -319,31 +319,28 @@ when the second multi-tile building ports: if it renders at the
 wrong size, give SPEC a `blend_ortho_override` bake-meta field
 (per-asset, explicit, no auto-fit).
 
-**Closed (not pursued): square-viewpoint calibration diff against
-the shipped 4×4 atlas.**  The investigation surfaced that
-upstream's `<asset>.png` comes from a three-stage pipeline of
-which only stage 1 ships in the blends repo: (1) per-cardinal
-render at 512×512 via `render_SimutransRender_pak128Britain-65.py`
-(camera + sun rotation per layout, no model translation, no
-crop); (2) crop + arrange the four cardinal PNGs into the final
-4×N atlas grid (this stage is upstream-only, not in the blends
-repo); (3) reference the cells from the dat.  We have stage 1
-and stage 3; stage 2 is irreproducible from public artifacts.
-A per-cell IoU diff against the shipped atlas was tried (PR #48
-session, IoU ~0.09-0.29) and reverted -- the numbers reflected
-the unreproducible stage-2 crops, not anything we can act on.
-If a multi-tile diff is ever needed, the right target is the
-stage-1 per-cardinal 512×512 render, re-produced by us from the
-current blend through upstream's script; that diff would verify
-our pipeline reproduces stage 1 pixel-for-pixel.  Deferred until
-a regression actually needs gating.  A non-calibration eyeball
-diff for multi-tile assets lives at `diff_buildings.run_multitile`
-(`pak.check` dispatches automatically): reads both dats, walks
-each `backimage[L][y][x][h][p][s]` ref, slices the committed
-atlases per dat, and emits the per-cell side-by-side grid plus an
-aligned text table.  Per-cell IoU is cross-projection (hex vs
-square) — informational only, sits alongside the visual, doesn't
-gate.
+**Open: multi-tile calibration diff residual position offset.**
+`diff_buildings.run_multitile` renders the blend through the multi-
+tile `square_building` viewpoint (per-cardinal 512² canvases,
+camera looks at world origin, model unrotated) and compares against
+upstream's per-cell PNGs re-stitched onto a 512² canvas at the
+square dimetric tile lattice anchored on koord (0, 0).  Both sides
+single-projection, so IoU + dRGB are calibration-grade in shape.
+Emits `grid_tiles.png` (per (L, y, x) cell) and `grid_stitched.png`
+(per layout, full canvas).  First user (mechanical-signalbox-large):
+silhouette pixel-count ratios 0.99–1.04 (scale matches), but a
+global per-layout shift of dy≈+35 px and dx ranging ±40 px drops
+per-tile IoU to 0.03 on the non-origin tile and per-layout stitched
+IoU to 0.37–0.40.  Two candidate causes: (a) our render places
+world origin at canvas centre but upstream's stage-2 crop convention
+anchors tile (0, 0) at a different canvas position than tile-centre,
+making our stitch positionally off; (b) the building's authored
+centroid is at world (3, -1.9, 7) rather than (0, 0, 0), and
+upstream's render compensates with a per-asset model translation
+we don't apply.  Concrete next move: render a probe asset with a
+known-centred bbox to disambiguate, or hunt the upstream-side
+translation in `render_SimutransRender_pak128Britain-65.py`.  Once
+the offset closes the diff becomes a real FAIL_IOU gate.
 
 **Open: winter-pass for signalboxes.**  `seasons=2` requires
 a `-snow.blend` sibling; the upstream blends repo doesn't ship

@@ -194,9 +194,9 @@ class TestFormatMultitileTable(unittest.TestCase):
     def test_renders_alignment_and_summary_row(self):
         rows = [
             MultiTileCell(l=0, y=0, x=0, h=0, phase=0, season=0,
-                          our_row=0, our_col=0, up_row=0, up_col=0, iou=0.10),
+                          iou=0.10, drgb=12.0),
             MultiTileCell(l=0, y=0, x=1, h=0, phase=0, season=0,
-                          our_row=0, our_col=1, up_row=0, up_col=1, iou=0.30),
+                          iou=0.30, drgb=20.0),
         ]
         out = format_multitile_table(rows)
         lines = out.splitlines()
@@ -205,8 +205,9 @@ class TestFormatMultitileTable(unittest.TestCase):
         # consistent when a future asset uses them).
         self.assertIn("p0 s0", lines[1])
         self.assertIn("p0 s0", lines[2])
-        # Summary shows min/mean/max of the IoU column.
-        self.assertIn("0.100 / 0.200 / 0.300", lines[3])
+        # Summary shows min IoU + mean dRGB.
+        self.assertIn("0.100", lines[3])
+        self.assertIn("16.0", lines[3])
 
 
 if __name__ == "__main__":

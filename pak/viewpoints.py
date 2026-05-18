@@ -292,18 +292,17 @@ def building_square_viewpoint(
     the result is directly comparable to upstream's published cells
     (which are at the same blend-native scale).
 
-    Today this only supports `dims_x == dims_y == heights == 1`; multi-
-    tile calibration against the shipped 4x4 atlas is deferred because
-    upstream's published per-cell PNGs come out of a hidden assembly
-    stage (per-cardinal full-canvas renders -> crop/arrange into the
-    final 4xN grid) that doesn't ship with the blends repo, so the
-    target itself isn't reproducible from public artifacts.  See
-    TODO.md -> "Multi-tile building port".
+    Multi-tile assets (`dims_x > 1` or `dims_y > 1`) render one
+    full-canvas Facing per layout at a wider square canvas (sized
+    `multi_tile_canvas` px on a side); the per-cell slicing the
+    hex viewpoint does is skipped — the goal is to reproduce upstream's
+    per-cardinal full-canvas render as authored, before upstream's
+    private crop/arrange stage.  Heights > 1 still unsupported.
     """
-    if dims_x != 1 or dims_y != 1 or heights != 1:
+    multi_tile = dims_x > 1 or dims_y > 1
+    if heights != 1:
         raise NotImplementedError(
-            "square_building viewpoint is single-tile single-height only; "
-            "multi-tile calibration target is upstream-private (see TODO.md)"
+            "square_building viewpoint is single-height only"
         )
     if layouts > len(_UPSTREAM_NORMAL_CARDINAL):
         raise ValueError(
@@ -320,6 +319,7 @@ def building_square_viewpoint(
             sun_rotation_euler=sun_rotation_for_camera(cam_z),
             model_rot_z_deg=0.0,
         ))
+    canvas_w = canvas_h = 512 if multi_tile else None
     return Viewpoint(
         name="square_building",
         image_width=DEFAULT_W,
@@ -336,6 +336,8 @@ def building_square_viewpoint(
         extrinsic=None,
         facings=facings,
         engine="BLENDER_EEVEE",
+        canvas_width=canvas_w,
+        canvas_height=canvas_h,
     )
 
 
