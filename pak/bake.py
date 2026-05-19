@@ -91,6 +91,33 @@ def _print_wrote(out_dat: Path) -> None:
     print(f"wrote {rel}", flush=True)
 
 
+def _run_blender(
+    *,
+    script: Path,
+    blend: Path | None = None,
+    args: dict[str, object],
+) -> None:
+    """Run `blender -b [blend] --python-exit-code 1 -P <script> -- <args>`.
+
+    `args` is `{cli_name: value}` -- `cli_name` becomes `--cli_name`;
+    `None` drops the entry, anything else is stringified into
+    `--key=<value>`.  The `=` form (rather than space-separated) means
+    negative-number values like `model-offset=-0.27,...` aren't
+    misparsed as new option flags, and argparse on the Blender side
+    accepts both forms identically.
+    """
+    cmd = ["blender", "-b"]
+    if blend is not None:
+        cmd.append(str(blend))
+    cmd += ["--python-exit-code", "1", "-P", str(script), "--"]
+    for key, val in args.items():
+        if val is None:
+            continue
+        cmd.append(f"--{key}={val}")
+    print("$", " ".join(cmd), flush=True)
+    subprocess.run(cmd, check=True)
+
+
 def _shared_blend(specs: list, basename: str) -> str:
     """Return the single `blend` path shared across a SPECS list.
 
@@ -136,17 +163,11 @@ def bake_vehicle(
     specs = [spec] if isinstance(spec, Vehicle) else list(spec)
     blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
-    cmd = [
-        "blender", "-b", str(blend_path),
-        "--python-exit-code", "1",
-        "-P", str(_RENDER_SCRIPT),
-        "--",
-        "--out", str(out_dir),
-        "--name", basename,
-        "--viewpoint", viewpoint,
-    ]
-    print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    _run_blender(
+        script=_RENDER_SCRIPT,
+        blend=blend_path,
+        args={"out": out_dir, "name": basename, "viewpoint": viewpoint},
+    )
 
     out_dat = emit_vehicles(specs, out_dir=out_dir, basename=basename)
     _print_wrote(out_dat)
@@ -180,20 +201,15 @@ def bake_way(spec: Way, *, basename: str, out_dir: Path) -> Path:
     """
     if spec.blend is None:
         raise ValueError(f"{basename}: SPEC missing blend=")
-    cmd = [
-        "blender", "-b",
-        "--python-exit-code", "1",
-        "-P", str(_BAKE_WAY_SCRIPT),
-        "--",
-        "--blend", spec.blend,
-        "--name", basename,
-        "--out", str(out_dir),
-        "--strip", spec.strip,
-    ]
+    args: dict[str, object] = {
+        "blend": spec.blend,
+        "name": basename,
+        "out": out_dir,
+        "strip": spec.strip,
+    }
     if spec.materials:
-        cmd += ["--materials", json.dumps(spec.materials)]
-    print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+        args["materials"] = json.dumps(spec.materials)
+    _run_blender(script=_BAKE_WAY_SCRIPT, args=args)
 
     out_dat = emit_way(spec, out_dir=out_dir, basename=basename)
     _print_wrote(out_dat)
@@ -232,18 +248,15 @@ def _render_bridge_piece(
     into `<out_dir>/<name>.png` and return the path.  One blender
     subprocess per call."""
     blend_path = fetch_jh(blend)
-    cmd = [
-        "blender", "-b", str(blend_path),
-        "--python-exit-code", "1",
-        "-P", str(_RENDER_SCRIPT),
-        "--",
-        "--out", str(out_dir),
-        "--name", name,
-        "--viewpoint", "bridge_hex",
-        "--bridge-piece", piece,
-    ]
-    print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    _run_blender(
+        script=_RENDER_SCRIPT,
+        blend=blend_path,
+        args={
+            "out": out_dir, "name": name,
+            "viewpoint": "bridge_hex",
+            "bridge-piece": piece,
+        },
+    )
     return out_dir / f"{name}.png"
 
 
@@ -343,34 +356,27 @@ def _render_building_season(
     # `layouts * dims_x * dims_y` cells (layouts span columns).  See
     # `pak.dat.emit_building` for the matching row/col formula.
     cells_per_row = spec.layouts * spec.dims_x * spec.dims_y
-    cmd = [
-        "blender", "-b", str(blend_path),
-        "--python-exit-code", "1",
-        "-P", str(_RENDER_SCRIPT),
-        "--",
-        "--out", str(out_dir),
-        "--name", name,
-        "--viewpoint", "hex_building",
-        "--building-footprint",
-        f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
-        "--cols-per-row", str(cells_per_row),
-    ]
+    args: dict[str, object] = {
+        "out": out_dir, "name": name,
+        "viewpoint": "hex_building",
+        "building-footprint":
+            f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
+        "cols-per-row": cells_per_row,
+    }
     if spec.blend_ortho_per_tile is not None:
-        cmd += ["--building-ortho-per-tile", str(spec.blend_ortho_per_tile)]
+        args["building-ortho-per-tile"] = spec.blend_ortho_per_tile
     if spec.blend_model_offset_xyz is not None:
-        # `=` form (not space-separated) so argparse doesn't misparse
-        # negative components like "-0.27,..." as a new option flag.
-        cmd += ["--model-offset=" +
-                ",".join(str(v) for v in spec.blend_model_offset_xyz)]
+        args["model-offset"] = ",".join(
+            str(v) for v in spec.blend_model_offset_xyz
+        )
     if spec.strip:
-        cmd += ["--strip", spec.strip]
+        args["strip"] = spec.strip
     if materials:
         from pak.materials import to_jsonable
-        cmd += ["--materials", json.dumps(to_jsonable(materials))]
+        args["materials"] = json.dumps(to_jsonable(materials))
     if lighting is not None:
-        cmd += ["--lighting", json.dumps(lighting.to_jsonable())]
-    print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+        args["lighting"] = json.dumps(lighting.to_jsonable())
+    _run_blender(script=_RENDER_SCRIPT, blend=blend_path, args=args)
     return out_dir / f"{name}.png"
 
 
@@ -485,19 +491,16 @@ def bake_tree(
     blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
 
-    cmd = [
-        "blender", "-b", str(blend_path),
-        "--python-exit-code", "1",
-        "-P", str(_RENDER_SCRIPT),
-        "--",
-        "--out", str(out_dir),
-        "--name", basename,
-        "--viewpoint", viewpoint,
-        "--tree-grid", f"{ages},{seasons}",
-        "--cols-per-row", str(ages),
-    ]
-    print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    _run_blender(
+        script=_RENDER_SCRIPT,
+        blend=blend_path,
+        args={
+            "out": out_dir, "name": basename,
+            "viewpoint": viewpoint,
+            "tree-grid": f"{ages},{seasons}",
+            "cols-per-row": ages,
+        },
+    )
 
     out_dat = emit_trees(
         specs, out_dir=out_dir, basename=basename,
