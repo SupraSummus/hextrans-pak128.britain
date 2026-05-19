@@ -343,49 +343,74 @@ def _fetch_blend(blend: str, source: str) -> Path:
     return fetcher(blend)
 
 
-def _render_building_season(
-    *, blend: str, name: str, out_dir: Path, spec: Building, layouts: int,
-    materials: dict[str, Material] | None,
+def bake_building_atlas(
+    *,
+    viewpoint_kind: str,
+    blend_path: Path,
+    name: str,
+    out_dir: Path,
+    layouts: int,
+    dims_x: int,
+    dims_y: int,
+    heights: int,
+    units_per_tile: float,
+    materials: dict[str, Material] | None = None,
     lighting=None,
+    model_offset_xyz: tuple[float, float, float] | None = None,
+    strip: str | None = None,
+    keep_per_facing: bool = False,
 ) -> Path:
-    """Render one season's atlas to `<out_dir>/<name>.png` and return
-    the path.  One blender subprocess per call."""
+    """Shared building render+compose for both `hex_building`
+    (production) and `square_building` (calibration diff)
+    viewpoint kinds.  `keep_per_facing=True` keeps the per-slice
+    cells on disk for the diff path's `_load_our_cell`."""
     from pak.compose import compose_atlas
-    from pak.viewpoints import building_hex_viewpoint
-    blend_path = _fetch_blend(blend, spec.blend_source)
-    # One atlas row per `(season, height)` stripe; each row holds
-    # `layouts * dims_x * dims_y` cells (layouts span columns).  See
-    # `pak.dat.emit_building` for the matching row/col formula.
-    cells_per_row = layouts * spec.dims_x * spec.dims_y
+    from pak.viewpoints import building_hex_viewpoint, building_square_viewpoint
+    factory = (building_hex_viewpoint if viewpoint_kind == "hex_building"
+               else building_square_viewpoint)
+
     args: dict[str, object] = {
         "out": out_dir, "name": name,
-        "viewpoint": "hex_building",
-        "building-footprint":
-            f"{spec.dims_x},{spec.dims_y},{layouts},{spec.heights}",
+        "viewpoint": viewpoint_kind,
+        "building-footprint": f"{dims_x},{dims_y},{layouts},{heights}",
+        "building-units-per-tile": units_per_tile,
     }
-    if spec.blend_ortho_per_tile is not None:
-        args["building-ortho-per-tile"] = spec.blend_ortho_per_tile
-    if spec.blend_model_offset_xyz is not None:
-        args["model-offset"] = ",".join(
-            str(v) for v in spec.blend_model_offset_xyz
-        )
-    if spec.strip:
-        args["strip"] = spec.strip
+    if model_offset_xyz is not None:
+        args["model-offset"] = ",".join(str(v) for v in model_offset_xyz)
+    if strip:
+        args["strip"] = strip
     if materials:
         from pak.materials import to_jsonable
         args["materials"] = json.dumps(to_jsonable(materials))
     if lighting is not None:
         args["lighting"] = json.dumps(lighting.to_jsonable())
     _run_blender(script=_RENDER_SCRIPT, blend=blend_path, args=args)
-    vp = building_hex_viewpoint(
-        layouts=layouts, dims_x=spec.dims_x, dims_y=spec.dims_y,
-        heights=spec.heights,
-        ortho_per_tile=spec.blend_ortho_per_tile,
-        lighting=lighting,
+    vp = factory(
+        layouts=layouts, dims_x=dims_x, dims_y=dims_y, heights=heights,
+        units_per_tile=units_per_tile, lighting=lighting,
     )
-    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=name,
-                  cols_per_row=cells_per_row)
+    compose_atlas(
+        vp, render_dir=out_dir, out_dir=out_dir, name=name,
+        cols_per_row=layouts * dims_x * dims_y,
+        keep_per_facing=keep_per_facing,
+    )
     return out_dir / f"{name}.png"
+
+
+def _render_building_season(
+    *, blend: str, name: str, out_dir: Path, spec: Building, layouts: int,
+    materials: dict[str, Material] | None,
+    lighting=None,
+) -> Path:
+    return bake_building_atlas(
+        viewpoint_kind="hex_building",
+        blend_path=_fetch_blend(blend, spec.blend_source),
+        name=name, out_dir=out_dir, layouts=layouts,
+        dims_x=spec.dims_x, dims_y=spec.dims_y, heights=spec.heights,
+        units_per_tile=spec.blend_units_per_tile,
+        materials=materials, lighting=lighting,
+        model_offset_xyz=spec.blend_model_offset_xyz, strip=spec.strip,
+    )
 
 
 def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
@@ -408,12 +433,14 @@ def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
 
 
 def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
-    """Fetch the blend(s), render the multi-tile atlas, emit the dat.
+    """Fetch the blend(s), render the N-tile atlas, emit the dat.
 
     Drives `pak/render.py` under `--viewpoint hex_building` with the
-    SPEC's `(dims_x, dims_y, layouts)` footprint; the renderer
-    expands that into `layouts × dims_x × dims_y` per-cell facings
-    (see `viewpoints.building_hex_viewpoint`).  The atlas lands at
+    SPEC's `(dims_x, dims_y, layouts)` footprint; the renderer expands
+    that into `layouts × heights` per-layout facings each carrying
+    `dims_x × dims_y` slices (see `viewpoints.building_hex_viewpoint`).
+    Single-tile (`dims_x == dims_y == 1`) is the degenerate case.  The
+    atlas lands at
     `<out_dir>/<basename>.png` shaped `seasons*heights` rows ×
     `layouts*dims_x*dims_y` cols — see `emit_building` for the
     matching `backimage[l][y][x][h][0][s]=./<basename>.<row>.<col>`
@@ -430,9 +457,7 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     convention are all best-guess on the first pass.  When the first
     real bake surfaces misalignment, fix in
     `viewpoints.building_hex_viewpoint` (rotation sign / koord-tile
-    mapping) and in its `fit_matrix` factory (the standard `_hex_fit`
-    may need a multi-tile variant that anchors on the building's
-    koord origin rather than the model's XY bbox).
+    mapping) and in its `fit_matrix` factory.
     """
     if spec.blend is None:
         raise ValueError(f"{basename}: SPEC missing blend=")

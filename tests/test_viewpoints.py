@@ -65,7 +65,7 @@ class TestBuildingViewpoints(unittest.TestCase):
     (the whole point of factoring it out)."""
 
     def test_square_facings_have_per_camera_sun(self):
-        vp = building_square_viewpoint(layouts=4)
+        vp = building_square_viewpoint(layouts=4, units_per_tile=12.0)
         self.assertEqual(len(vp.facings), 4)
         # Each cardinal camera should have a different sun rotation_z,
         # offset by -90 degrees from its cam rotation_z.
@@ -78,7 +78,7 @@ class TestBuildingViewpoints(unittest.TestCase):
     def test_hex_building_facings_share_one_sun_rot(self):
         # Hex camera doesn't rotate; sun rotation must be identical for
         # every cell, equal to `sun_rotation_for_camera(0)`.
-        vp = building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1)
+        vp = building_hex_viewpoint(layouts=6, units_per_tile=12.0, dims_x=1, dims_y=1)
         expected = sun_rotation_for_camera(0.0)
         for f in vp.facings:
             for got, want in zip(f.sun_rotation_euler, expected, strict=True):
@@ -90,58 +90,60 @@ class TestBuildingViewpoints(unittest.TestCase):
         # Lambert shading land closer to upstream's BI output there).
         self.assertIs(SQUARE_VIEWPOINT.engine, CYCLES)
         self.assertIs(HEX_VIEWPOINT.engine, CYCLES)
-        self.assertIs(building_square_viewpoint(layouts=4).engine, EEVEE)
-        self.assertIs(building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1).engine,
+        self.assertIs(building_square_viewpoint(layouts=4, units_per_tile=12.0).engine, EEVEE)
+        self.assertIs(building_hex_viewpoint(layouts=6, units_per_tile=12.0, dims_x=1, dims_y=1).engine,
                       EEVEE)
 
 
-class TestBuildingHexMultiTile(unittest.TestCase):
-    """Multi-tile path in `building_hex_viewpoint`: one Facing per
-    (layout, height) with N=dims_x*dims_y slices at hex koord screen
-    positions.  Catches structural drift in the slice-list generation
-    that would silently scramble the atlas's per-cell labels."""
+class TestBuildingHexNTile(unittest.TestCase):
+    """`building_hex_viewpoint`: one Facing per (layout, height) with
+    `dims_x * dims_y` slices at hex koord screen positions.  Catches
+    structural drift in the slice-list generation that would silently
+    scramble the atlas's per-cell labels."""
 
-    def test_single_tile_path_uses_no_slices(self):
-        # Backwards compatibility lock: dims=(1,1) keeps the legacy
-        # 1-cell-per-facing structure (no slicing), no canvas override.
-        vp = building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1)
+    def test_single_tile_collapses_to_one_slice_at_origin(self):
+        # 1×1 is the degenerate N-tile case: one slice per facing at
+        # offset (0, 0), canvas collapses to sprite size.
+        vp = building_hex_viewpoint(layouts=6, units_per_tile=12.0, dims_x=1, dims_y=1)
         self.assertEqual(len(vp.facings), 6)
-        self.assertIsNone(vp.canvas_width)
-        self.assertIsNone(vp.canvas_height)
+        self.assertEqual(vp.canvas_width, DEFAULT_W)
+        self.assertEqual(vp.canvas_height, DEFAULT_W)
         for f in vp.facings:
-            self.assertIsNone(f.slices)
+            self.assertEqual(len(f.slices), 1)
+            self.assertEqual(f.slices[0].offset, (0, 0))
+            self.assertIsNone(f.slices[0].alpha_mask)
 
     def test_multi_tile_emits_one_facing_per_layout_with_slices(self):
         # 2x1x4 (mechanical-signalbox-large shape): 4 layouts × 1 height
         # = 4 facings; each carries 2 slices (the per-layout cell count
         # under iter_building_cells, regardless of even/odd swap).
-        vp = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        vp = building_hex_viewpoint(layouts=4, units_per_tile=12.0, dims_x=2, dims_y=1)
         self.assertEqual(len(vp.facings), 4)
         for f in vp.facings:
             self.assertIsNotNone(f.slices)
             self.assertEqual(len(f.slices), 2)
         self.assertGreater(vp.canvas_width, DEFAULT_W)
 
-    def test_multi_tile_fit_matrix_doubles_scale_vs_single(self):
-        # Multi-tile blends are authored at `ortho = max(dims) ·
-        # per-tile-ortho`; the fit divisor `max(dims)` should produce
-        # exactly twice the scale of the single-tile fit at the same
-        # authored ortho (matching the previous `fit_ortho_divisor=2.0`
-        # state pin for a 2x1 footprint).
-        authored = BlendAuthored(ortho_scale=12.0)
-        single = building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1)
-        multi = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
-        s = single.fit_matrix(authored)[0][0]
-        m = multi.fit_matrix(authored)[0][0]
-        self.assertAlmostEqual(m, 2 * s, places=6)
+    def test_fit_matrix_anchored_on_units_per_tile(self):
+        # `units_per_tile * max_dims` blend units (the per-layout world
+        # width the camera covers) map to `max_dims` engine tiles
+        # (= 2R*max_dims engine world units); fit scale = `2R /
+        # (units_per_tile * max_dims)`.  Independent of the blend's
+        # authored ortho_scale.
+        from pak.viewpoints import HEX_TILE_RADIUS
+        single = building_hex_viewpoint(layouts=6, units_per_tile=12.0, dims_x=1, dims_y=1)
+        multi = building_hex_viewpoint(layouts=4, units_per_tile=12.0, dims_x=2, dims_y=1)
+        big = BlendAuthored(ortho_scale=999.0)
+        self.assertAlmostEqual(single.fit_matrix(big)[0][0],
+                               2.0 * HEX_TILE_RADIUS / 12.0, places=6)
+        self.assertAlmostEqual(multi.fit_matrix(big)[0][0],
+                               2.0 * HEX_TILE_RADIUS / 24.0, places=6)
 
-    def test_ortho_per_tile_pins_scale_regardless_of_authored(self):
-        # When `ortho_per_tile` is set, fit_matrix returns a constant
-        # scale of `2R / (per_tile * max_dims)` independent of the
-        # blend's authored ortho_scale.  Replaces the previous
-        # render-time `fit_ortho_per_tile` recomputation.
+    def test_fit_matrix_ignores_authored_ortho(self):
+        # SPEC's units_per_tile is canonical; the blend's authored
+        # ortho_scale shouldn't influence rendering.
         vp = building_hex_viewpoint(
-            layouts=4, dims_x=2, dims_y=2, ortho_per_tile=24.0,
+            layouts=4, units_per_tile=24.0, dims_x=2, dims_y=2,
         )
         m12 = vp.fit_matrix(BlendAuthored(ortho_scale=12.0))[0][0]
         m72 = vp.fit_matrix(BlendAuthored(ortho_scale=72.0))[0][0]
@@ -153,7 +155,7 @@ class TestBuildingHexMultiTile(unittest.TestCase):
         # BackImage references.  Even L=0 (dims_y=1 outer, dims_x=2
         # inner) and odd L=1 (dims_x=2 outer, dims_y=1 inner -- swap)
         # must hit the same (Y, X) label pairs in iter order.
-        vp = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        vp = building_hex_viewpoint(layouts=4, units_per_tile=12.0, dims_x=2, dims_y=1)
         labels_per_layout = {f.label: [s[0] for s in f.slices]
                              for f in vp.facings}
         self.assertEqual(labels_per_layout["L0_H0"],
@@ -170,7 +172,7 @@ class TestBuildingHexMultiTile(unittest.TestCase):
         # hex_tile_screen_offset(centroid_x, centroid_y)`.  Drift here
         # means our sliced sprite no longer lands where the engine
         # paints the corresponding tile.
-        vp = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        vp = building_hex_viewpoint(layouts=4, units_per_tile=12.0, dims_x=2, dims_y=1)
         # Even L0 footprint along koord +x: centroid (0.5, 0); slices
         # land symmetric around canvas centre.
         l0 = next(f for f in vp.facings if f.label == "L0_H0")
@@ -197,18 +199,17 @@ class TestBuildingHexMultiTile(unittest.TestCase):
 
 
 class TestBuildingSquareViewpoint(unittest.TestCase):
-    """Square calibration viewpoint supports multi-tile via a wider
-    full-canvas Facing per layout, with per-cell `slices` so the render
-    harness emits both the stitched canvas (for the per-layout diff)
-    and the per-tile sprites (for the per-cell diff).  Heights > 1
-    is still unsupported."""
+    """Square calibration viewpoint: full-canvas Facing per layout
+    with per-cell `slices` so the render harness emits both the
+    stitched canvas (for the per-layout diff) and the per-tile sprites
+    (for the per-cell diff).  Heights > 1 is still unsupported."""
 
     def test_multi_tile_returns_sliced_layout_facings(self):
-        vp = building_square_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        vp = building_square_viewpoint(layouts=4, units_per_tile=12.0, dims_x=2, dims_y=1)
         self.assertEqual(len(vp.facings), 4)
-        # Multi-tile: canvas widened to 512x512.
-        self.assertEqual(vp.canvas_width, 512)
-        self.assertEqual(vp.canvas_height, 512)
+        # canvas = sprite_w * max_dims
+        self.assertEqual(vp.canvas_width, 256)
+        self.assertEqual(vp.canvas_height, 256)
         # Each layout's Facing carries `slices` listing per-cell screen
         # positions on the 512² canvas, top-down with (0, 0) at the
         # canvas centre.  Even layouts (dims_x=2, dims_y=1) span x;
@@ -232,17 +233,21 @@ class TestBuildingSquareViewpoint(unittest.TestCase):
         for sl in even:
             self.assertIsNotNone(sl.alpha_mask)
 
-    def test_single_tile_no_slices(self):
-        """Legacy 1-cell-per-facing path still kicks in for dims=(1, 1)."""
-        vp = building_square_viewpoint(layouts=4, dims_x=1, dims_y=1)
+    def test_single_tile_collapses_to_one_slice_at_origin(self):
+        """1×1 footprint: one slice per facing at canvas centre, no
+        mask -- the degenerate N-tile case (no neighbours to resolve)."""
+        vp = building_square_viewpoint(layouts=4, units_per_tile=12.0, dims_x=1, dims_y=1)
+        # canvas = sprite_w * max_dims = 128 for 1×1
+        self.assertEqual(vp.canvas_width, DEFAULT_W)
+        self.assertEqual(vp.canvas_height, DEFAULT_W)
         for f in vp.facings:
-            self.assertIsNone(f.slices)
-        self.assertIsNone(vp.canvas_width)
-        self.assertIsNone(vp.canvas_height)
+            self.assertEqual(len(f.slices), 1)
+            self.assertEqual(f.slices[0].offset, (0, 0))
+            self.assertIsNone(f.slices[0].alpha_mask)
 
     def test_multi_height_raises(self):
         with self.assertRaises(NotImplementedError):
-            building_square_viewpoint(layouts=4, dims_x=1, dims_y=1, heights=2)
+            building_square_viewpoint(layouts=4, units_per_tile=12.0, dims_x=1, dims_y=1, heights=2)
 
 
 class TestSqTilePixelMask(unittest.TestCase):

@@ -317,28 +317,6 @@ override on the cardinal-zero angle, calibrated by inspection; or
 (b) accept the upstream's per-blend orientation as authored.
 Closes the original "rotation sign" probe.
 
-**Multi-tile building port — production-side slicing landed;
-in-engine seam validation and pixel-mask remain open.**
-`signalboxes/mechanical_signalbox_large.py` is the first 2×1
-port; under hex's 6-fold default it bakes 2×1×6.
-`building_hex_viewpoint` renders multi-tile via image-space
-slicing: one Facing per `(layout, height)` on a wide canvas
-covering the full footprint at the hex screen lattice, model
-untranslated (artist XYZ contract preserved); each Facing
-carries `slices` listing per-cell W×W crops at
-`hex_tile_screen_offset(qx, ry)` minus the per-layout footprint
-centroid (`building_footprint_centroid(dims_x, dims_y, l)` —
-required for asymmetric footprints; the symmetric
-`(max-1, max-1)/2` shortcut left 2×1 cells off-centre against
-the rendered model and was the first in-engine misrender).
-Single-tile path is unchanged.
-`Viewpoint.canvas_width/canvas_height` + `Facing.slices` in
-`pak/render.py` do the underlying render-once-crop-many; the
-bake driver routes through automatically based on `dims`.
-`fit_matrix = _hex_fit(divisor=max(dims))` divides authored
-blend ortho so the artist's `ortho = dims · per-tile-ortho`
-convention renders at the per-tile size the engine paints at.
-
 **Open: in-engine eyeball (second pass).**  First load under
 hextrans surfaced the asymmetric-footprint centring bug (fixed
 above).  Need a second pass to confirm seams now align;

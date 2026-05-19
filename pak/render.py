@@ -946,18 +946,13 @@ def _parse_args(argv):
                          "and the layout rotation pivots around it.  Use "
                          "when the artist authored the model away from "
                          "world origin (default = identity, honour authoring).")
-    ap.add_argument("--building-ortho-per-tile", default=None, type=float,
-                    help="Target per-tile ortho for the multi-tile bake.  "
-                         "When set, the building_hex_viewpoint factory "
-                         "pins fit_matrix to a constant scale of "
-                         "2R/(per_tile * max(dims_x, dims_y)) "
-                         "independent of the blend's authored ortho.  "
-                         "Default None: the factory derives per-tile "
-                         "ortho from authored / max(dims), assuming the "
-                         "artist sized the camera at the per-tile rate.  "
-                         "Override when the artist sized for the whole "
-                         "composition -- e.g. stonehenge ortho=72 over "
-                         "a 2x2 footprint, per_tile=24.")
+    ap.add_argument("--building-units-per-tile", default=None, type=float,
+                    help="Blend-frame world units that map to one engine "
+                         "tile.  Required for building_hex_viewpoint / "
+                         "building_square_viewpoint; sole anchor for "
+                         "camera ortho, canvas size, and fit_matrix.  "
+                         "Threaded through from Building SPEC's "
+                         "`blend_units_per_tile`.")
     ap.add_argument("--materials", default="",
                     help="JSON serialisation of the bake script's "
                          "`MATERIALS = {...}` dict (see pak.materials).  "
@@ -1034,18 +1029,17 @@ def main(argv):
         if len(parts) == 3:
             parts.append(1)  # heights=1 default for back-compat
         dx, dy, l, h = parts
-        if args.viewpoint == "hex_building":
-            vp = building_hex_viewpoint(
-                layouts=l, dims_x=dx, dims_y=dy, heights=h,
-                ortho_per_tile=args.building_ortho_per_tile,
-                lighting=lighting,
+        if args.building_units_per_tile is None:
+            raise SystemExit(
+                f"--viewpoint {args.viewpoint} requires --building-units-per-tile"
             )
-        else:
-            vp = building_square_viewpoint(
-                layouts=l, dims_x=dx, dims_y=dy, heights=h,
-                lighting=lighting,
-                ortho_per_tile=args.building_ortho_per_tile,
-            )
+        factory = (building_hex_viewpoint if args.viewpoint == "hex_building"
+                   else building_square_viewpoint)
+        vp = factory(
+            layouts=l, dims_x=dx, dims_y=dy, heights=h,
+            units_per_tile=args.building_units_per_tile,
+            lighting=lighting,
+        )
     elif args.viewpoint in ("tree_hex", "tree_square"):
         if not args.tree_grid:
             raise SystemExit(

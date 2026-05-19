@@ -39,12 +39,9 @@ SPEC = Building(
     upstream_dat="attractions/stonehenge.dat",
     blend_source="jh",
     materials=MATERIALS,
-    # Blend ortho=72 was authored to fit the whole composition
-    # (stones + surrounding landscape planes spanning ~42 world
-    # units), not the per-tile rate (72 / max(dims)=2 = 36 per
-    # tile, vs the standard 24).  Pin per-tile=24 to render at
-    # the standard rate -- 72 / (24 * 2) = 1.5 divisor.
-    blend_ortho_per_tile=24.0,
+    # blend's authored ortho=72 captures stones plus surrounding
+    # landscape planes; the camera covers only the per-tile footprint
+    # so the padding is clipped (matches upstream's per-cell PNGs).
     # Plane.002/.004/.005 are three corner registration quads at z=0.02
     # with no material slot, rendered as flat-grey diamonds by Cycles
     # but not by upstream's BI pipeline (BI skips unmaterialled faces).
