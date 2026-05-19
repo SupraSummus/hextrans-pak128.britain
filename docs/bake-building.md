@@ -118,11 +118,19 @@ Three landmines the first real building port surfaces:
 A fourth, resolved: `Viewpoint.ortho_scale=None` means "use the
 blend's authored value", which `building_square_viewpoint` opts
 into so the diff renders at the blend's per-pixel scale (vehicles
-happen to be authored at the contributing-graphics convention of
-24, buildings at 12).  `building_hex_viewpoint` and the hex
-production bake intentionally don't — they target the pak's
-intra-tile coord system, with `_compute_fit("hex")` doing the
-`INTRA_TILE_PER_BLEND_UNIT = 2R / blend_ortho` conversion.
+typically authored at the contributing-graphics convention of 24,
+buildings at 12).  Some blends author at a non-standard ortho to
+fit surrounding landscape (stonehenge at 72, capturing stones plus
+ground planes spanning ~42 world units) -- the SPEC carries
+`blend_ortho_per_tile` to override, and both
+`building_hex_viewpoint` and `building_square_viewpoint` honour it
+to render at the chosen per-tile rate (the square side pins
+`camera_ortho = ortho_per_tile * max(dims)` so the 512² stitched
+canvas matches upstream's 128-px-per-tile cells stitched onto the
+same lattice).  `building_hex_viewpoint` and the hex production
+bake otherwise target the pak's intra-tile coord system via
+`_compute_fit("hex")`'s `INTRA_TILE_PER_BLEND_UNIT = 2R /
+blend_ortho` conversion.
 
 The render side ships end-to-end via `citybuildings/
 res_1600_kg_01.py` (1×1×8, `type=res`); the landmines above are

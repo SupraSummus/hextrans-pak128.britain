@@ -74,11 +74,12 @@ SPEC = Building(
     blend="signals/mechanical-signalbox-large.blend",
     upstream_dat="signalboxes/mechanical-signalbox-large.dat",
     materials=MATERIALS,
-    # `pak.diag_centroid_align` reports dy ≈ -20 across all 4 layouts
-    # with dx ≈ 0 in the mean -- the textbook pure-Z drift pattern
-    # (see CLAUDE.md -> "blend_model_offset_xyz applies pre-rotation").
-    # Per-layout Z candidates +2.71/+2.49/+1.52/+1.84 -> mean +2.14.
-    blend_model_offset_xyz=(0.0, 0.0, 2.14),
+    # `pak.diag_centroid_align` joint XYZ fit, R²=95 %, lifts stitched
+    # IoU from 0.69 (pre-pin) to 0.94.  XY component was invisible
+    # under the original Y-column-broken design matrix and only
+    # surfaced after the perturbation harness validated the forward
+    # model against the renderer.
+    blend_model_offset_xyz=(-0.36, 1.15, 2.11),
 )
 
 

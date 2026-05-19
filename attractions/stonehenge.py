@@ -55,15 +55,11 @@ SPEC = Building(
     # but not by upstream's BI pipeline (BI skips unmaterialled faces).
     # Strip them on entry so the bake silhouette matches upstream.
     strip="Sphere,Plane.002,Plane.004,Plane.005",
-    # `pak.diag_centroid_align` after the strip reports a clean XY
-    # drift (mean (-0.27, +0.27), dy ≈ 0 -> no Z component).  But
-    # `blend_model_offset_xyz` is pre-rotation (see CLAUDE.md ->
-    # "blend_model_offset_xyz applies pre-rotation, model-local"); the
-    # 2x2 layouts rotate 0°/90°/180°/270°, so an XY offset would rotate
-    # with each layout and only help one of four.  Empirically
-    # confirmed: pinning the mean lifted L1 0.557 -> 0.921 and hurt the
-    # other three.  Leave None until the post-rotation world-frame
-    # offset mechanism lands (TODO.md -> "Multi-tile XY offset gap").
+    # `pak.diag_centroid_align` post-scale-fix: aligned IoU 0.91, joint
+    # R²=5 %, per-layout shift constant at ≈ (-4, 0) px across all four
+    # layouts -- textbook post-rotation world-frame drift, blocked on
+    # TODO.md → "Multi-tile XY offset gap".  Raw stitched IoU sits at
+    # 0.56 (was 0.22 before the square-viewpoint ortho fix).
 )
 
 

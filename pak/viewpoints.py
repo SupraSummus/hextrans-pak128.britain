@@ -395,7 +395,7 @@ def hex_tile_screen_offset(qx: int, ry: int) -> tuple[float, float]:
 
 def building_square_viewpoint(
     layouts: int, dims_x: int = 1, dims_y: int = 1, heights: int = 1,
-    lighting=None,
+    lighting=None, ortho_per_tile: float | None = None,
 ) -> Viewpoint:
     """Square-dimetric Viewpoint mirroring `building_square_viewpoint`'s
     role for the calibration diff: one Facing per `(l, y, x, h)` cell
@@ -456,13 +456,23 @@ def building_square_viewpoint(
     sun_energy = _wrap_sun_energy_with_lighting(
         _authored_sun(_BI_TO_EEVEE_SUN_SCALE), lighting,
     )
+    # Multi-tile blends authored at `ortho = per_tile * dims` need an
+    # explicit override -- e.g. stonehenge ships ortho=72 to fit
+    # surrounding landscape (per-tile=36) while upstream's per-cell
+    # PNGs are at per-tile=24.  Stitched on our 512² canvas, upstream
+    # is at `ortho_canvas = per_tile * max_dims`; we match by pinning
+    # the same.
+    if ortho_per_tile is not None:
+        camera_ortho = _pinned(ortho_per_tile * max(dims_x, dims_y))
+    else:
+        camera_ortho = _authored_ortho()
     return Viewpoint(
         name="square_building",
         image_width=DEFAULT_W,
         # Authored ortho: buildings typically ship at 12 (twice the
         # per-cell zoom of vehicles' 24); honouring that is what makes
         # the diff align with upstream's per-blend renders.
-        camera_ortho=_authored_ortho(),
+        camera_ortho=camera_ortho,
         # Authored sun energy (0.028 in Britain blends) scaled by
         # `_BI_TO_EEVEE_SUN_SCALE` to compensate for EEVEE PBR; may
         # be further overridden by `Lighting.sun_energy_scale`.

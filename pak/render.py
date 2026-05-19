@@ -1136,6 +1136,7 @@ def main(argv):
             vp = building_square_viewpoint(
                 layouts=l, dims_x=dx, dims_y=dy, heights=h,
                 lighting=lighting,
+                ortho_per_tile=args.building_ortho_per_tile,
             )
     elif args.viewpoint in ("tree_hex", "tree_square"):
         if not args.tree_grid:
