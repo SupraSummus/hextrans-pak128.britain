@@ -269,20 +269,28 @@ by multi-tile buildings), not the fit matrix.
 **`blend_model_offset_xyz` applies pre-rotation, model-local.** The
 renderer translates the mesh by `-offset` BEFORE the per-facing Z
 rotation (see `render.py::render_atlas`, the
-`M_target @ Matrix.Translation((-mx,-my,-mz))` line).  For
-multi-tile buildings whose layouts rotate the model (0°/180°/0°/180°
-for a 2×1, 0°/90°/180°/270° for a 2×2), an XY offset rotates with
-each layout — pinning `(-0.27, +0.27)` shifts L0/L2 correctly but
-L1/L3 by the opposite vector, helping half and hurting half.  **Z is
-rotation-invariant** under the XY layout rotation and projects only
-onto screen-Y, so a pure-Z offset shifts every layout uniformly.
-`pak.diag_centroid_align` reports both an XY (z=0) and a pure-Z
-candidate per layout; the discriminator is per-layout consistency
-of the screen `(dx, dy)`: dy consistent + dx≈0 means pure-Z drift
-(safe to pin on any multi-tile asset), dy/dx rotating with the
-layout means an XY drift the current field can't express.  A
-post-rotation world-frame translation mechanism is a separate
-follow-up — see `TODO.md` → "Multi-tile XY offset gap".
+`M_target @ Matrix.Translation((-mx,-my,-mz))` line).  Multi-tile
+layouts rotate the model (`(2·step·L) % 360` in
+`building_square_viewpoint`), so the screen displacement caused by
+a fixed model-local XY *rotates with each layout*.  Tools that want
+to invert from per-layout screen shifts back to a single
+`blend_model_offset_xyz` must bake the per-layout rotation into the
+design matrix; tools that don't will fail on every multi-tile asset
+with real XY drift.
+
+`pak.diag_centroid_align` is that tool: per-layout silhouette-IoU
+sweep recovers `(dx_L, dy_L)`, then a single model-local
+`(mx, my, mz)` is fit jointly by least squares with R² ≥ 90 % as
+the pin threshold.  R² well below 90 % means the per-layout shifts
+are inconsistent with any model-local offset — the most common
+explanation is screen-constant drift that needs a post-rotation
+world-frame mechanism (see `TODO.md` → "Multi-tile XY offset gap"),
+but high non-translational mismatch (mesh clipping against
+stitched cell boundaries, MUSGRAVE/CLOUDS noise floor) drives R² down
+the same way.  `pak/_experiment_ground_truth.py` is the
+perturbation harness that validates the tool's forward model
+against the real renderer; run it after any change to the design
+matrix or per-layout rotation convention.
 
 **Alignment mode is asset-class-dependent.**  Trains, trams, water
 craft and aircraft use upstream's **`vehicles` alignment** camera
