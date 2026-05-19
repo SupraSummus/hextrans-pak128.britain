@@ -8,9 +8,9 @@ Three pairings:
   * S facing  ↔ fence-4 (wall1, right back-edge from N down to E)
   * E ∪ S     ↔ fence-5 (both diagonals composited into the Λ shape)
 
-Drives `pak/render.py --viewpoint fence_square` and reads the per-facing
-PNGs back, same shell-out shape as `pak/diff_buildings.py` and
-`pak/diff_upstream.py`.
+Drives `pak/render.py` against `fence_square_viewpoint()` via
+`pak.bake.run_render` and reads the per-facing PNGs back, same shape as
+`pak/diff_buildings.py` and `pak/diff_upstream.py`.
 
 Usage:
     python3 -m pak.diff_fence
@@ -20,7 +20,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -28,7 +27,6 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from pak import REPO_ROOT
 from pak.diff import MAGIC_PINK, iou, silhouette_mask
 from pak.fetch_blend import fetch as fetch_blend
 from pak.fetch_pak import fetch as fetch_pak
@@ -50,12 +48,11 @@ MIN_IOU = 0.80
 
 def render_fence_blend(out_dir: Path) -> dict[str, np.ndarray]:
     """Run `pak.render` on `grounds/fence.blend` and return per-facing RGBA."""
+    from pak.bake import run_render
+    from pak.viewpoints import fence_square_viewpoint
     blend_path = fetch_blend("grounds/fence.blend")
-    script = REPO_ROOT / "pak" / "render.py"
-    cmd = ["blender", "-b", str(blend_path), "-P", str(script), "--",
-           "--out", str(out_dir), "--name", "fence_blend",
-           "--viewpoint", "fence_square"]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    run_render(blend=blend_path, viewpoint=fence_square_viewpoint(),
+               name="fence_blend", out_dir=out_dir)
     return {label: np.array(Image.open(out_dir / f"fence_blend_{label}.png"))
             for label in ("S", "W", "N", "E")}
 

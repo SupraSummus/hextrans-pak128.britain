@@ -28,7 +28,6 @@ through their lock files).
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,19 +65,16 @@ def _render_blend_if_missing(blend_repo_path: str, render_dir: Path,
                              bake_stem: str) -> None:
     """Skip blender if every per-facing PNG already exists; otherwise
     shell out to `pak.render` once for the four facings."""
+    from pak.bake import run_render
     from pak.fetch_jh_blend import fetch as fetch_jh
+    from pak.viewpoints import bridge_square_viewpoint
     if all((render_dir / f"{bake_stem}_{f}.png").is_file()
            for f in ("S", "W", "N", "E")):
         return
     blend = fetch_jh(blend_repo_path)
     render_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "blender", "-b", str(blend),
-        "-P", str(REPO_ROOT / "pak" / "render.py"), "--",
-        "--out", str(render_dir), "--name", bake_stem,
-        "--viewpoint", "bridge_square",
-    ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    run_render(blend=blend, viewpoint=bridge_square_viewpoint(),
+               name=bake_stem, out_dir=render_dir)
 
 
 def _stitch_overview(results: list[CaseResult], out_path: Path) -> None:

@@ -20,7 +20,9 @@ local `_BLEND = "..."` variable referenced from each Vehicle's
 from __future__ import annotations
 
 import json
+import pickle
 import subprocess
+import tempfile
 from pathlib import Path
 
 from pak import REPO_ROOT
@@ -109,6 +111,38 @@ def _run_blender(
     subprocess.run(cmd, check=True)
 
 
+def run_render(
+    *,
+    blend: Path,
+    viewpoint,
+    name: str,
+    out_dir: Path,
+    materials: dict | None = None,
+    model_offset: tuple[float, float, float] | None = None,
+    material_id_map: bool = False,
+) -> None:
+    """Pickle a `RenderPayload` to a tempfile and drive `pak/render.py`
+    against it.  Caller's Viewpoint feeds both this and the parent-side
+    `compose_atlas`, so the factory dispatch lives in one place."""
+    from pak.render import RenderPayload
+    payload = RenderPayload(
+        viewpoint=viewpoint, materials=materials,
+        model_offset=model_offset, material_id_map=material_id_map,
+    )
+    with tempfile.NamedTemporaryFile(
+        suffix=".pkl", prefix="render-payload-", delete=False,
+    ) as fh:
+        pickle.dump(payload, fh)
+        payload_path = Path(fh.name)
+    try:
+        _run_blender(
+            script=_RENDER_SCRIPT, blend=blend,
+            args={"out": out_dir, "name": name, "payload": payload_path},
+        )
+    finally:
+        payload_path.unlink(missing_ok=True)
+
+
 def _shared_blend(specs: list, basename: str) -> str:
     """Return the single `blend` path shared across a SPECS list.
 
@@ -133,7 +167,6 @@ def bake_vehicle(
     *,
     basename: str,
     out_dir: Path,
-    viewpoint: str = "hex",
 ) -> Path:
     """Fetch the blend, render `<out_dir>/<basename>.png`, emit
     `<out_dir>/<basename>.dat` from `spec`.
@@ -152,17 +185,14 @@ def bake_vehicle(
     `Path(__file__).stem`.  Returns the dat path.
     """
     from pak.compose import compose_atlas
-    from pak.viewpoints import HEX_VIEWPOINT, SQUARE_VIEWPOINT
+    from pak.viewpoints import HEX_VIEWPOINT
     specs = [spec] if isinstance(spec, Vehicle) else list(spec)
     blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
-    _run_blender(
-        script=_RENDER_SCRIPT,
-        blend=blend_path,
-        args={"out": out_dir, "name": basename, "viewpoint": viewpoint},
-    )
-    vp = HEX_VIEWPOINT if viewpoint == "hex" else SQUARE_VIEWPOINT
-    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=basename)
+    run_render(blend=blend_path, viewpoint=HEX_VIEWPOINT,
+               name=basename, out_dir=out_dir)
+    compose_atlas(HEX_VIEWPOINT, render_dir=out_dir, out_dir=out_dir,
+                  name=basename)
 
     out_dat = emit_vehicles(specs, out_dir=out_dir, basename=basename)
     _print_wrote(out_dat)
@@ -245,17 +275,9 @@ def _render_bridge_piece(
     from pak.compose import compose_atlas
     from pak.viewpoints import bridge_hex_viewpoint
     blend_path = fetch_jh(blend)
-    _run_blender(
-        script=_RENDER_SCRIPT,
-        blend=blend_path,
-        args={
-            "out": out_dir, "name": name,
-            "viewpoint": "bridge_hex",
-            "bridge-piece": piece,
-        },
-    )
-    compose_atlas(bridge_hex_viewpoint(piece),
-                  render_dir=out_dir, out_dir=out_dir, name=name)
+    vp = bridge_hex_viewpoint(piece)
+    run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir)
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=name)
     return out_dir / f"{name}.png"
 
 
@@ -364,30 +386,23 @@ def bake_building_atlas(
     (production) and `square_building` (calibration diff)
     viewpoint kinds.  `keep_per_facing=True` keeps the per-slice
     cells on disk for the diff path's `_load_our_cell`."""
+    from dataclasses import replace
+
     from pak.compose import compose_atlas
     from pak.viewpoints import building_hex_viewpoint, building_square_viewpoint
     factory = (building_hex_viewpoint if viewpoint_kind == "hex_building"
                else building_square_viewpoint)
-
-    args: dict[str, object] = {
-        "out": out_dir, "name": name,
-        "viewpoint": viewpoint_kind,
-        "building-footprint": f"{dims_x},{dims_y},{layouts},{heights}",
-        "building-units-per-tile": units_per_tile,
-    }
-    if model_offset_xyz is not None:
-        args["model-offset"] = ",".join(str(v) for v in model_offset_xyz)
-    if strip:
-        args["strip"] = strip
-    if materials:
-        from pak.materials import to_jsonable
-        args["materials"] = json.dumps(to_jsonable(materials))
-    if lighting is not None:
-        args["lighting"] = json.dumps(lighting.to_jsonable())
-    _run_blender(script=_RENDER_SCRIPT, blend=blend_path, args=args)
     vp = factory(
         layouts=layouts, dims_x=dims_x, dims_y=dims_y, heights=heights,
         units_per_tile=units_per_tile, lighting=lighting,
+    )
+    if strip:
+        vp = replace(vp, strip_meshes=tuple(
+            n for n in strip.split(",") if n
+        ))
+    run_render(
+        blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir,
+        materials=materials, model_offset=model_offset_xyz,
     )
     compose_atlas(
         vp, render_dir=out_dir, out_dir=out_dir, name=name,
@@ -435,10 +450,11 @@ def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
 def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     """Fetch the blend(s), render the N-tile atlas, emit the dat.
 
-    Drives `pak/render.py` under `--viewpoint hex_building` with the
-    SPEC's `(dims_x, dims_y, layouts)` footprint; the renderer expands
-    that into `layouts × heights` per-layout facings each carrying
-    `dims_x × dims_y` slices (see `viewpoints.building_hex_viewpoint`).
+    Builds `building_hex_viewpoint()` from the SPEC's `(dims_x, dims_y,
+    layouts)` footprint and drives `pak/render.py` via `run_render`;
+    the factory expands the footprint into `layouts × heights`
+    per-layout facings each carrying `dims_x × dims_y` slices (see
+    `viewpoints.building_hex_viewpoint`).
     Single-tile (`dims_x == dims_y == 1`) is the degenerate case.  The
     atlas lands at
     `<out_dir>/<basename>.png` shaped `seasons*heights` rows ×
@@ -501,7 +517,6 @@ def bake_tree(
     basename: str,
     out_dir: Path,
     ages: int = 4,
-    viewpoint: str = "tree_hex",
 ) -> Path:
     """Fetch the blend, render `<out_dir>/<basename>.png` (ages × seasons
     grid driven by the SPEC's `seasons`), emit `<out_dir>/<basename>.dat`.
@@ -512,12 +527,11 @@ def bake_tree(
     points age 4 (the dormant / dying stage) at the bare `winter-3`
     image rather than rendering separately; `clamp_age_overrides`
     mirrors that at dat-emit time by pointing every engine age outside
-    `[0, ages)` at the last rendered cell of the same season.
-    `viewpoint` selects `tree_hex` (shipped atlas) or `tree_square`
-    (calibration diff).  Returns the dat path.
+    `[0, ages)` at the last rendered cell of the same season.  Returns
+    the dat path.
     """
     from pak.compose import compose_atlas
-    from pak.viewpoints import tree_hex_viewpoint, tree_square_viewpoint
+    from pak.viewpoints import tree_hex_viewpoint
     specs = [spec] if isinstance(spec, Tree) else list(spec)
     # All specs must agree on seasons for one shared atlas; emit_trees
     # walks per-Tree `seasons` independently, but the rendered atlas is
@@ -527,18 +541,9 @@ def bake_tree(
     blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
 
-    _run_blender(
-        script=_RENDER_SCRIPT,
-        blend=blend_path,
-        args={
-            "out": out_dir, "name": basename,
-            "viewpoint": viewpoint,
-            "tree-grid": f"{ages},{seasons}",
-        },
-    )
-    factory = tree_hex_viewpoint if viewpoint == "tree_hex" else tree_square_viewpoint
-    compose_atlas(factory(ages=ages, seasons=seasons),
-                  render_dir=out_dir, out_dir=out_dir, name=basename,
+    vp = tree_hex_viewpoint(ages=ages, seasons=seasons)
+    run_render(blend=blend_path, viewpoint=vp, name=basename, out_dir=out_dir)
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=basename,
                   cols_per_row=ages)
 
     out_dat = emit_trees(
@@ -569,16 +574,11 @@ def clamp_age_overrides(
 
 
 def bake_tree_main(
-    spec: Tree | list[Tree], file: str, *,
-    ages: int = 4,
-    viewpoint: str = "tree_hex",
+    spec: Tree | list[Tree], file: str, *, ages: int = 4,
 ) -> Path:
     """`bake_tree` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
-    return bake_tree(
-        spec, basename=path.stem, out_dir=path.parent,
-        ages=ages, viewpoint=viewpoint,
-    )
+    return bake_tree(spec, basename=path.stem, out_dir=path.parent, ages=ages)
 
 
 def bake_building_main(spec: Building, file: str) -> Path:

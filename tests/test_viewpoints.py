@@ -12,16 +12,22 @@ import math
 import unittest
 
 from pak.dat import building_footprint_centroid
+from pak.materials import Lighting
 from pak.render import CYCLES, EEVEE, BlendAuthored
 from pak.viewpoints import (
     DEFAULT_W,
     HEX_VIEWPOINT,
     SQUARE_VIEWPOINT,
+    bridge_hex_viewpoint,
+    bridge_square_viewpoint,
     building_hex_viewpoint,
     building_square_viewpoint,
+    fence_square_viewpoint,
     hex_tile_screen_offset,
     sq_tile_pixel_mask,
     sun_rotation_for_camera,
+    tree_hex_viewpoint,
+    tree_square_viewpoint,
 )
 
 
@@ -290,6 +296,44 @@ class TestSqTilePixelMask(unittest.TestCase):
         # Both > 0 anywhere = overlap.
         overlap = ((ca > 0) & (cb > 0)).sum()
         self.assertEqual(overlap, 0)
+
+
+class TestViewpointPickleRoundTrip(unittest.TestCase):
+    """`pak.bake.run_render` marshals every Viewpoint across the
+    subprocess boundary as a pickle.  Lambdas / inline closures in the
+    `camera_ortho` / `sun_energy` / `fit_matrix` fields break that
+    silently -- subprocess fails after the pickle load on a "can't
+    pickle local object" -- so pin the round-trip here.  Add new
+    factories to this list; cost is one line per factory."""
+
+    def _assert_round_trip(self, vp):
+        import pickle
+        vp2 = pickle.loads(pickle.dumps(vp))
+        a = BlendAuthored(ortho_scale=12.0, sun_energy=0.028)
+        self.assertEqual(vp2.camera_ortho(a), vp.camera_ortho(a))
+        self.assertEqual(vp2.sun_energy(a), vp.sun_energy(a))
+        self.assertEqual(vp2.fit_matrix(a), vp.fit_matrix(a))
+
+    def test_singletons(self):
+        self._assert_round_trip(HEX_VIEWPOINT)
+        self._assert_round_trip(SQUARE_VIEWPOINT)
+
+    def test_factories(self):
+        lighting = Lighting(
+            world_ambient=(0.5, 0.5, 0.5), sun_energy_scale=1.5,
+            sun_elev_deg=45.0, sun_az_offset_deg=-90.0,
+        )
+        for vp in [
+            building_hex_viewpoint(layouts=2, units_per_tile=12.0,
+                                   dims_x=2, dims_y=1, lighting=lighting),
+            building_square_viewpoint(layouts=2, units_per_tile=12.0),
+            bridge_hex_viewpoint("image"),
+            bridge_square_viewpoint(),
+            tree_hex_viewpoint(ages=4, seasons=1),
+            tree_square_viewpoint(ages=4, seasons=1),
+            fence_square_viewpoint(),
+        ]:
+            self._assert_round_trip(vp)
 
 
 if __name__ == "__main__":

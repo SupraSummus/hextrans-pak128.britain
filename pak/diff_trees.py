@@ -23,14 +23,11 @@ upstream PNGs.
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from pak import REPO_ROOT
-
-HERE = Path(__file__).resolve().parent
 
 # Upstream filename tags per season slot, indexed by the engine's
 # season number (0=summer ... 4=winter-snow).  Trees with `seasons=2`
@@ -62,14 +59,11 @@ def _parse(argv: list[str]) -> argparse.Namespace:
 
 
 def _render(blend_path: Path, out_dir: Path, name: str, ages: int, seasons: int) -> None:
-    script = HERE / "render.py"
-    cmd = [
-        "blender", "-b", str(blend_path), "-P", str(script), "--",
-        "--out", str(out_dir), "--name", name,
-        "--viewpoint", "tree_square",
-        "--tree-grid", f"{ages},{seasons}",
-    ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    from pak.bake import run_render
+    from pak.viewpoints import tree_square_viewpoint
+    run_render(blend=blend_path,
+               viewpoint=tree_square_viewpoint(ages=ages, seasons=seasons),
+               name=name, out_dir=out_dir)
 
 
 def _compose(

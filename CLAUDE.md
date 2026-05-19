@@ -816,6 +816,16 @@ labels match across projections so .dat keys port without
 relabelling.  `bake_way.py` is the way-bake driver (Workbench
 backend, blender-only); see [`docs/bake-way.md`](docs/bake-way.md).
 
+`render.py` has no asset-class knowledge — the parent builds the
+`Viewpoint` via the appropriate factory and pickles a `RenderPayload`
+to the subprocess (`pak.bake.run_render`).  This requires every field
+of `Viewpoint` to round-trip through pickle, including the
+`camera_ortho` / `sun_energy` / `fit_matrix` callables — keep those as
+`functools.partial` of module-level resolvers (see the helpers at the
+top of `viewpoints.py`); a `lambda` or nested-def closure breaks the
+pickle silently and the subprocess fails on load.  Pinned by
+`tests/test_viewpoints.py::TestViewpointPickleRoundTrip`.
+
 **Compose.**  `compose.py` (pure PIL + numpy, no bpy) runs in the
 parent Python after Blender exits: reads the per-facing PNGs,
 crops per `Facing.slices` (multi-tile) and applies any

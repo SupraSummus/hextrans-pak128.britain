@@ -47,7 +47,6 @@ returns structured metrics for programmatic callers.
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,13 +79,10 @@ def _parse(argv: list[str]) -> argparse.Namespace:
 
 
 def _render(blend_path: Path, out_dir: Path, name: str) -> None:
-    script = HERE / "render.py"
-    cmd = [
-        "blender", "-b", str(blend_path), "-P", str(script), "--",
-        "--out", str(out_dir), "--name", name,
-        "--viewpoint", "square",
-    ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    from pak.bake import run_render
+    from pak.viewpoints import SQUARE_VIEWPOINT
+    run_render(blend=blend_path, viewpoint=SQUARE_VIEWPOINT,
+               name=name, out_dir=out_dir)
 
 
 def _compose(ours_dir: Path, up_paths: dict[str, Path], name: str, views: list[str], out_grid: Path) -> list[FacingMetric]:

@@ -26,7 +26,6 @@ import argparse
 import dataclasses
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -38,9 +37,7 @@ from pak.dat import Building
 from pak.diff import MAGIC_PINK, silhouette_mask
 from pak.fetch_blend import fetch as fetch_blend
 from pak.fetch_pak import fetch as fetch_pak
-from pak.materials import Material, to_jsonable
-
-HERE = Path(__file__).resolve().parent
+from pak.materials import Material
 
 
 def _load_module(path: Path):
@@ -50,33 +47,19 @@ def _load_module(path: Path):
     return mod
 
 
-def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
-            materials: dict | None, lighting=None,
-            id_map: bool = False) -> Path:
+def _render(blend_path: Path, out_dir: Path, name: str, vp,
+            materials: dict | None, *, id_map: bool = False) -> Path:
+    """Render the building atlas through `vp` -- the iteration loop
+    pre-builds `vp_normal` (with `lighting`) and `vp_idmap` (without)
+    so the per-iteration call only needs to swap materials in or
+    flip to id-map mode."""
+    from pak.bake import run_render
     from pak.compose import compose_atlas
-    from pak.viewpoints import building_square_viewpoint
-    script = HERE / "render.py"
-    cmd = [
-        "blender", "-b", str(blend_path), "-P", str(script), "--",
-        "--out", str(out_dir), "--name", name,
-        "--viewpoint", "square_building",
-        "--building-footprint", f"1,1,{layouts},1",
-    ]
-    if id_map:
-        cmd += ["--material-id-map"]
-    elif materials:
-        cmd += ["--materials", json.dumps(to_jsonable(materials))]
-    if lighting is not None and not id_map:
-        cmd += ["--lighting", json.dumps(lighting.to_jsonable())]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-    compose_atlas(
-        building_square_viewpoint(
-            layouts=layouts, dims_x=1, dims_y=1, heights=1,
-            lighting=None if id_map else lighting,
-        ),
-        render_dir=out_dir, out_dir=out_dir, name=name,
-        cols_per_row=layouts,
-    )
+    run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir,
+               materials=None if id_map else materials,
+               material_id_map=id_map)
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=name,
+                  cols_per_row=len(vp.facings))
     return out_dir / f"{name}.png"
 
 
@@ -139,15 +122,16 @@ def proposed_color(cur_color: tuple[float, float, float],
     return tuple(float(np.clip(c, *color_clamp)) for c in new)
 
 
-def _measure_drgb(blend_path: Path, out_dir: Path, layouts: int,
-                  materials: dict, lighting, up_arr, season_row: int,
+def _measure_drgb(blend_path: Path, out_dir: Path, vp,
+                  materials: dict, up_arr, season_row: int,
                   iter_label: str, blur_sigma: float = 3.0) -> float:
-    """Render with `materials` + `lighting`, compute the same blurred-
-    all-pixel dRGB used by `diff_buildings.run`."""
+    """Render with `materials`, compute the same blurred-all-pixel dRGB
+    used by `diff_buildings.run`."""
     from pak.diff import drgb_intersection
     from pak.diff_buildings import _best_permutation, _iou_matrix
+    layouts = len(vp.facings)
     name = f"iter_{iter_label}"
-    _render(blend_path, out_dir, name, layouts, materials, lighting)
+    _render(blend_path, out_dir, name, vp, materials)
     ours = np.array(Image.open(out_dir / f"{name}.png").convert("RGBA"))
     our_cells = [ours[:, c*128:(c+1)*128] for c in range(layouts)]
     our_masks = [silhouette_mask(r, magic_rgb=MAGIC_PINK, alpha_threshold=0)
@@ -164,14 +148,15 @@ def _measure_drgb(blend_path: Path, out_dir: Path, layouts: int,
     return sum(deltas) / len(deltas)
 
 
-def _aggregate_means(blend_path, out_dir, layouts, materials, lighting,
-                     up_arr, season_row, iter_label: str):
+def _aggregate_means(blend_path, out_dir, vp_normal, vp_idmap,
+                     materials, up_arr, season_row, iter_label: str):
     """Render + id-map render at the current MATERIALS; return per-material
     `(ours_mean_rgb, upstream_mean_rgb)` aggregated across layouts."""
     from pak.diff_buildings import _best_permutation, _iou_matrix
+    layouts = len(vp_normal.facings)
     name = f"iter_{iter_label}"
-    _render(blend_path, out_dir, name, layouts, materials, lighting)
-    _render(blend_path, out_dir, f"{name}_idmap", layouts, None, None, id_map=True)
+    _render(blend_path, out_dir, name, vp_normal, materials)
+    _render(blend_path, out_dir, f"{name}_idmap", vp_idmap, None, id_map=True)
     sidecar = out_dir / f"{name}_idmap.materials.json"
     mat_to_id = {k: tuple(v) for k, v in json.loads(sidecar.read_text()).items()}
     ours = np.array(Image.open(out_dir / f"{name}.png").convert("RGBA"))
@@ -225,16 +210,25 @@ def run(bake_path: Path, season: str = "summer", max_iters: int = 50) -> None:
     out_dir = REPO_ROOT / "out" / "tune" / bake_path.stem
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    best_drgb = _measure_drgb(blend_path, out_dir, layouts, materials,
-                              lighting, up_arr, season_row, "baseline")
+    from pak.viewpoints import building_square_viewpoint
+    vp_normal = building_square_viewpoint(
+        layouts=layouts, units_per_tile=spec.blend_units_per_tile,
+        dims_x=1, dims_y=1, heights=1, lighting=lighting,
+    )
+    vp_idmap = building_square_viewpoint(
+        layouts=layouts, units_per_tile=spec.blend_units_per_tile,
+        dims_x=1, dims_y=1, heights=1,
+    )
+    best_drgb = _measure_drgb(blend_path, out_dir, vp_normal,
+                              materials, up_arr, season_row, "baseline")
     best_materials = dict(materials)
     print(f"  baseline dRGB={best_drgb:.3f}")
 
     current = dict(materials)
     for i in range(max_iters):
         mean_ours, mean_up = _aggregate_means(
-            blend_path, out_dir, layouts, current, lighting, up_arr,
-            season_row, f"meas{i}",
+            blend_path, out_dir, vp_normal, vp_idmap, current,
+            up_arr, season_row, f"meas{i}",
         )
         proposed = dict(current)
         for name_, mat in current.items():
@@ -242,7 +236,7 @@ def run(bake_path: Path, season: str = "summer", max_iters: int = 50) -> None:
                 continue
             new_color = proposed_color(mat.color, mean_ours[name_], mean_up[name_])
             proposed[name_] = dataclasses.replace(mat, color=new_color)
-        drgb = _measure_drgb(blend_path, out_dir, layouts, proposed, lighting,
+        drgb = _measure_drgb(blend_path, out_dir, vp_normal, proposed,
                              up_arr, season_row, f"prop{i}")
         improved = drgb < best_drgb
         print(f"  iter {i}: proposed dRGB={drgb:.3f}  "

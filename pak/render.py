@@ -28,10 +28,13 @@ side in `pak.compose.compose_atlas`, which has no bpy dependency.
 Per-facing PNGs go through Blender's writer; the atlas through
 PIL's.  bpy doesn't touch image IO past `bpy.ops.render.render`.
 
-Run as:
+Asset-class dispatch lives in the parent (`pak.bake.run_render` +
+factories in `pak.viewpoints`); this script unpickles a `RenderPayload`
+and calls `render_facings`.  Adding a new asset class is a parent-side
+factory and doesn't touch render.py.
 
     blender -b <blend_path> -P pak/render.py -- \\
-        --out <dir> --name <stem> --viewpoint hex|square
+        --out <dir> --name <stem> --payload <pickle_path>
 """
 
 from __future__ import annotations
@@ -916,176 +919,43 @@ def render_facings(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
         bpy.ops.render.render(animation=False, write_still=True)
 
 
+@dataclass
+class RenderPayload:
+    """Wire-format for the subprocess: a Viewpoint plus the per-asset
+    knobs `render_facings` accepts.  Built and pickled by
+    `pak.bake.run_render`."""
+    viewpoint: Viewpoint
+    materials: dict | None = None
+    model_offset: tuple[float, float, float] | None = None
+    material_id_map: bool = False
+
+
 def _parse_args(argv):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", required=True)
     ap.add_argument("--name", required=True)
-    ap.add_argument("--viewpoint", required=True,
-                    choices=["hex", "square", "hex_building", "square_building",
-                             "fence_square", "bridge_square", "bridge_hex",
-                             "tree_hex", "tree_square"])
-    ap.add_argument("--tree-grid", default=None,
-                    help="AGES,SEASONS — grid size for viewpoint=tree_hex/"
-                         "tree_square; SEASONS controls leaf-colour overrides "
-                         "(currently summer only; expand when the rest are "
-                         "calibrated)")
-    ap.add_argument("--bridge-piece", default=None,
-                    choices=["image", "start", "ramp"],
-                    help="piece kind for viewpoint=bridge_hex (image=3-axis "
-                         "span, start/ramp=6-dir endpoint); required for that "
-                         "viewpoint")
-    ap.add_argument("--building-footprint", default=None,
-                    help="X,Y,L,H — footprint (dims_x, dims_y, layouts, "
-                         "heights) for viewpoint=hex_building or "
-                         "square_building; required for those modes")
-    ap.add_argument("--model-offset", default=None,
-                    help="X,Y,Z -- where the model's centre sits in the "
-                         "blend's authored world coords.  Pre-translates the "
-                         "mesh by -offset before rotation/fit/etc so the "
-                         "model's effective centre lands at world origin "
-                         "and the layout rotation pivots around it.  Use "
-                         "when the artist authored the model away from "
-                         "world origin (default = identity, honour authoring).")
-    ap.add_argument("--building-units-per-tile", default=None, type=float,
-                    help="Blend-frame world units that map to one engine "
-                         "tile.  Required for building_hex_viewpoint / "
-                         "building_square_viewpoint; sole anchor for "
-                         "camera ortho, canvas size, and fit_matrix.  "
-                         "Threaded through from Building SPEC's "
-                         "`blend_units_per_tile`.")
-    ap.add_argument("--materials", default="",
-                    help="JSON serialisation of the bake script's "
-                         "`MATERIALS = {...}` dict (see pak.materials).  "
-                         "Per-material image/noise/texco/size descriptions "
-                         "the renderer wires into Principled BSDF node "
-                         "graphs; unlisted materials render flat-diffuse.")
-    ap.add_argument("--lighting", default="",
-                    help="JSON serialisation of the bake script's optional "
-                         "`LIGHTING = Lighting(...)` block; per-asset world-"
-                         "ambient + sun overrides.  See pak.materials.Lighting.")
-    ap.add_argument("--strip", default=None,
-                    help="Comma-separated mesh-object names to drop on "
-                         "entry, overriding the viewpoint's default "
-                         "(`Sphere`).  Used by per-asset bakes to remove "
-                         "blend-shipped debug / registration meshes that "
-                         "carry no material slot (so a materials override "
-                         "can't reach them).")
-    ap.add_argument("--material-id-map", action="store_true",
-                    help="Diagnostic: instead of the normal render, "
-                         "replace every material with a flat unlit "
-                         "emission of a unique RGB id, write a "
-                         "`<name>.materials.json` sidecar mapping name → "
-                         "RGB.  Resulting atlas pixel-aligns with the "
-                         "normal render; consumers (`pak.diag_per_material`) "
-                         "use the id map to extract per-material masks.")
+    ap.add_argument("--payload", required=True,
+                    help="Path to a pickle of `RenderPayload` -- the full "
+                         "rendering recipe (Viewpoint + materials + offset + "
+                         "diagnostic flags) marshalled from the parent "
+                         "process.  See `pak.bake.run_render`.")
     return ap.parse_args(argv)
 
 
 def main(argv):
+    import pickle
+
     import bpy
     import mathutils
 
-    from pak.viewpoints import (
-        HEX_VIEWPOINT,
-        SQUARE_VIEWPOINT,
-        bridge_hex_viewpoint,
-        bridge_square_viewpoint,
-        building_hex_viewpoint,
-        building_square_viewpoint,
-        fence_square_viewpoint,
-        tree_hex_viewpoint,
-        tree_square_viewpoint,
-    )
-
     args = _parse_args(argv)
+    with open(args.payload, "rb") as fh:
+        payload: RenderPayload = pickle.load(fh)
 
-    lighting = None
-    if args.lighting:
-        import json
-
-        from pak.materials import Lighting
-        lighting = Lighting.from_jsonable(json.loads(args.lighting))
-
-    if args.viewpoint == "hex":
-        vp = HEX_VIEWPOINT
-    elif args.viewpoint == "square":
-        vp = SQUARE_VIEWPOINT
-    elif args.viewpoint == "fence_square":
-        vp = fence_square_viewpoint()
-    elif args.viewpoint == "bridge_square":
-        vp = bridge_square_viewpoint()
-    elif args.viewpoint == "bridge_hex":
-        if not args.bridge_piece:
-            raise SystemExit(
-                "--viewpoint bridge_hex requires --bridge-piece image|start|ramp"
-            )
-        vp = bridge_hex_viewpoint(args.bridge_piece)
-    elif args.viewpoint in ("hex_building", "square_building"):
-        if not args.building_footprint:
-            raise SystemExit(
-                f"--viewpoint {args.viewpoint} requires --building-footprint X,Y,L,H"
-            )
-        parts = [int(s) for s in args.building_footprint.split(",")]
-        if len(parts) == 3:
-            parts.append(1)  # heights=1 default for back-compat
-        dx, dy, l, h = parts
-        if args.building_units_per_tile is None:
-            raise SystemExit(
-                f"--viewpoint {args.viewpoint} requires --building-units-per-tile"
-            )
-        factory = (building_hex_viewpoint if args.viewpoint == "hex_building"
-                   else building_square_viewpoint)
-        vp = factory(
-            layouts=l, dims_x=dx, dims_y=dy, heights=h,
-            units_per_tile=args.building_units_per_tile,
-            lighting=lighting,
-        )
-    elif args.viewpoint in ("tree_hex", "tree_square"):
-        if not args.tree_grid:
-            raise SystemExit(
-                f"--viewpoint {args.viewpoint} requires --tree-grid AGES,SEASONS"
-            )
-        ages, seasons = (int(s) for s in args.tree_grid.split(","))
-        factory = (tree_hex_viewpoint if args.viewpoint == "tree_hex"
-                   else tree_square_viewpoint)
-        vp = factory(ages=ages, seasons=seasons)
-    else:
-        raise SystemExit(f"unknown viewpoint: {args.viewpoint!r}")
-
-    if lighting is not None and args.viewpoint not in (
-        "hex_building", "square_building",
-    ):
-        raise SystemExit(
-            f"--lighting only supported by hex_building/square_building "
-            f"viewpoints; got {args.viewpoint!r}"
-        )
-
-    if args.strip is not None:
-        from dataclasses import replace
-        vp = replace(vp, strip_meshes=tuple(
-            n for n in args.strip.split(",") if n
-        ))
-
-    materials = None
-    if args.materials:
-        import json
-
-        from pak.materials import from_jsonable
-        materials = from_jsonable(json.loads(args.materials))
-
-    model_offset = None
-    if args.model_offset:
-        parts = [float(s) for s in args.model_offset.split(",")]
-        if len(parts) != 3:
-            raise SystemExit(
-                f"--model-offset expects X,Y,Z; got {args.model_offset!r}"
-            )
-        model_offset = tuple(parts)
-
-    render_facings(bpy, mathutils, vp, args.out, args.name,
-                   materials=materials,
-                   material_id_map=args.material_id_map,
-                   model_offset=model_offset)
+    render_facings(bpy, mathutils, payload.viewpoint, args.out, args.name,
+                   materials=payload.materials,
+                   material_id_map=payload.material_id_map,
+                   model_offset=payload.model_offset)
     return 0
 
 
