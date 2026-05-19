@@ -42,7 +42,7 @@ from pak.hex_synth import (
     UPSTREAM_ORTHO_SCALE,
     hex_proj_shear,
 )
-from pak.render import EEVEE, BlendAuthored, Facing, Viewpoint
+from pak.render import EEVEE, BlendAuthored, Facing, Slice, Viewpoint
 
 # === Authored-resolution helpers ==========================================
 #
@@ -393,14 +393,87 @@ def hex_tile_screen_offset(qx: int, ry: int) -> tuple[float, float]:
             0.25 * DEFAULT_W * qx + 0.5 * DEFAULT_W * ry)
 
 
+def sq_tile_screen_offset(x: float, y: float) -> tuple[float, float]:
+    """Simutrans Standard dimetric tile lattice: koord +x heads SE on
+    screen, koord +y heads SW.  Accepts floats so per-layout footprint
+    centroid shifts can use the same formula.  Used by
+    `building_square_viewpoint` for multi-tile slice centring and by
+    `pak.diff_buildings` for upstream-cell stitching — single source of
+    truth for the koord→screen mapping either side of the diff."""
+    return (64.0 * x - 64.0 * y, 32.0 * x + 32.0 * y)
+
+
+def sq_tile_pixel_mask(
+    my_offset: tuple[int, int],
+    other_offsets: list[tuple[int, int]] = (),
+    image_width: int = DEFAULT_W,
+):
+    """Per-cell pixel-ownership mask for the square dimetric lattice.
+
+    A multi-tile asset's full-canvas render carries pixels from every
+    tile in one image; naïvely cropping a W² window around each tile's
+    screen anchor brings in the neighbouring tiles' content.  Upstream
+    pak128.Britain assigns each canvas pixel to the tile whose anchor
+    minimises the dimetric L1 distance `|Δx| + 2·|Δy|` (ties broken in
+    favour of the closer-to-viewer tile, i.e. larger anchor y).  This
+    gives a strict partition — verified zero-pixel overlap when
+    upstream cells of stonehenge / mechanical-signalbox-large are
+    pasted back at their canvas positions.  Bisector lines are
+    diagonals at slope ±2 in the lattice (`sx ± 2·sy = const`),
+    producing the diamond-corner cuts seen in upstream per-tile
+    sprites.
+
+    Intersected with the cell-shape hexagon (apex at `(W/2, 0)` and
+    `(W/2, W)`, ground diamond at the cell's lower half), which is the
+    right shape for the back-most tile (no closer neighbours).
+    Single-tile assets (`other_offsets=()`) collapse to the bare
+    hexagon — same shape upstream uses for one-cell buildings.  The
+    `+1` slack in the hex bounds absorbs the diamond-diagonal AA-edge
+    ring that strict math would clip.
+
+    `my_offset`: this tile's slice centre offset (`cx_px, cy_px`) from
+    the canvas centre, same value passed in `Facing.slices`.
+    `other_offsets`: every other tile's slice centre.
+    """
+    import numpy as np
+    half = image_width // 2
+    full = image_width
+    ys, xs = np.indices((full, full))
+    dx_cell = xs - half
+    # Cell ground anchor at pixel (W/2, 3W/4); cell coords -> canvas
+    # offsets from this tile's anchor.
+    anchor_y = 3 * full // 4
+    dy_cell = ys - anchor_y
+    my_dist = np.abs(dx_cell) + 2 * np.abs(dy_cell)
+    keep = np.ones((full, full), dtype=bool)
+    mx, my = my_offset
+    for ox, oy in other_offsets:
+        # Other tile's anchor offset relative to ours.  Both anchors
+        # land at slice_centre + (0, +32) in canvas, so the anchor-to-
+        # anchor delta equals the slice-centre delta.
+        rel_x, rel_y = ox - mx, oy - my
+        other_dist = np.abs(dx_cell - rel_x) + 2 * np.abs(dy_cell - rel_y)
+        # Closer-to-viewer wins ties: `rel_y > 0` means other is below
+        # us in screen, so we LOSE ties when rel_y > 0.
+        keep &= (my_dist < other_dist) | (
+            (my_dist == other_dist) & (rel_y < 0)
+        )
+    # Cell-shape hexagon.  Top/bottom diamond cuts at the four corners.
+    abs_x = np.abs(dx_cell)
+    keep &= (abs_x <= 2 * ys + 1) & (abs_x <= 2 * (full - ys) + 1)
+    return keep.astype(np.float32)
+
+
 def building_square_viewpoint(
     layouts: int, dims_x: int = 1, dims_y: int = 1, heights: int = 1,
     lighting=None, ortho_per_tile: float | None = None,
 ) -> Viewpoint:
-    """Square-dimetric Viewpoint mirroring `building_square_viewpoint`'s
-    role for the calibration diff: one Facing per `(l, y, x, h)` cell
-    in `iter_building_cells` order, rendered under upstream's normal-
-    alignment cardinal cameras instead of the hex camera.
+    """Square-dimetric Viewpoint for the multi-tile calibration diff:
+    one Facing per layout rendered under upstream's normal-alignment
+    cardinal cameras.  Multi-tile renders carry `slices` listing per-
+    cell positions on the layout canvas; the render harness then emits
+    both the full canvas (for the stitched diff) and per-cell 128²
+    sprites (for the per-tile diff).
 
     Layout `l` selects one of the four cardinal cameras
     (S, W, N, E in `_UPSTREAM_NORMAL_CARDINAL`) — equivalent to upstream
@@ -415,12 +488,13 @@ def building_square_viewpoint(
     (which are at the same blend-native scale).
 
     Multi-tile assets (`dims_x > 1` or `dims_y > 1`) render one
-    full-canvas Facing per layout at a wider square canvas (sized
-    `multi_tile_canvas` px on a side); the per-cell slicing the
-    hex viewpoint does is skipped — the goal is to reproduce upstream's
-    per-cardinal full-canvas render as authored, before upstream's
-    private crop/arrange stage.  Heights > 1 still unsupported.
+    full-canvas Facing per layout at a 512² square canvas; `slices`
+    fans out from the canvas centre at `sq_tile_screen_offset(x - xc,
+    y - yc)` per cell, with `(xc, yc)` the per-layout footprint
+    centroid.  Heights > 1 still unsupported.
     """
+    from pak.dat import building_footprint_centroid
+
     multi_tile = dims_x > 1 or dims_y > 1
     if heights != 1:
         raise NotImplementedError(
@@ -445,12 +519,43 @@ def building_square_viewpoint(
     facings: list[Facing] = []
     for l in range(layouts):
         _label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
+        slice_list: list[Slice] | None = None
+        if multi_tile:
+            # Per-layout footprint centroid in (x, y) koord units mirrors
+            # the engine's even/odd dims swap.  `building_writer.cc`
+            # iterates `y in [0, size.y), x in [0, size.x)` on even
+            # layouts and swaps to `y in [0, size.x), x in [0, size.y)`
+            # on odd layouts; the centroid follows the same rule.
+            xc, yc = building_footprint_centroid(dims_x, dims_y, l)
+            yh, xw = (dims_x, dims_y) if l & 1 else (dims_y, dims_x)
+            cells = [(y, x) for y in range(yh) for x in range(xw)]
+            # Integer per-cell slice offsets.  See `pak.diff_buildings._tile_
+            # topleft` for the equivalent arithmetic on the stitch side
+            # (the +32 / -32 canvas-anchor / cell-anchor offsets cancel,
+            # so the slice offset equals the koord screen offset).
+            offsets = [
+                tuple(int(round(v))
+                      for v in sq_tile_screen_offset(x - xc, y - yc))
+                for y, x in cells
+            ]
+            slice_list = [
+                Slice(
+                    label=f"L{l}_Y{y}_X{x}_H0",
+                    offset=offsets[i],
+                    alpha_mask=sq_tile_pixel_mask(
+                        offsets[i],
+                        [o for j, o in enumerate(offsets) if j != i],
+                    ),
+                )
+                for i, (y, x) in enumerate(cells)
+            ]
         facings.append(Facing(
-            label=f"L{l}_Y0_X0_H0",
+            label=f"L{l}_H0" if multi_tile else f"L{l}_Y0_X0_H0",
             camera_location=loc,
             camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
             sun_rotation_euler=sun_rotation_for_camera(cam_z),
             model_rot_z_deg=(2.0 * step * l) % 360.0,
+            slices=slice_list,
         ))
     canvas_w = canvas_h = 512 if multi_tile else None
     sun_energy = _wrap_sun_energy_with_lighting(
@@ -881,15 +986,20 @@ def building_hex_viewpoint(
                 # One Facing per (l, h); slices fan out across the cells
                 # at hex screen-koord positions, shifted so the
                 # multi-tile footprint sits centred in the canvas.
-                slice_list: list[tuple[str, tuple[int, int]]] = []
-                for y in range(yh):
-                    for x in range(xw):
-                        cx_px, cy_px = hex_tile_screen_offset(x, y)
-                        slice_list.append((
-                            f"L{l}_Y{y}_X{x}_H{h}",
-                            (int(round(cx_px - cx_max / 2)),
-                             int(round(cy_px - cy_max / 2))),
-                        ))
+                # Per-tile pixel-ownership mask for the hex lattice is
+                # unfinished (square dimetric has `sq_tile_pixel_mask`);
+                # alpha_mask=None until that lands -- see TODO.md.
+                slice_list = [
+                    Slice(
+                        label=f"L{l}_Y{y}_X{x}_H{h}",
+                        offset=(
+                            int(round(hex_tile_screen_offset(x, y)[0] - cx_max / 2)),
+                            int(round(hex_tile_screen_offset(x, y)[1] - cy_max / 2)),
+                        ),
+                        alpha_mask=None,
+                    )
+                    for y in range(yh) for x in range(xw)
+                ]
                 facings.append(Facing(
                     label=f"L{l}_H{h}", slices=slice_list, **shared_kwargs,
                 ))

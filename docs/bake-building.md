@@ -138,6 +138,27 @@ exercised on a single-tile near-symmetric residential, so multi-
 tile centring and layout-rotation-sign disambiguation still wait
 on a multi-tile asymmetric port.
 
+**Multi-tile pixel ownership.**  A multi-tile sprite carries pixels
+from every cell in one wide render, then `Facing.slices` crops one
+128² window per tile (positions = `sq_tile_screen_offset(x - xc,
+y - yc)` from the per-layout centroid).  A flat crop pulls in
+neighbouring tiles' content — upstream pak128.Britain instead
+applies a strict per-pixel partition so the engine can paint cells
+back-to-front without overdraw.  `sq_tile_pixel_mask` (in
+`pak.viewpoints`) builds the clip: every canvas pixel goes to the
+tile whose anchor minimises the dimetric L1 distance `|Δx| + 2·|Δy|`
+(ties to the closer-to-viewer tile), intersected with the cell-
+shape hexagon (apex at top/bottom centre).  Verified zero-pixel
+overlap when upstream cells are pasted back onto the canvas.
+Bisector lines are diagonals at slope ±2 in the lattice (`sx ±
+2·sy = const`), producing the diamond-corner cuts seen in upstream
+per-tile sprites.  `building_square_viewpoint` builds one mask per
+slice and attaches it via `Slice.alpha_mask`; `render_atlas`
+multiplies the sliced cell's alpha by the mask.  Hex production
+bake still emits `alpha_mask=None` -- the hex-projection ownership
+shape is a separate derivation (see TODO.md → "hex-projection
+per-tile pixel mask").
+
 **Lighting calibration.**  All upstream PNGs (vehicles, ways,
 buildings alike) were rendered in **Blender Internal under Blender
 2.79** — confirmed by the contributing-graphics tutorial board 75

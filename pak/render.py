@@ -36,12 +36,25 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from math import radians
 from pathlib import Path
+from typing import NamedTuple
 
 HERE = Path(__file__).resolve().parent
 # Put the repo root on sys.path so `pak.<module>` imports resolve.
 # `hex_synth` uses `from .way import …`, so we need the package form,
 # not a flat sys.path on the `pak/` dir.  Mirrors `pak/bake_way.py`.
 sys.path.insert(0, str(HERE.parent))
+
+
+class Slice(NamedTuple):
+    """One sprite cropped from a Facing's wide canvas — see
+    `Facing.slices`.  `offset` is the cell-centre position relative to
+    the canvas centre; `alpha_mask` (a W×W float array, or None) clips
+    the cell to the tile's pixel-ownership region for multi-tile
+    sprites (square dimetric: L1 Voronoi cell ∩ hexagon, see
+    `sq_tile_pixel_mask`)."""
+    label: str
+    offset: tuple[int, int]
+    alpha_mask: object | None
 
 
 @dataclass
@@ -60,10 +73,8 @@ class Facing:
     `(canvas_width/2 + cx_px, canvas_height/2 + cy_px)`.  Used by the
     multi-tile building viewpoint — the whole footprint renders once
     at a wide canvas with the model untranslated, then crops at the
-    hex screen positions of each `(qx, ry)` koord deliver the per-tile
-    sprites.  Default `None` keeps the legacy 1-cell-per-facing path.
-    Slice labels become the atlas's per-cell labels in `_print_atlas_
-    summary` output."""
+    per-tile screen positions deliver the per-tile sprites.  Default
+    `None` keeps the legacy 1-cell-per-facing path; see `Slice`."""
     label: str
     camera_location: tuple[float, float, float]
     camera_rotation_euler: tuple[float, float, float]  # radians
@@ -71,7 +82,7 @@ class Facing:
     model_rot_z_deg: float = 0.0  # rotation applied to the mesh after fit
     model_translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
     model_scale: float = 1.0
-    slices: list[tuple[str, tuple[int, int]]] | None = None
+    slices: list[Slice] | None = None
 
 
 def _configure_cycles(scn) -> None:
@@ -967,7 +978,8 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                 # alpha where the crop runs off the canvas edge.
                 cx0 = canvas_w / 2.0
                 cy0 = canvas_h / 2.0
-                for slice_label, (cx_px, cy_px) in facing.slices:
+                for sl in facing.slices:
+                    cx_px, cy_px = sl.offset
                     x0 = int(round(cx0 + cx_px - sprite_w / 2))
                     y0 = int(round(cy0 + cy_px - sprite_w / 2))
                     cell = np.zeros((sprite_w, sprite_w, 4), dtype=np.float32)
@@ -981,14 +993,21 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                         cell[sy0:sy0 + ch, sx0:sx0 + cw] = (
                             rendered[dy0:dy0 + ch, dx0:dx0 + cw]
                         )
-                    cells.append((slice_label, cell))
+                    # Per-slice pixel-ownership mask (e.g. dimetric L1
+                    # Voronoi ∩ hex for square_building) clips pixels
+                    # outside this tile's footprint so the engine paints
+                    # multi-tile sprites without overdraw between
+                    # neighbours.  None = no clip (single-tile / hex bake).
+                    if sl.alpha_mask is not None:
+                        cell[..., 3] *= sl.alpha_mask
+                    cells.append((sl.label, cell))
                     if keep_per_facing:
                         # Per-slice PNG, top-down (cell array already is
                         # top-down because _load_rgba flipped on load).
                         from PIL import Image as _PILImage
                         _bytes = (cell * 255).clip(0, 255).astype("uint8")
                         _PILImage.fromarray(_bytes, "RGBA").save(
-                            out_dir / f"{name}_{slice_label}.png"
+                            out_dir / f"{name}_{sl.label}.png"
                         )
 
         cols = cols_per_row or len(cells)

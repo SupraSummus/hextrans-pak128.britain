@@ -237,7 +237,8 @@ def main(argv: list[str]) -> int:
     from PIL import Image
 
     render_name = Path(spec.blend).stem
-    our_canvases = _load_our_renders(out_dir, render_name, layouts)
+    our_canvases = _load_our_renders(out_dir, render_name, layouts,
+                                     multi_tile=True)
 
     up_dat_path = fetch_pak(spec.upstream_dat)
     up_png_path = fetch_pak(
