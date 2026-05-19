@@ -212,14 +212,6 @@ def _atlas_cell(atlas, row: int, col: int):
     return atlas[row * 128:(row + 1) * 128, col * 128:(col + 1) * 128]
 
 
-# Simutrans Standard dimetric tile lattice: koord +x heads SE on screen,
-# koord +y heads SW.  Multi-tile cells place at this offset around the
-# building's koord (0, 0) origin.  Accepts floats so per-layout centroid
-# shifts can use the same formula.
-def _sq_tile_screen_offset(x: float, y: float) -> tuple[float, float]:
-    return (64.0 * x - 64.0 * y, 32.0 * x + 32.0 * y)
-
-
 # Per-layout square_building canvas size, matching what the
 # `square_building` viewpoint renders into.  Both ours and the
 # upstream stitch land on this canvas.
@@ -255,19 +247,12 @@ def _tile_topleft(x: int, y: int,
     The cell's `_CELL_GROUND_ANCHOR` pixel lands at the engine
     `koord_to_screen` offset from `centroid_xy` (in koord units),
     anchored on `_STITCH_CANVAS_ANCHOR`."""
+    from pak.viewpoints import sq_tile_screen_offset
     cx, cy = _STITCH_CANVAS_ANCHOR
     xc, yc = centroid_xy
     ax, ay = _CELL_GROUND_ANCHOR
-    dx, dy = _sq_tile_screen_offset(x - xc, y - yc)
+    dx, dy = sq_tile_screen_offset(x - xc, y - yc)
     return (int(round(cx + dx)) - ax, int(round(cy + dy)) - ay)
-
-
-def _crop_cell(canvas, x: int, y: int,
-               centroid_xy: tuple[float, float]):
-    """Crop the 128×128 cell for tile (y, x) from a 512×512 layout
-    canvas, aligned to the same per-layout centroid the stitch uses."""
-    x0, y0 = _tile_topleft(x, y, centroid_xy)
-    return canvas[y0:y0 + 128, x0:x0 + 128]
 
 
 def _stitch_upstream_layout(cells_by_yx, centroid_xy, *, magic_rgb):
@@ -401,7 +386,8 @@ def run_multitile(
             blend_ortho_per_tile=blend_ortho_per_tile,
             model_offset_xyz=model_offset_xyz,
             strip=strip)
-    our_canvases = _load_our_renders(out_dir, render_name, layouts)
+    our_canvases = _load_our_renders(out_dir, render_name, layouts,
+                                     multi_tile=True)
 
     up_dat_path = fetch_pak(upstream_dat)
     up_png_path = fetch_pak(f"{image_stem(upstream_dat, name=name)}.png")
@@ -429,15 +415,16 @@ def run_multitile(
         for L in range(layouts)
     }
 
-    # Per-cell diff: one row per (L, y, x).  Our cell is the 128×128
-    # crop of our 512×512 render at the tile screen offset; upstream's
+    # Per-cell diff: one row per (L, y, x).  Our cell is the 128² sprite
+    # the render harness sliced from the 512² layout canvas (one PNG per
+    # (l, y, x, h) under `square_building`'s `Facing.slices`); upstream's
     # is its committed atlas cell.
     per_cell: list[MultiTileCell] = []
     tile_grid_cells: list[GridCell] = []
     for k in sorted(up_index):
         l, y, x, h, p, s = k
         up_cell = _atlas_cell(up_atlas, *up_index[k])
-        our_cell = _crop_cell(our_canvases[l], x, y, centroid_by_L[l])
+        our_cell = _load_our_cell(out_dir, render_name, l, y, x, h)
         m, our_mask, up_mask = _cell_metric(our_cell, up_cell,
                                             blur_sigma=blur_sigma)
         rec = MultiTileCell(l=l, y=y, x=x, h=h, phase=p, season=s,
@@ -478,17 +465,42 @@ def run_multitile(
     return per_cell, per_layout
 
 
-def _load_our_renders(our_dir: Path, name: str, layouts: int):
-    """Per-layout RGBA arrays produced by `_render`."""
+def _load_our_renders(our_dir: Path, name: str, layouts: int,
+                      multi_tile: bool = False):
+    """Per-layout RGBA arrays produced by `_render`.
+
+    Single-tile (`multi_tile=False`): one PNG per layout at the legacy
+    `L{l}_Y0_X0_H0` filename — full canvas equals the cell.
+
+    Multi-tile: `building_square_viewpoint` adds per-cell `slices`, so
+    `render.py` saves the full 512² layout canvas as `{name}_L{l}_H0.png`
+    (Facing.label) and individual cells as `{name}_L{l}_Y{y}_X{x}_H0.png`.
+    Load the full-canvas form here; per-cell sprites load via
+    `_load_our_cell`."""
     import numpy as np
     from PIL import Image
 
+    suffix = "H0" if multi_tile else "Y0_X0_H0"
     return [
         np.asarray(
-            Image.open(our_dir / f"{name}_L{l}_Y0_X0_H0.png").convert("RGBA")
+            Image.open(our_dir / f"{name}_L{l}_{suffix}.png").convert("RGBA")
         )
         for l in range(layouts)
     ]
+
+
+def _load_our_cell(our_dir: Path, name: str,
+                   l: int, y: int, x: int, h: int):
+    """Per-cell 128² RGBA sprite the render harness wrote via the
+    multi-tile `Facing.slices` mechanism."""
+    import numpy as np
+    from PIL import Image
+
+    return np.asarray(
+        Image.open(
+            our_dir / f"{name}_L{l}_Y{y}_X{x}_H{h}.png",
+        ).convert("RGBA"),
+    )
 
 
 def _iou_matrix(our_masks, up_masks):

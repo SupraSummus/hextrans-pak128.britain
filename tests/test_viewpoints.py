@@ -19,6 +19,7 @@ from pak.viewpoints import (
     building_hex_viewpoint,
     building_square_viewpoint,
     hex_tile_screen_offset,
+    sq_tile_pixel_mask,
     sun_rotation_for_camera,
 )
 
@@ -176,30 +177,100 @@ class TestBuildingHexMultiTile(unittest.TestCase):
             hex_tile_screen_offset(0, 0),
             hex_tile_screen_offset(1, 0),
         ]
-        for (_, (got_cx, got_cy)), (want_cx, want_cy) in zip(
-                l0.slices, expected, strict=True,
-        ):
-            self.assertEqual(got_cx, int(round(want_cx - cx_max / 2)))
-            self.assertEqual(got_cy, int(round(want_cy - cy_max / 2)))
+        for sl, (want_cx, want_cy) in zip(l0.slices, expected, strict=True):
+            self.assertEqual(sl.offset, (int(round(want_cx - cx_max / 2)),
+                                         int(round(want_cy - cy_max / 2))))
 
 
 class TestBuildingSquareViewpoint(unittest.TestCase):
     """Square calibration viewpoint supports multi-tile via a wider
-    full-canvas Facing per layout (no per-cell slicing).  Heights > 1
+    full-canvas Facing per layout, with per-cell `slices` so the render
+    harness emits both the stitched canvas (for the per-layout diff)
+    and the per-tile sprites (for the per-cell diff).  Heights > 1
     is still unsupported."""
 
-    def test_multi_tile_returns_full_canvas_facings(self):
+    def test_multi_tile_returns_sliced_layout_facings(self):
         vp = building_square_viewpoint(layouts=4, dims_x=2, dims_y=1)
         self.assertEqual(len(vp.facings), 4)
-        # Multi-tile: canvas widened to 512x512, no per-cell slices.
+        # Multi-tile: canvas widened to 512x512.
         self.assertEqual(vp.canvas_width, 512)
         self.assertEqual(vp.canvas_height, 512)
+        # Each layout's Facing carries `slices` listing per-cell screen
+        # positions on the 512² canvas, top-down with (0, 0) at the
+        # canvas centre.  Even layouts (dims_x=2, dims_y=1) span x;
+        # odd layouts swap to span y.
+        even = vp.facings[0].slices
+        odd = vp.facings[1].slices
+        self.assertEqual(
+            [sl.label for sl in even], ["L0_Y0_X0_H0", "L0_Y0_X1_H0"],
+        )
+        self.assertEqual(
+            [sl.label for sl in odd], ["L1_Y0_X0_H0", "L1_Y1_X0_H0"],
+        )
+        # Even-layout cells lie on the (x, x/2) line: koord +x heads SE
+        # on the dimetric screen.  Two cells centred at koord ±0.5 land
+        # at screen ±(32, 16) from canvas centre.
+        self.assertEqual(
+            [sl.offset for sl in even], [(-32, -16), (32, 16)],
+        )
+        # Each slice carries a per-tile pixel-ownership mask (None
+        # only in the single-tile fall-through path).
+        for sl in even:
+            self.assertIsNotNone(sl.alpha_mask)
+
+    def test_single_tile_no_slices(self):
+        """Legacy 1-cell-per-facing path still kicks in for dims=(1, 1)."""
+        vp = building_square_viewpoint(layouts=4, dims_x=1, dims_y=1)
         for f in vp.facings:
             self.assertIsNone(f.slices)
+        self.assertIsNone(vp.canvas_width)
+        self.assertIsNone(vp.canvas_height)
 
     def test_multi_height_raises(self):
         with self.assertRaises(NotImplementedError):
             building_square_viewpoint(layouts=4, dims_x=1, dims_y=1, heights=2)
+
+
+class TestSqTilePixelMask(unittest.TestCase):
+    """`sq_tile_pixel_mask` is the dimetric-L1 Voronoi ∩ hex clip that
+    keeps multi-tile sprites disjoint — the convention upstream
+    pak128.Britain uses for back-to-front paint without overdraw."""
+
+    def test_single_tile_collapses_to_hexagon(self):
+        # No neighbours -> only the hex clip applies.  Four corner
+        # pixels are outside, the cell centre and ground anchor are in.
+        m = sq_tile_pixel_mask((0, 0))
+        # Hex corners are clipped (1-px slack absorbs the AA edge ring).
+        self.assertEqual(m[0, 0], 0.0)
+        self.assertEqual(m[0, DEFAULT_W - 1], 0.0)
+        self.assertEqual(m[DEFAULT_W - 1, 0], 0.0)
+        self.assertEqual(m[DEFAULT_W - 1, DEFAULT_W - 1], 0.0)
+        # Cell centre and ground anchor are inside.
+        self.assertEqual(m[DEFAULT_W // 2, DEFAULT_W // 2], 1.0)
+        self.assertEqual(m[3 * DEFAULT_W // 4, DEFAULT_W // 2], 1.0)
+
+    def test_adjacent_tiles_disjoint_on_canvas(self):
+        # 2x1 footprint, even layout: tile A at (-32, -16) and tile B at
+        # (+32, +16) from canvas centre.  Each tile's mask placed at its
+        # canvas position must NOT overlap with its neighbour's — the
+        # strict-ownership invariant that motivated the whole design.
+        import numpy as np
+        a_off, b_off = (-32, -16), (32, 16)
+        ma = sq_tile_pixel_mask(a_off, [b_off])
+        mb = sq_tile_pixel_mask(b_off, [a_off])
+        canvas_size = 256
+        ca = np.zeros((canvas_size, canvas_size), dtype=np.float32)
+        cb = np.zeros((canvas_size, canvas_size), dtype=np.float32)
+
+        def paste(canvas, mask, off):
+            cx = canvas_size // 2 + off[0] - DEFAULT_W // 2
+            cy = canvas_size // 2 + off[1] - DEFAULT_W // 2
+            canvas[cy:cy + DEFAULT_W, cx:cx + DEFAULT_W] = mask
+        paste(ca, ma, a_off)
+        paste(cb, mb, b_off)
+        # Both > 0 anywhere = overlap.
+        overlap = ((ca > 0) & (cb > 0)).sum()
+        self.assertEqual(overlap, 0)
 
 
 if __name__ == "__main__":

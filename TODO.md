@@ -359,28 +359,43 @@ building ports: if a pattern emerges (e.g. every attraction at
 convention; otherwise treat per-asset override as the steady state.
 
 **Open: multi-tile calibration diff residual.**
-`diff_buildings.run_multitile` anchors the stitch on
-`_STITCH_CANVAS_ANCHOR = (256, 288)` -- where the camera projects
-world (0,0,0) per the cardinal-camera math (pitch=60° looks at
-(-4.2, 4.2, 0) not origin; uniform by cardinal symmetry).
-`Building.blend_model_offset_xyz` lets a SPEC pin where the model
-sits in world (renderer pre-translates by -offset before fit/
-rotation/render) for assets where the artist authored off-centre;
-`pak.diag_centroid_align` is the porter-aimed sweep that suggests
-a candidate offset.  The diff scores raw IoU at the structural
-anchor -- no auto-sweep -- so misalignment surfaces as IoU
-residual rather than being silently absorbed.
+`diff_buildings.run_multitile` scores two complementary metrics:
+*per-cell* (one 128² crop per (L, y, x) sliced through `building_
+square_viewpoint`'s `Facing.slices`, each clipped by its L1-dimetric
+pixel-ownership mask from `sq_tile_pixel_mask`) and *per-layout
+stitched* (full 512² canvas, upstream cells pasted at their koord
+positions).  Stitch anchors on `_STITCH_CANVAS_ANCHOR = (256, 288)`
+-- where the camera projects world (0,0,0) per the cardinal-camera
+math (pitch=60° looks at (-4.2, 4.2, 0) not origin; uniform by
+cardinal symmetry).  `Building.blend_model_offset_xyz` lets a SPEC
+pin where the model sits in world (renderer pre-translates by
+-offset before fit/rotation/render); `pak.diag_centroid_align` is
+the porter-aimed sweep that suggests a candidate offset.
 
-Worst raw stitched IoU: signalbox **0.94** (was 0.69 -- pinned
-`blend_model_offset_xyz=(-0.36, +1.15, +2.11)` per the joint XYZ
-fit, after fixing a Y-column sign bug in `diag_centroid_align`'s
-forward projection), stonehenge **0.56** (was 0.22 -- square
-viewpoint was rendering at the blend's authored ortho=72 instead
-of honouring `blend_ortho_per_tile=24`; fixed).  Signalbox now
-clears `FAIL_IOU=0.88` cleanly; stonehenge sits at the
+Current numbers: signalbox per-cell mean dRGB **9.0**, stitched
+worst IoU **0.94** (clears `FAIL_IOU=0.88`).  Stonehenge per-cell
+mean dRGB **6.4**, stitched worst IoU **0.52** -- sits at the
 post-rotation drift floor described in "multi-tile XY offset gap"
-below (aligned IoU 0.91 — the shape matches, residual is a
-constant ~4 px screen drift across all layouts).
+below (aligned IoU 0.91, residual a constant ~4 px screen drift
+across layouts).  Per-cell IoU also bumps against the same drift
+on stonehenge (worst 0.31) since the splitter relies on the
+canvas-anchor convention.  Concrete next move = the offset gap
+entry below.
+
+**Open: hex-projection per-tile pixel mask.**  `sq_tile_pixel_mask`
+gives the strict ownership clip (L1-Voronoi ∩ hexagon) for the
+square dimetric calibration diff so multi-tile sprites partition the
+canvas without overdraw between neighbours; `building_hex_viewpoint`'s
+multi-tile path still emits `alpha_mask=None` on every slice.  Hex
+tiles are regular hexagons (not dimetric diamonds), so the lattice
+metric and ownership shape differ.  Concrete next move when in-engine
+multi-tile rendering shows seam artefacts: derive the per-tile
+ownership shape by inverting `hex_tile_screen_offset` over the hex
+footprint (the convention should fall out of `koord.cc::neighbours[]`
++ `synth_geometry.h`'s hex extent), add `hex_tile_pixel_mask` next
+to `sq_tile_pixel_mask`, and plumb it through the multi-tile slice
+list.  Trigger: first in-engine seam complaint (signalbox or
+stonehenge under hextrans).
 
 **Open: multi-tile XY offset gap.**  `blend_model_offset_xyz`
 applies pre-rotation (model-local), so the screen displacement
