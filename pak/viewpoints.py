@@ -33,6 +33,7 @@ difference is which `Viewpoint` instance gets passed in.
 from __future__ import annotations
 
 import math
+from functools import partial
 from math import radians
 
 from pak.hex_synth import (
@@ -47,9 +48,11 @@ from pak.render import EEVEE, BlendAuthored, Facing, Slice, Viewpoint
 # === Authored-resolution helpers ==========================================
 #
 # Each viewpoint declares its camera ortho, sun energy and fit matrix as a
-# `Callable[[BlendAuthored], …]` so policy lives in the closure rather than
+# `Callable[[BlendAuthored], …]` so policy lives at the field rather than
 # scattered as "scale by N when authored is None" fields on `Viewpoint`.
-# These small factories build the common shapes once.
+# The resolvers are module-level functions composed via `functools.partial`
+# so a fully-constructed `Viewpoint` round-trips through pickle (carried
+# across the subprocess boundary to `pak.render` by `pak.bake.run_render`).
 
 _IDENTITY_4X4: tuple = (
     (1.0, 0.0, 0.0, 0.0),
@@ -71,35 +74,57 @@ def _identity_matrix(_authored: BlendAuthored) -> tuple:
     return _IDENTITY_4X4
 
 
+def _const_resolver(v: float, _a: BlendAuthored) -> float:
+    return v
+
+
+def _authored_ortho(a: BlendAuthored) -> float:
+    """Read `authored.ortho_scale` -- raise if the blend has no ortho
+    camera.  Used by viewpoints that want each blend's own authored
+    ortho (typically buildings at 12 vs vehicles at 24)."""
+    if a.ortho_scale is None:
+        raise SystemExit(
+            "Viewpoint expected authored ortho_scale; blend has no ortho camera"
+        )
+    return a.ortho_scale
+
+
+def _authored_sun_resolver(scale: float, a: BlendAuthored) -> float:
+    if a.sun_energy is None:
+        raise SystemExit(
+            "Viewpoint expected authored sun_energy; blend has no SUN light"
+        )
+    return a.sun_energy * scale
+
+
+def _hex_fit_resolver(divisor: float, a: BlendAuthored) -> tuple:
+    ortho = (a.ortho_scale if a.ortho_scale is not None
+             else UPSTREAM_ORTHO_SCALE)
+    return _scale_diag(2.0 * HEX_TILE_RADIUS / (ortho / divisor))
+
+
+def _fixed_hex_scale_resolver(s: float, _a: BlendAuthored) -> tuple:
+    return _scale_diag(s)
+
+
+def _sun_energy_lighting_resolver(
+    inner, scale: float, a: BlendAuthored,
+) -> float:
+    if a.sun_energy is not None:
+        return a.sun_energy * scale
+    return inner(a)
+
+
 def _pinned(v: float):
     """Constant value -- viewpoint ignores authored."""
-    return lambda _a: v
-
-
-def _authored_ortho():
-    """Read `authored.ortho_scale` -- raise if the blend has no
-    ortho camera.  Used by viewpoints that want each blend's own
-    authored ortho (typically buildings at 12 vs vehicles at 24)."""
-    def _go(a: BlendAuthored) -> float:
-        if a.ortho_scale is None:
-            raise SystemExit(
-                "Viewpoint expected authored ortho_scale; blend has no ortho camera"
-            )
-        return a.ortho_scale
-    return _go
+    return partial(_const_resolver, v)
 
 
 def _authored_sun(scale: float = 1.0):
     """Read `authored.sun_energy` and scale -- raise if the blend has
     no SUN light.  Building viewpoints pass `_BI_TO_EEVEE_SUN_SCALE`
     to compensate for upstream's BI-authored 0.028 under EEVEE."""
-    def _go(a: BlendAuthored) -> float:
-        if a.sun_energy is None:
-            raise SystemExit(
-                "Viewpoint expected authored sun_energy; blend has no SUN light"
-            )
-        return a.sun_energy * scale
-    return _go
+    return partial(_authored_sun_resolver, scale)
 
 
 def _hex_fit(divisor: float = 1.0):
@@ -109,12 +134,7 @@ def _hex_fit(divisor: float = 1.0):
     dims` so each tile lands at the per-tile pixel rate.  Falls back
     to `UPSTREAM_ORTHO_SCALE` (vehicle convention, 24) when the blend
     has no ortho camera; the divisor doesn't apply in that case."""
-    def _go(a: BlendAuthored) -> tuple:
-        ortho = (a.ortho_scale if a.ortho_scale is not None
-                 else UPSTREAM_ORTHO_SCALE)
-        ortho /= divisor
-        return _scale_diag(2.0 * HEX_TILE_RADIUS / ortho)
-    return _go
+    return partial(_hex_fit_resolver, divisor)
 
 
 def _fixed_hex_scale(s: float):
@@ -122,7 +142,7 @@ def _fixed_hex_scale(s: float):
     of the blend's authored ortho.  Used by `building_hex_viewpoint`
     where the SPEC's `blend_units_per_tile` is the authoritative
     scale anchor."""
-    return lambda _a: _scale_diag(s)
+    return partial(_fixed_hex_scale_resolver, s)
 
 
 def _lighting_overrides_facings(
@@ -150,20 +170,15 @@ def _lighting_overrides_facings(
 
 
 def _wrap_sun_energy_with_lighting(sun_energy, lighting):
-    """Wrap the viewpoint's `sun_energy` callable so that when both
+    """Wrap the viewpoint's `sun_energy` resolver so that when both
     `Lighting.sun_energy_scale` is set AND the blend has an authored
     sun_energy, the override `authored.sun_energy * scale` replaces the
     Viewpoint's resolved value.  Preserves the `_apply_lighting`
-    guard: if either is None the original callable's result stands."""
+    guard: if either is None the original resolver's result stands."""
     if lighting is None or lighting.sun_energy_scale is None:
         return sun_energy
-    scale = lighting.sun_energy_scale
-
-    def _go(a: BlendAuthored) -> float:
-        if a.sun_energy is not None:
-            return a.sun_energy * scale
-        return sun_energy(a)
-    return _go
+    return partial(_sun_energy_lighting_resolver,
+                   sun_energy, lighting.sun_energy_scale)
 
 # Upstream sun lamp energy, from Lamp.001 in the Britain blends.  Matching
 # this keeps the calibration diff's mean|dRGB| meaningful -- a different
@@ -714,7 +729,7 @@ def bridge_square_viewpoint() -> Viewpoint:
     return Viewpoint(
         name="bridge_square",
         image_width=DEFAULT_W,
-        camera_ortho=_authored_ortho(),  # use blend's authored 12.0
+        camera_ortho=_authored_ortho,  # use blend's authored 12.0
         sun_energy=_pinned(_SUN_ENERGY),
         fit_matrix=_identity_matrix,
         extrinsic=None,
@@ -749,7 +764,7 @@ def fence_square_viewpoint() -> Viewpoint:
     return Viewpoint(
         name="fence_square",
         image_width=DEFAULT_W,
-        camera_ortho=_authored_ortho(),  # use blend's authored 12.0
+        camera_ortho=_authored_ortho,  # use blend's authored 12.0
         sun_energy=_pinned(2.0),
         fit_matrix=_identity_matrix,
         extrinsic=None,
@@ -827,7 +842,7 @@ def tree_square_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
     return Viewpoint(
         name="tree_square",
         image_width=DEFAULT_W,
-        camera_ortho=_authored_ortho(),  # use blend's authored 12.0
+        camera_ortho=_authored_ortho,  # use blend's authored 12.0
         sun_energy=_pinned(2.0),
         fit_matrix=_identity_matrix,
         extrinsic=None,

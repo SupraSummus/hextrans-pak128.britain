@@ -40,14 +40,12 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 from pak import REPO_ROOT
 from pak.dat import Building
 
-HERE = Path(__file__).resolve().parent
 _TRANSPARENT_RGB = (231, 255, 255)
 
 
@@ -58,51 +56,42 @@ def _load_bake_script(path: Path):
     return mod
 
 
-def _compose(out_dir: Path, name: str, layouts: int) -> None:
-    from pak.compose import compose_atlas
+def _building_vp(layouts: int, units_per_tile: float):
     from pak.viewpoints import building_square_viewpoint
-    compose_atlas(
-        building_square_viewpoint(
-            layouts=layouts, dims_x=1, dims_y=1, heights=1,
-        ),
-        render_dir=out_dir, out_dir=out_dir, name=name,
-        cols_per_row=layouts,
+    return building_square_viewpoint(
+        layouts=layouts, units_per_tile=units_per_tile,
+        dims_x=1, dims_y=1, heights=1,
     )
 
 
 def _render_id_map(blend_path: Path, out_dir: Path, name: str,
-                   layouts: int) -> tuple[Path, dict[str, tuple[int, int, int]]]:
+                   layouts: int, units_per_tile: float,
+                   ) -> tuple[Path, dict[str, tuple[int, int, int]]]:
     """Run render.py with --material-id-map.  Returns the rendered atlas
     path and the parsed `{material_name: (r,g,b)}` mapping."""
-    script = HERE / "render.py"
-    subprocess.run([
-        "blender", "-b", str(blend_path), "-P", str(script), "--",
-        "--out", str(out_dir), "--name", name,
-        "--viewpoint", "square_building",
-        "--building-footprint", f"1,1,{layouts},1",
-        "--material-id-map",
-    ], check=True, stdout=subprocess.DEVNULL)
-    _compose(out_dir, name, layouts)
+    from pak.bake import run_render
+    from pak.compose import compose_atlas
+    vp = _building_vp(layouts, units_per_tile)
+    run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir,
+               material_id_map=True)
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=name,
+                  cols_per_row=layouts)
     sidecar = out_dir / f"{name}.materials.json"
     mat_to_id = {k: tuple(v) for k, v in json.loads(sidecar.read_text()).items()}
     return out_dir / f"{name}.png", mat_to_id
 
 
 def _render_normal(blend_path: Path, out_dir: Path, name: str, layouts: int,
+                   units_per_tile: float,
                    materials: dict | None) -> Path:
     """Run render.py the regular way."""
-    script = HERE / "render.py"
-    cmd = [
-        "blender", "-b", str(blend_path), "-P", str(script), "--",
-        "--out", str(out_dir), "--name", name,
-        "--viewpoint", "square_building",
-        "--building-footprint", f"1,1,{layouts},1",
-    ]
-    if materials:
-        from pak.materials import to_jsonable
-        cmd += ["--materials", json.dumps(to_jsonable(materials))]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-    _compose(out_dir, name, layouts)
+    from pak.bake import run_render
+    from pak.compose import compose_atlas
+    vp = _building_vp(layouts, units_per_tile)
+    run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir,
+               materials=materials)
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=name,
+                  cols_per_row=layouts)
     return out_dir / f"{name}.png"
 
 
@@ -237,9 +226,11 @@ def _collect_stats(bake_path: Path, season: str) -> tuple[list[dict], int] | Non
     name_normal = blend_stem
     name_idmap = f"{blend_stem}__idmap"
 
-    _render_normal(blend_path_s, out_dir, name_normal, layouts,
+    units_per_tile = mod.SPEC.blend_units_per_tile
+    _render_normal(blend_path_s, out_dir, name_normal, layouts, units_per_tile,
                    materials=materials)
-    _, mat_to_id = _render_id_map(blend_path_s, out_dir, name_idmap, layouts)
+    _, mat_to_id = _render_id_map(blend_path_s, out_dir, name_idmap, layouts,
+                                  units_per_tile)
 
     ours_atlas, idmap_atlas, up_atlas = _load_atlases(
         name_normal, name_idmap, out_dir, up_path, layouts,
