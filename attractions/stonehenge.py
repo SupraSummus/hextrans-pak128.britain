@@ -18,17 +18,12 @@ MATERIALS = {
 
 # Upstream carries seasons=2 (winter atlas slots).  JamesHood doesn't
 # ship a `-snow.blend` for stonehenge so the winter pass is dropped;
-# summer atlas only.  Second multi-tile building port (2x2x4, after
-# mechanical-signalbox-large's 2x1x4) -- exercises the dims_x ==
-# dims_y centroid / 4-rotation cycle path that the rectangular
-# signalbox didn't hit (see TODO.md -> multi-tile calibration
-# diff / rotation formula entries).
+# summer atlas only.
 SPEC = Building(
     name="Stonehenge",
     type="cur",
     dims_x=2,
     dims_y=2,
-    layouts=4,
     intro_year=1700,
     intro_month=1,
     needs_ground=1,

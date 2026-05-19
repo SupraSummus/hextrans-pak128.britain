@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import unittest
 
+from pak.dat import building_footprint_centroid
 from pak.render import CYCLES, EEVEE, BlendAuthored
 from pak.viewpoints import (
     DEFAULT_W,
@@ -162,24 +163,37 @@ class TestBuildingHexMultiTile(unittest.TestCase):
                          ["L1_Y0_X0_H0", "L1_Y1_X0_H0"])
 
     def test_multi_tile_slice_centres_match_hex_screen_lattice(self):
-        # The slice offsets must reproduce the engine's per-tile
-        # screen positions: `hex_tile_screen_offset(qx=x, ry=y)` shifted
-        # to centre the multi-tile footprint in the canvas.  Drift
-        # here means our sliced sprite no longer lands where the
-        # engine paints the corresponding tile.
+        # The slice offsets must reproduce the engine's per-tile screen
+        # positions relative to the per-layout footprint centroid: the
+        # model renders at world origin (canvas centre), so each slice
+        # window sits at `hex_tile_screen_offset(x, y) -
+        # hex_tile_screen_offset(centroid_x, centroid_y)`.  Drift here
+        # means our sliced sprite no longer lands where the engine
+        # paints the corresponding tile.
         vp = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        # Even L0 footprint along koord +x: centroid (0.5, 0); slices
+        # land symmetric around canvas centre.
         l0 = next(f for f in vp.facings if f.label == "L0_H0")
-        # Even layout iterates (y=0, x in [0, 1]).  Centring offset
-        # subtracts cx_max/2, cy_max/2 from the raw koord-screen
-        # position (cx_max/cy_max = hex offset of the worst-case koord).
-        cx_max, cy_max = hex_tile_screen_offset(max(2, 1) - 1, max(2, 1) - 1)
-        expected = [
-            hex_tile_screen_offset(0, 0),
-            hex_tile_screen_offset(1, 0),
-        ]
-        for sl, (want_cx, want_cy) in zip(l0.slices, expected, strict=True):
-            self.assertEqual(sl.offset, (int(round(want_cx - cx_max / 2)),
-                                         int(round(want_cy - cy_max / 2))))
+        cx_l0, cy_l0 = building_footprint_centroid(2, 1, 0)
+        anchor_l0 = hex_tile_screen_offset(cx_l0, cy_l0)
+        for sl, (x, y) in zip(l0.slices, [(0, 0), (1, 0)], strict=True):
+            cell = hex_tile_screen_offset(x, y)
+            self.assertEqual(sl.offset, (
+                int(round(cell[0] - anchor_l0[0])),
+                int(round(cell[1] - anchor_l0[1])),
+            ))
+        # Odd L1 footprint along koord +y (dims swap): centroid (0, 0.5).
+        # Required asymmetric handling -- the legacy "(max-1, max-1)/2"
+        # shortcut was correct only for symmetric footprints.
+        l1 = next(f for f in vp.facings if f.label == "L1_H0")
+        cx_l1, cy_l1 = building_footprint_centroid(2, 1, 1)
+        anchor_l1 = hex_tile_screen_offset(cx_l1, cy_l1)
+        for sl, (x, y) in zip(l1.slices, [(0, 0), (0, 1)], strict=True):
+            cell = hex_tile_screen_offset(x, y)
+            self.assertEqual(sl.offset, (
+                int(round(cell[0] - anchor_l1[0])),
+                int(round(cell[1] - anchor_l1[1])),
+            ))
 
 
 class TestBuildingSquareViewpoint(unittest.TestCase):

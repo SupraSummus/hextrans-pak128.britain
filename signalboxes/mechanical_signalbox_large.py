@@ -47,15 +47,12 @@ MATERIALS = {
 # and radius=4000 — Extended-only signal-network keys without a
 # Building-dataclass field today.  No `-snow.blend` sibling exists
 # upstream so the winter pass is dropped; the signal_groups / radius
-# pair are dropped too (the hex engine isn't Extended-aware).  First
-# multi-tile building port (2x1x4) — exercises the dims_x>1 axis
-# `iter_building_cells` was unit-tested against but never rendered.
+# pair are dropped too (the hex engine isn't Extended-aware).
 SPEC = Building(
     name="mechanical-signalbox-large",
     type="signalbox",
     copyright="JamesPetts",
     dims_x=2,
-    layouts=4,
     level=1,
     intro_year=1860,
     intro_month=4,

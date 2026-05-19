@@ -232,7 +232,10 @@ def main(argv: list[str]) -> int:
         raise SystemExit(
             f"{out_dir} not found -- run `python3 -m pak.check {script}` first"
         )
-    layouts = spec.layouts or 4
+    # Calibration sweeps against upstream's square dimetric atlas (4
+    # authored layouts).  Pinned regardless of the hex bake's layout
+    # count, which the SPEC's `symmetry` derives.
+    layouts = 4
 
     from PIL import Image
 

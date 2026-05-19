@@ -1114,6 +1114,36 @@ authoritative source elsewhere in the system are expensive and
 usually aren't.  When in doubt, prefer fewer tests with smaller
 maintenance surface; lean on runtime errors with clear messages.
 
+## Comment brevity
+
+Defaults from the system prompt: write no comment unless the
+WHY is non-obvious; never explain WHAT the code does.  Three
+project-specific patterns that show up here and inflate
+comment volume:
+
+*Restate-don't-repeat.*  A formula, convention or constant
+documented at its definition (e.g. `hex_layouts_default`'s `6
+// gcd(6, N)`) shouldn't be restated at every consumer.  Field
+comments / call-site comments defer to the definition with a
+one-line "see X" rather than re-deriving the math.  Updates
+then land in one place.
+
+*Asset scripts carry asset content.*  Pak-side conventions
+(layout policy, projection facts, schema-vs-engine
+differences) live in `CLAUDE.md` or `TODO.md` once;
+per-asset SPEC comments preserve the upstream `#` provenance
+notes and SPEC-value rationale that genuinely belong with the
+asset.  "Upstream `layouts=4` drops in favour of hex's
+6-fold default" is framework narration that decays as soon as
+the policy moves; CLAUDE.md is the durable home.
+
+*Cross-references rot.*  "See TODO.md -> X" / "see also
+`other_function`" lines are tempting and almost always become
+wrong: the named entry resolves, the named function is
+renamed.  Leave the breadcrumb only when the link is
+structural (a known open bug the reader needs to find);
+context-only cross-refs belong in the commit message instead.
+
 ## TODO.md rules
 
 `TODO.md` tracks work in flight — porting status, gameplay bugs,

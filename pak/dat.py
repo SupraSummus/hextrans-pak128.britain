@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import MISSING, dataclass, field, fields, replace
+from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -378,6 +379,22 @@ _BRIDGE_FIELDS_SCALAR: tuple[str, ...] = tuple(
 )
 
 
+class Symmetry(IntEnum):
+    """Building silhouette symmetry — `Building.symmetry`.
+
+    Numeric value is the order of the rotational group: `NONE = 1`
+    (trivial, asymmetric); `CONTINUOUS = 0` is the sentinel for a
+    continuously-symmetric silhouette (cylinder, sphere — looks the
+    same under any rotation).  IntEnum so the consumer (`pak.bake.
+    hex_layouts_default`) can use `int(symmetry)` in the gcd
+    reduction; extend with `BILATERAL = 2`, `ROTATIONAL_N = N` when
+    a port surfaces that authoring.
+    """
+
+    NONE = 1
+    CONTINUOUS = 0
+
+
 @dataclass
 class Building:
     """A `obj=building` definition.  Fields cover the hex-engine schema
@@ -386,16 +403,12 @@ class Building:
     carry.  Image refs are derived from the baked atlas at emit time;
     SPECs hold gameplay data only.
 
-    Footprint is `(dims_x, dims_y)` tiles with `layouts` rotation
-    variants.  `layouts=None` (the default) defers the atlas size to
-    the bake driver: `pak.bake._resolve_building_layouts` fills it in
-    via `hex_layouts_default` (8 for single-tile, engine default for
-    rectangular) before the dat is emitted, so SPECs stay
-    projection-agnostic.  `emit_building` falls back to
-    `layouts_default` (the engine's read-side default) for any
-    Building it sees still carrying `layouts=None` — the schema-
-    correct fallback for code paths that don't go through the bake
-    driver.
+    Footprint is `(dims_x, dims_y)` tiles.  Layout count
+    (the Z in `dims=X,Y,Z`) is not a SPEC field — the bake driver
+    derives it from `symmetry` and threads it through
+    `emit_building`'s `layouts` kwarg.  Declares what the *asset*
+    looks like (its silhouette symmetry) and lets the bake decide
+    how many rotations to render under the active projection.
 
     Order of fields = canonical emit order.  Unset scalars (`None`) and
     empty lists are skipped on emit.  Factory-only keys (InputGood,
@@ -409,10 +422,14 @@ class Building:
     # Identity / metadata
     copyright: str | None = None
 
-    # Footprint — emitted together as `dims=X,Y,Z`.
+    # Footprint — emitted together as `dims=X,Y,Z`; Z (layouts)
+    # threads through emit_building from the bake driver.
     dims_x: int = 1
     dims_y: int = 1
-    layouts: int | None = None  # None → engine default per layouts_default()
+
+    # Symmetry of the asset's silhouette — projection-agnostic; the
+    # bake derives the layout count, see `pak.bake.hex_layouts_default`.
+    symmetry: Symmetry = _bake_meta(default=Symmetry.NONE)
 
     # Vertical stack — number of `backimage[…][height][…]` levels the
     # engine paints, each shifted up by `raster_width` px (one full
@@ -594,15 +611,16 @@ def layouts_default(dims_x: int, dims_y: int) -> int:
 _BUILDING_IMAGE_PHASE = 0
 
 
-# dims_x / dims_y / layouts emit together as a single `dims=X,Y,Z`
-# line, not as plain `name=value` per field.  `heights` is implicit
-# in the per-(l,y,x,h) backimage refs — the engine reads height
-# levels until the next index returns no key — so it doesn't get a
-# scalar key either.  All four filtered out of the generic emit.
+# dims_x / dims_y emit together as a single `dims=X,Y,Z` line (Z
+# is the bake-supplied `layouts` kwarg), not as plain `name=value`
+# per field.  `heights` is implicit in the per-(l,y,x,h) backimage
+# refs — the engine reads height levels until the next index
+# returns no key — so it doesn't get a scalar key either.  All
+# three filtered out of the generic emit.
 _BUILDING_FIELDS_SCALAR: tuple[str, ...] = tuple(
     f.name for f in fields(Building)
     if f.default_factory is MISSING
-    and f.name not in ("dims_x", "dims_y", "layouts", "heights", "seasons")
+    and f.name not in ("dims_x", "dims_y", "heights", "seasons")
     and not f.metadata.get("bake_meta")
 )
 _BUILDING_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
@@ -612,7 +630,7 @@ _BUILDING_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
 )
 
 
-def iter_building_cells(b: Building):
+def iter_building_cells(b: Building, *, layouts: int):
     """Yield `(season, layout, y, x, height)` quintuples in canonical emit
     order.
 
@@ -636,7 +654,6 @@ def iter_building_cells(b: Building):
     `heights=N` / `seasons=N` scalars).  Bake scripts use this to
     drive per-cell renders; emit_building uses it to wire image
     refs."""
-    layouts = b.layouts if b.layouts is not None else layouts_default(b.dims_x, b.dims_y)
     for s in range(b.seasons):
         for h in range(b.heights):
             for l in range(layouts):
@@ -855,13 +872,15 @@ def emit_trees(
     return out_path
 
 
-def emit_building(b: Building, *, out_dir: Path, basename: str) -> Path:
+def emit_building(b: Building, *, out_dir: Path, basename: str,
+                  layouts: int | None = None) -> Path:
     """Write `<out_dir>/<basename>.dat` from a Building.
 
-    Emits set scalars, then `dims=X,Y,Z` (with layouts filled in from
-    `layouts_default` when the SPEC left it `None`), then indexed
-    lists, then `backimage[l][y][x][h][0][s]=./<basename>.<row>.<col>`
-    per cell.
+    Emits set scalars, then `dims=X,Y,Z` (Z = `layouts`, supplied by
+    the bake driver from `pak.bake.hex_layouts_default(b.symmetry)`;
+    falls back to `layouts_default(dims_x, dims_y)` for code paths
+    that don't go through the bake driver), then indexed lists, then
+    `backimage[l][y][x][h][0][s]=./<basename>.<row>.<col>` per cell.
 
     Atlas shape: `seasons * heights` rows × `layouts * dims_x*dims_y`
     cols.  Row formula: `row = s * heights + h` — each season is a
@@ -885,14 +904,15 @@ def emit_building(b: Building, *, out_dir: Path, basename: str) -> Path:
         v = getattr(b, name)
         if v is not None:
             lines.append(f"{name}={v}")
-    layouts = b.layouts if b.layouts is not None else layouts_default(b.dims_x, b.dims_y)
+    if layouts is None:
+        layouts = layouts_default(b.dims_x, b.dims_y)
     lines.append(f"dims={b.dims_x},{b.dims_y},{layouts}")
     for attr, dat_key in _BUILDING_FIELDS_LIST:
         for i, v in enumerate(getattr(b, attr)):
             lines.append(f"{dat_key}[{i}]={v}")
 
     footprint = b.dims_x * b.dims_y
-    for s, l, y, x, h in iter_building_cells(b):
+    for s, l, y, x, h in iter_building_cells(b, layouts=layouts):
         w = b.dims_y if l & 1 else b.dims_x
         row = s * b.heights + h
         col = l * footprint + y * w + x
@@ -976,11 +996,15 @@ def port_building(object_entries: list[tuple[str, str]]) -> Building:
     Seeder for new building bakes — produces a paste-ready
     `Building(...)` source for a `<dir>/<asset>.py` bake script via
     `seed_python`.  Harvests every scalar `Building` field upstream
-    sets plus the engine's `dims=X,Y[,Z]` triple (split out to
-    `dims_x`, `dims_y`, `layouts`).  Scans `backimage[…][height][…]`
-    refs to set `heights = max(height) + 1` so a seeded SPEC carries
-    the upstream's vertical-stack count.  Image-ref strings (`backimage[…]
-    `=…`, `frontimage[…]=…`) are dropped — see `_BUILDING_PORT_DROP`.
+    sets plus `dims=X,Y` from the engine's footprint triple — the
+    third element (upstream's `layouts`) is the square-dimetric
+    rotation count and doesn't carry across; the seeded SPEC takes
+    `Symmetry.NONE` by default and the porter adjusts to
+    `CONTINUOUS` / `BILATERAL` / etc. by inspection.  Scans
+    `backimage[…][height][…]` refs to set `heights = max(height) +
+    1` so a seeded SPEC carries the upstream's vertical-stack count.
+    Image-ref strings (`backimage[…]=…`, `frontimage[…]=…`) are
+    dropped — see `_BUILDING_PORT_DROP`.
 
     Dat keys are matched case-insensitively (`Type=` and `type=` both
     land on `Building.type`); values are preserved verbatim, which
@@ -1020,8 +1044,6 @@ def port_building(object_entries: list[tuple[str, str]]) -> Building:
                 kwargs["dims_x"] = ints[0]
             if len(ints) >= 2:
                 kwargs["dims_y"] = ints[1]
-            if len(ints) >= 3:
-                kwargs["layouts"] = ints[2]
             continue
         if kl in scalars and not _INDEX_RE.search(k):
             kwargs[kl] = _coerce(v)
