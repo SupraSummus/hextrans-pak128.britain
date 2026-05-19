@@ -942,6 +942,7 @@ def building_hex_viewpoint(
     `Building.blend_ortho_per_tile` via `--building-ortho-per-tile`.
     """
     step = 360.0 / layouts
+    from pak.dat import building_footprint_centroid
     multi_tile = dims_x > 1 or dims_y > 1
     # Canvas size and ortho only matter for the multi-tile slicing path
     # (single-tile renders into the sprite-sized canvas the Viewpoint
@@ -985,16 +986,21 @@ def building_hex_viewpoint(
             if multi_tile:
                 # One Facing per (l, h); slices fan out across the cells
                 # at hex screen-koord positions, shifted so the
-                # multi-tile footprint sits centred in the canvas.
-                # Per-tile pixel-ownership mask for the hex lattice is
-                # unfinished (square dimetric has `sq_tile_pixel_mask`);
-                # alpha_mask=None until that lands -- see TODO.md.
+                # per-layout footprint centroid sits at canvas centre
+                # (where the model renders).  Per-tile pixel-ownership
+                # mask for the hex lattice is unfinished (square dimetric
+                # has `sq_tile_pixel_mask`); alpha_mask=None until that
+                # lands -- see TODO.md.
+                cx_koord, cy_koord = building_footprint_centroid(
+                    dims_x, dims_y, l,
+                )
+                anchor_x, anchor_y = hex_tile_screen_offset(cx_koord, cy_koord)
                 slice_list = [
                     Slice(
                         label=f"L{l}_Y{y}_X{x}_H{h}",
                         offset=(
-                            int(round(hex_tile_screen_offset(x, y)[0] - cx_max / 2)),
-                            int(round(hex_tile_screen_offset(x, y)[1] - cy_max / 2)),
+                            int(round(hex_tile_screen_offset(x, y)[0] - anchor_x)),
+                            int(round(hex_tile_screen_offset(x, y)[1] - anchor_y)),
                         ),
                         alpha_mask=None,
                     )

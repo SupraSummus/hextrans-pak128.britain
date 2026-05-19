@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pak import REPO_ROOT
-from pak.bake import _resolve_building_layouts, clamp_age_overrides
+from pak.bake import clamp_age_overrides, hex_layouts_default
 from pak.bake_units import discover, import_script, specs_of
 from pak.dat import (
     Bridge,
@@ -44,12 +44,11 @@ _REEMIT_TREE_AGES = 4
 
 def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
     """Run the matching emitter for a normalised spec list, returning
-    the written dat path.  Building specs route through
-    `_resolve_building_layouts` so the dat's `dims=X,Y,Z` matches what
-    `bake_building` would render -- the hex bake's atlas-size policy
-    is one resolver, applied at every emit site (reemit lint, ported-
-    dat test, future cross-pak tooling).  Raises on a mixed or
-    unsupported spec list."""
+    the written dat path.  Building specs route their `dims=X,Y,Z`
+    through `hex_layouts_default(spec.symmetry)` so the layout count
+    matches what `bake_building` would render -- one source of truth
+    applied at every emit site (reemit lint, ported-dat test, future
+    cross-pak tooling).  Raises on a mixed or unsupported spec list."""
     if specs and all(isinstance(s, Vehicle) for s in specs):
         return emit_vehicles(specs, out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Way):
@@ -57,8 +56,11 @@ def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
     if len(specs) == 1 and isinstance(specs[0], Bridge):
         return emit_bridge(specs[0], out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Building):
-        spec = _resolve_building_layouts(specs[0])
-        return emit_building(spec, out_dir=out_dir, basename=basename)
+        spec = specs[0]
+        return emit_building(
+            spec, out_dir=out_dir, basename=basename,
+            layouts=hex_layouts_default(spec.symmetry),
+        )
     if specs and all(isinstance(s, Tree) for s in specs):
         seasons = max(t.seasons for t in specs)
         return emit_trees(

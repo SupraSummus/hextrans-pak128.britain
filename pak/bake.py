@@ -30,6 +30,7 @@ from pak.dat import (
     TREE_AGE_COUNT,
     Bridge,
     Building,
+    Symmetry,
     Tree,
     Vehicle,
     Way,
@@ -54,39 +55,22 @@ _RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
 _BAKE_WAY_SCRIPT = Path(__file__).resolve().parent / "bake_way.py"
 
 
-def hex_layouts_default(dims_x: int, dims_y: int) -> int:
-    """Layout count this hex pak bakes when a Building SPEC leaves
-    `layouts=None`.  Pak-side policy, not engine schema — atlas size
-    is a render-time choice, distinct from `pak.dat.layouts_default`
-    which mirrors the engine's read-side default for `dims=X,Y` (no
-    Z).  Single-tile assets get 6 — hex has 6-fold rotational
-    symmetry, so 60° steps map facings onto the six hex edge
-    directions exactly.  City-building placement (`simcity.cc` ->
-    `simrand(get_all_layouts())`) is uniform over `[0, layouts)`,
-    so 6 layouts give every map placement an on-axis silhouette;
-    8 would have left half of placements at 45° off-axis where the
-    hex grid has nothing to align to.  Map rotation (which
-    `gebaeude_t::rotate90` would walk) is fatal under hex and the
-    code path is unreachable, so its missing 6-layout case doesn't
-    bite.  Rectangular tiles fall back to the engine default (2 —
-    one per orientation) until a multi-tile asset ports and pins
-    the right hex count.
+_HEX_LAYOUT_QUANTUM = 6
+
+
+def hex_layouts_default(symmetry: Symmetry) -> int:
+    """Layout count derived from the asset's symmetry under the hex
+    6-fold quantum: `6 // gcd(6, symmetry)`, or 1 for
+    `Symmetry.CONTINUOUS`.  Six rotations of an asymmetric building
+    cover every on-axis placement under city-placement's
+    `simrand(get_all_layouts())` uniform draw; symmetric silhouettes
+    collapse redundant rotations.  Same quantum drives
+    `building_hex_viewpoint`'s per-layout rotation step.
     """
-    if dims_x == 1 and dims_y == 1:
-        return 6
-    from pak.dat import layouts_default
-    return layouts_default(dims_x, dims_y)
-
-
-def _resolve_building_layouts(spec: Building) -> Building:
-    """Return `spec` with `layouts` filled in from `hex_layouts_default`
-    when it was left None.  Both `bake_building` and `pak.reemit_dats`
-    funnel through this so the atlas size declared in the rendered
-    PNG and the `dims=X,Y,Z` line in the emitted dat agree."""
-    if spec.layouts is not None:
-        return spec
-    from dataclasses import replace
-    return replace(spec, layouts=hex_layouts_default(spec.dims_x, spec.dims_y))
+    if symmetry is Symmetry.CONTINUOUS:
+        return 1
+    from math import gcd
+    return _HEX_LAYOUT_QUANTUM // gcd(_HEX_LAYOUT_QUANTUM, int(symmetry))
 
 
 def _print_wrote(out_dat: Path) -> None:
@@ -360,7 +344,7 @@ def _fetch_blend(blend: str, source: str) -> Path:
 
 
 def _render_building_season(
-    *, blend: str, name: str, out_dir: Path, spec: Building,
+    *, blend: str, name: str, out_dir: Path, spec: Building, layouts: int,
     materials: dict[str, Material] | None,
     lighting=None,
 ) -> Path:
@@ -372,12 +356,12 @@ def _render_building_season(
     # One atlas row per `(season, height)` stripe; each row holds
     # `layouts * dims_x * dims_y` cells (layouts span columns).  See
     # `pak.dat.emit_building` for the matching row/col formula.
-    cells_per_row = spec.layouts * spec.dims_x * spec.dims_y
+    cells_per_row = layouts * spec.dims_x * spec.dims_y
     args: dict[str, object] = {
         "out": out_dir, "name": name,
         "viewpoint": "hex_building",
         "building-footprint":
-            f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
+            f"{spec.dims_x},{spec.dims_y},{layouts},{spec.heights}",
     }
     if spec.blend_ortho_per_tile is not None:
         args["building-ortho-per-tile"] = spec.blend_ortho_per_tile
@@ -394,7 +378,7 @@ def _render_building_season(
         args["lighting"] = json.dumps(lighting.to_jsonable())
     _run_blender(script=_RENDER_SCRIPT, blend=blend_path, args=args)
     vp = building_hex_viewpoint(
-        layouts=spec.layouts, dims_x=spec.dims_x, dims_y=spec.dims_y,
+        layouts=layouts, dims_x=spec.dims_x, dims_y=spec.dims_y,
         heights=spec.heights,
         ortho_per_tile=spec.blend_ortho_per_tile,
         lighting=lighting,
@@ -452,7 +436,7 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     """
     if spec.blend is None:
         raise ValueError(f"{basename}: SPEC missing blend=")
-    spec = _resolve_building_layouts(spec)
+    layouts = hex_layouts_default(spec.symmetry)
 
     # Single-season bake renders straight into `<basename>.png`;
     # multi-season renders per-season into `<basename>__s<i>.png`
@@ -472,7 +456,7 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     for s, (b, m) in enumerate(season_inputs):
         name = basename if single else f"{basename}__s{s}"
         tmp_paths.append(_render_building_season(
-            blend=b, name=name, out_dir=out_dir,
+            blend=b, name=name, out_dir=out_dir, layouts=layouts,
             spec=spec, materials=m, lighting=spec.lighting,
         ))
     if not single:
@@ -480,7 +464,8 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
         for p in tmp_paths:
             p.unlink()
 
-    out_dat = emit_building(spec, out_dir=out_dir, basename=basename)
+    out_dat = emit_building(spec, out_dir=out_dir, basename=basename,
+                            layouts=layouts)
     _print_wrote(out_dat)
     return out_dat
 

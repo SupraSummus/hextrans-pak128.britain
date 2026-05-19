@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pak.bake import bake_building_main
-from pak.dat import Building
+from pak.dat import Building, Symmetry
 from pak.materials import Material
 
 MATERIALS = {
@@ -13,12 +13,12 @@ MATERIALS = {
     "Material.003":    Material(noise=True),
 }
 
-# Gasometer.  Rotationally symmetric — keep upstream's single layout.
+# Gasometer — continuously rotationally symmetric.
 SPEC = Building(
     name="IND_JH_1860_00_10",
     type="ind",
     copyright="James",
-    layouts=1,
+    symmetry=Symmetry.CONTINUOUS,
     level=5,
     chance=200,
     intro_year=1860,

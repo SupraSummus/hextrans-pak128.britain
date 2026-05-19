@@ -80,10 +80,13 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             # per-tile cells via the square dimetric tile lattice, and
             # also compare the full-canvas stitched silhouette.  Emits
             # `grid_tiles.png` + `grid_stitched.png` side by side.
-            spec_layouts = spec.layouts if spec.layouts is not None else 4
+            # Upstream pak128.Britain authors multi-tile buildings at
+            # 4 layouts (square dimetric); calibration always diffs
+            # against that count regardless of what the hex bake
+            # produces from the SPEC's symmetry.
             per_cell, per_layout = diff_buildings.run_multitile(
                 blend, upstream_dat,
-                dims_x=spec.dims_x, dims_y=spec.dims_y, layouts=spec_layouts,
+                dims_x=spec.dims_x, dims_y=spec.dims_y, layouts=4,
                 out_dir=out_dir,
                 materials=spec.materials, lighting=spec.lighting,
                 name=spec.name,
@@ -99,12 +102,10 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             worst = min(r.iou for r in per_layout)
             drgb_mean = sum(r.drgb for r in per_layout) / len(per_layout)
             return worst, None, diff_buildings.FAIL_IOU, drgb_mean
-        # Read the layout count off the upstream PNG width rather than
-        # SPEC.layouts.  SPEC.layouts is None for most ports (resolved
-        # to hex_layouts_default at bake time, which is the hex-port's
-        # 8-direction choice, not what's in the upstream 4-wide atlas).
-        # The PNG is the source of truth for "what columns the upstream
-        # actually published"; `_UPSTREAM_NORMAL_CARDINAL` caps the
+        # Read the layout count off the upstream PNG width — the bake's
+        # hex layout count differs from upstream's square authoring; the
+        # PNG is the source of truth for "what columns the upstream
+        # actually published".  `_UPSTREAM_NORMAL_CARDINAL` caps the
         # cardinal cameras at 4, so layouts beyond that go unrendered
         # (e.g. an upstream-8 atlas would still diff against our 4
         # cardinals -- diagonals are deferred until they ship).

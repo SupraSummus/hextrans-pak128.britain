@@ -15,7 +15,7 @@ mail_demand=2
 capacity=20
 maintenance=10000
 cost=1000000
-dims=2,1,4
+dims=2,1,6
 class_proportion[0]=0
 class_proportion[1]=4
 class_proportion[2]=66
@@ -34,4 +34,8 @@ backimage[2][0][0][0][0][0]=./mechanical_signalbox_large.0.4
 backimage[2][0][1][0][0][0]=./mechanical_signalbox_large.0.5
 backimage[3][0][0][0][0][0]=./mechanical_signalbox_large.0.6
 backimage[3][1][0][0][0][0]=./mechanical_signalbox_large.0.7
+backimage[4][0][0][0][0][0]=./mechanical_signalbox_large.0.8
+backimage[4][0][1][0][0][0]=./mechanical_signalbox_large.0.9
+backimage[5][0][0][0][0][0]=./mechanical_signalbox_large.0.10
+backimage[5][1][0][0][0][0]=./mechanical_signalbox_large.0.11
 ----------

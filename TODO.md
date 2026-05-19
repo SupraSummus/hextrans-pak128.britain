@@ -317,32 +317,40 @@ override on the cardinal-zero angle, calibrated by inspection; or
 (b) accept the upstream's per-blend orientation as authored.
 Closes the original "rotation sign" probe.
 
-**Multi-tile building port — production-side slicing landed; in-
-engine validation and material/ortho conventions are the open
-gaps.**  `signalboxes/mechanical_signalbox_large.py` is the first
-2×1×4 port.  `building_hex_viewpoint` renders multi-tile via
-image-space slicing: one Facing per `(layout, height)` on a wide
-canvas covering the full footprint at the hex screen lattice,
-model untranslated (artist XYZ contract preserved); each Facing
+**Multi-tile building port — production-side slicing landed;
+in-engine seam validation and pixel-mask remain open.**
+`signalboxes/mechanical_signalbox_large.py` is the first 2×1
+port; under hex's 6-fold default it bakes 2×1×6.
+`building_hex_viewpoint` renders multi-tile via image-space
+slicing: one Facing per `(layout, height)` on a wide canvas
+covering the full footprint at the hex screen lattice, model
+untranslated (artist XYZ contract preserved); each Facing
 carries `slices` listing per-cell W×W crops at
-`hex_tile_screen_offset(qx, ry)`.  Single-tile path is unchanged.
+`hex_tile_screen_offset(qx, ry)` minus the per-layout footprint
+centroid (`building_footprint_centroid(dims_x, dims_y, l)` —
+required for asymmetric footprints; the symmetric
+`(max-1, max-1)/2` shortcut left 2×1 cells off-centre against
+the rendered model and was the first in-engine misrender).
+Single-tile path is unchanged.
 `Viewpoint.canvas_width/canvas_height` + `Facing.slices` in
-`pak/render.py` do the underlying render-once-crop-many; the bake
-driver routes through automatically based on `dims`.
-`building_hex_viewpoint`'s `fit_matrix = _hex_fit(divisor=
-max(dims))` divides authored blend ortho so the artist's
-`ortho = dims · per-tile-ortho` convention renders at the per-
-tile size the engine paints at.  All 8 atlas cells populate,
-building straddles the hex tile boundaries.
+`pak/render.py` do the underlying render-once-crop-many; the
+bake driver routes through automatically based on `dims`.
+`fit_matrix = _hex_fit(divisor=max(dims))` divides authored
+blend ortho so the artist's `ortho = dims · per-tile-ortho`
+convention renders at the per-tile size the engine paints at.
 
-**Open: in-engine eyeball.**  The hex atlas has never been seen
-under hextrans -- structural correctness is verified by bbox
-inspection + by `tests/test_viewpoints.py::TestBuildingHexMultiTile`,
-but whether adjacent cells actually tile coherently at hex tile
-seams in-game is unknown.  Concrete next move: load a built pak
-into hextrans (when build infrastructure can stage a multi-tile
-building); if seams misalign, the slice-centre formula in
-`hex_tile_screen_offset` is the place to look.
+**Open: in-engine eyeball (second pass).**  First load under
+hextrans surfaced the asymmetric-footprint centring bug (fixed
+above).  Need a second pass to confirm seams now align;
+remaining suspects if not: the missing per-tile hex pixel mask
+(see "hex-projection per-tile pixel mask" below — slices
+currently overlap on canvas, so adjacent cells will paint each
+other's pixels during the engine's z-ordered draw) and the
+hex-grid-vs-engine `(layout & 1)` cell-axis convention (engine
+only paints cells along koord +x or +y in `gebaeude.cc`, so the
+6-rotation model under our hex policy lands four of its
+orientations on the "wrong" cell axis — see "open: hex
+multi-tile cell-axis schema mismatch" below).
 
 **Open: per-asset `blend_ortho_per_tile` override is opt-in, no
 sniffer.**  `Building.blend_ortho_per_tile` lets a SPEC pin the
@@ -388,14 +396,45 @@ square dimetric calibration diff so multi-tile sprites partition the
 canvas without overdraw between neighbours; `building_hex_viewpoint`'s
 multi-tile path still emits `alpha_mask=None` on every slice.  Hex
 tiles are regular hexagons (not dimetric diamonds), so the lattice
-metric and ownership shape differ.  Concrete next move when in-engine
-multi-tile rendering shows seam artefacts: derive the per-tile
-ownership shape by inverting `hex_tile_screen_offset` over the hex
-footprint (the convention should fall out of `koord.cc::neighbours[]`
-+ `synth_geometry.h`'s hex extent), add `hex_tile_pixel_mask` next
-to `sq_tile_pixel_mask`, and plumb it through the multi-tile slice
-list.  Trigger: first in-engine seam complaint (signalbox or
-stonehenge under hextrans).
+metric and ownership shape differ.  Concrete next move: derive the
+per-tile ownership shape by inverting `hex_tile_screen_offset` over
+the hex footprint (the convention should fall out of
+`koord.cc::neighbours[]` + `synth_geometry.h`'s hex extent), add
+`hex_tile_pixel_mask` next to `sq_tile_pixel_mask`, and plumb it
+through the multi-tile slice list.  Trigger: now hot — first
+in-engine inspection of the signalbox surfaced misrenders; this is
+one of the two outstanding suspects (the other is the cell-axis
+schema gap below).
+
+**Open: hex multi-tile cell-axis schema mismatch.**  The engine's
+`building_desc_t::get_size(layout)` (`descriptor/building_desc.h`)
+keeps the square-pak `(layout & 1) ? (size.y, size.x) : size` rule
+unchanged for hex, so multi-tile cells only ever lay out along
+koord +x (even layouts) or koord +y (odd layouts) — two of the six
+hex axis directions.  Our bake renders the model at 6 distinct
+rotations (`hex_layouts_default` returns 6 for asymmetric assets),
+but only 2 of those rotations align the model's long axis with the
+cell axis the engine paints; the other 4 land the building rotated
+relative to its footprint.  Concrete next move when this matters
+in-engine: extend the engine's `get_size` to recognise all 6 hex
+neighbour directions (and the `building_tile_desc_t::get_offset` /
+`get_tile_list` consumers in `gebaeude.cc`); on the pak side, lift
+`iter_building_cells` and `building_hex_viewpoint`'s slice
+generation to walk those 6 directions instead of the binary swap.
+Soft trigger — only matters once the pixel-mask gap is closed and
+the residual misalignment is the visible artefact.
+
+**Open: `Building.symmetry` schema knob — extension.**
+`Symmetry` enum ships `NONE` (default) and `CONTINUOUS`
+(gasometer); `hex_layouts_default(symmetry) = 6//gcd(6,
+int(symmetry))` derives the layout count, `CONTINUOUS` → 1.
+`Building.layouts` is no longer a SPEC field — the bake driver
+threads layouts through `emit_building`'s kwarg from
+`hex_layouts_default(spec.symmetry)`.  When a port surfaces a
+real bilateral or N-fold-rotational asset (terrace row, hex
+tower, four-square chimney), extend `Symmetry` with the
+matching value (`BILATERAL = 2`, `ROTATIONAL_N = N`) and set it
+on the SPEC.
 
 **Open: multi-tile XY offset gap.**  `blend_model_offset_xyz`
 applies pre-rotation (model-local), so the screen displacement
