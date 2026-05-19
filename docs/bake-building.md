@@ -153,8 +153,9 @@ overlap when upstream cells are pasted back onto the canvas.
 Bisector lines are diagonals at slope ±2 in the lattice (`sx ±
 2·sy = const`), producing the diamond-corner cuts seen in upstream
 per-tile sprites.  `building_square_viewpoint` builds one mask per
-slice and attaches it via `Slice.alpha_mask`; `render_atlas`
-multiplies the sliced cell's alpha by the mask.  Hex production
+slice and attaches it via `Slice.alpha_mask`; `pak.compose.
+compose_atlas` (parent-side) multiplies the sliced cell's alpha by
+the mask.  Hex production
 bake still emits `alpha_mask=None` -- the hex-projection ownership
 shape is a separate derivation (see TODO.md → "hex-projection
 per-tile pixel mask").

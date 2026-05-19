@@ -846,6 +846,25 @@ incremental per-port deletes drive it, or strip them all up
 front and fetch via `pak.lock` when seeding new ports.  Soft
 trigger.
 
+**Batch multiple blends through one Blender session.**  Each bake
+script spawns a fresh `blender -b -P pak/render.py` -- ~1-2 s of
+startup per asset, then ~4 s per Cycles facing.  Single-asset
+this rounds off; `make rebake` over the catalog pays the startup
+N times.  Multi-season buildings (summer + winter) and bridges
+(image / start / ramp) already pay it 2-3× per asset.  Now that
+`pak.render.render_facings` is a function (no longer a script
+with a side-effecting `main`), batching is a thin driver: read a
+JSON job list of `(blend, viewpoint_args, out_dir, name)`,
+inside one Blender session loop `bpy.ops.wm.open_mainfile` →
+`render_facings` → `bpy.data.orphans_purge()` between iterations,
+then exit; the parent's `compose_atlas` per asset stays unchanged.
+Concrete next move: add `pak/bake_batch.py` plus a `bake.py`
+helper that gathers per-asset jobs into a list for `make
+rebake`-style sweeps, route multi-season/multi-piece bakes
+through it first (smallest blast radius -- known same engine /
+viewpoint, just different blends).  Soft trigger; the per-asset
+overhead is real but small.
+
 **Rewrite README.md.**  Current text is upstream's 2009 readme
 preserved verbatim with a disclaimer header — describes the
 vanilla Simutrans pakset, not the hex port.  Concrete next move:

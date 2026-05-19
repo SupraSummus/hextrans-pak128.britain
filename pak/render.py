@@ -20,17 +20,23 @@ for why we don't carry the projection on a parent Empty
 (matrix_basis decomposition drops shear) and why we exit edit mode
 up front (the BMesh edit buffer bypasses v.co writes).
 
+Scope: this script runs inside `blender -b -P` and only writes the
+per-facing PNGs (`<out_dir>/<name>_<facing.label>.png`).  Atlas
+composition -- slicing multi-tile renders, applying per-cell alpha
+masks, pasting cells into the final grid -- lives on the parent
+side in `pak.compose.compose_atlas`, which has no bpy dependency.
+Per-facing PNGs go through Blender's writer; the atlas through
+PIL's.  bpy doesn't touch image IO past `bpy.ops.render.render`.
+
 Run as:
 
     blender -b <blend_path> -P pak/render.py -- \\
-        --out <dir> --name <stem> --viewpoint hex|square \\
-        [--keep-per-facing] [--cols-per-row N]
+        --out <dir> --name <stem> --viewpoint hex|square
 """
 
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -143,7 +149,7 @@ class Renderer:
     `rebind_textures` flags engines whose blends ship pre-2.5 MTex
     slots the renderer rebuilds as Principled BSDF node graphs.  True
     for EEVEE (`_reload_external_textures`, `_bind_textures_via_nodes`
-    fire from `render_atlas`); false for Cycles and Workbench, where
+    fire from `render_facings`); false for Cycles and Workbench, where
     blends either use their authored node graphs verbatim or render
     flat-diffuse."""
     name: str  # set as `scn.render.engine`
@@ -836,66 +842,20 @@ def _apply_facing(records, M_target) -> None:
         obj.data.update()
 
 
-def _load_rgba(bpy, path: Path):
-    """Read a PNG via Blender into a top-down (h, w, 4) numpy float32
-    array.  Blender stores image pixels bottom-up; flip on load so the
-    in-memory convention matches PIL (and bbox printouts read
-    row-from-top)."""
-    import numpy as np
-    img = bpy.data.images.load(str(path))
-    try:
-        w, h = img.size[0], img.size[1]
-        buf = np.empty(w * h * 4, dtype=np.float32)
-        img.pixels.foreach_get(buf)
-    finally:
-        bpy.data.images.remove(img)
-    return buf.reshape(h, w, 4)[::-1].copy()
+def render_facings(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
+                   name: str,
+                   materials: dict | None = None,
+                   material_id_map: bool = False,
+                   model_offset: tuple[float, float, float] | None = None,
+                   ) -> None:
+    """Render `viewpoint.facings` of the currently loaded blend; write
+    one PNG per Facing at `<out_dir>/<name>_<facing.label>.png`.
 
-
-def _save_atlas(bpy, atlas, name: str, path: Path) -> None:
-    """Write a top-down (h, w, 4) numpy array as a PNG via bpy."""
-    h, w = atlas.shape[:2]
-    img = bpy.data.images.new(name=name, width=w, height=h, alpha=True)
-    try:
-        flipped = atlas[::-1].astype("float32", copy=False)
-        img.pixels.foreach_set(flipped.ravel())
-        img.filepath_raw = str(path)
-        img.file_format = "PNG"
-        img.save()
-    finally:
-        bpy.data.images.remove(img)
-
-
-def _print_atlas_summary(out_path: Path, cells, cols: int, rows: int) -> None:
-    """Echo per-cell bbox to stdout (debug aid mirroring
-    `hextrans-pak128/tools/threed/bespoke.py::bake_atlas`'s output)."""
-    import numpy as np
-    h, w = cells[0][1].shape[:2]
-    label_w = max(len(label) for label, _ in cells)
-    print(f"wrote {out_path} ({cols * w}x{rows * h} px, {len(cells)} cells)")
-    for i, (label, cell) in enumerate(cells):
-        r, c = divmod(i, cols)
-        mask = cell[..., 3] > 0
-        if mask.any():
-            ys, xs = np.where(mask)
-            bbox = (f"bbox=({int(xs.min())},{int(ys.min())})-"
-                    f"({int(xs.max())},{int(ys.max())}) px={int(mask.sum())}")
-        else:
-            bbox = "EMPTY"
-        print(f"  r{r}c{c}: {label:<{label_w}s} {bbox}")
-
-
-def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
-                 name: str, cols_per_row: int | None = None,
-                 keep_per_facing: bool = False,
-                 materials: dict | None = None,
-                 material_id_map: bool = False,
-                 model_offset: tuple[float, float, float] | None = None,
-                 ) -> None:
-    """Render `viewpoint.facings` of the currently loaded blend.  Writes
-    `<out_dir>/<name>.png` (atlas).  With `keep_per_facing=True`, also
-    writes `<out_dir>/<name>_<label>.png` per facing -- used by the
-    calibration diff against the upstream pak.
+    No atlas composition, no slicing -- those live in `pak.compose.
+    compose_atlas`, which runs on the parent side from the per-facing
+    PNGs this writes.  For multi-tile bakes the per-facing PNG is the
+    full wide canvas (Facing.canvas_width × canvas_height); compose
+    crops per-cell windows from it using the Facing's `slices` list.
 
     `materials` is the per-asset `MATERIALS = {...}` dict from the bake
     script (a `dict[str, pak.materials.Material]`).  Applied after the
@@ -903,13 +863,12 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     `blend_world_pos` vertex attribute it populates.
 
     `material_id_map=True` replaces every material with a flat unlit
-    emission of a unique RGB id (sidecar JSON written next to the atlas)
-    so the resulting render pixel-aligns with the normal pass but each
+    emission of a unique RGB id (sidecar JSON written next to the
+    per-facing PNGs at `<out_dir>/<name>.materials.json`) so the
+    resulting renders pixel-align with the normal pass but each
     material's coverage is identifiable.  Used by `pak.diag_per_material`
     to attribute the upstream-vs-ours dRGB to specific materials."""
     import json
-
-    import numpy as np
 
     authored = strip_scene(bpy, viewpoint.strip_meshes,
                            viewpoint.strip_material_substrings)
@@ -930,98 +889,31 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
 
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    tmp_dir = out_dir / ".render_tmp"
-    tmp_dir.mkdir(exist_ok=True)
 
     scn = bpy.context.scene
-    cells = []
-    sprite_w = viewpoint.image_width
-    canvas_w = viewpoint.canvas_width or sprite_w
-    canvas_h = viewpoint.canvas_height or sprite_w
-    try:
-        for facing in viewpoint.facings:
-            cam.location = facing.camera_location
-            cam.rotation_euler = facing.camera_rotation_euler
-            sun.rotation_euler = facing.sun_rotation_euler
-            M_scale = mathutils.Matrix.Diagonal((
-                facing.model_scale, facing.model_scale, facing.model_scale, 1.0,
-            ))
-            M_target = (extrinsic
-                        @ mathutils.Matrix.Translation(facing.model_translation)
-                        @ M_scale
-                        @ mathutils.Matrix.Rotation(radians(facing.model_rot_z_deg), 4, "Z")
-                        @ fit)
-            if model_offset is not None:
-                # Pre-translate the mesh by -offset in world coords so
-                # the model's authored centre lands at world origin --
-                # the rotation above then pivots around the model
-                # centre, not around an arbitrary world point.
-                M_target = M_target @ mathutils.Matrix.Translation(
-                    (-model_offset[0], -model_offset[1], -model_offset[2])
-                )
-            _apply_facing(records, M_target)
-            tmp_path = tmp_dir / f"{facing.label}.png"
-            scn.render.filepath = str(tmp_path)
-            bpy.ops.render.render(animation=False, write_still=True)
-            rendered = _load_rgba(bpy, tmp_path)
-            if keep_per_facing:
-                shutil.copy(tmp_path, out_dir / f"{name}_{facing.label}.png")
-            if facing.slices is None:
-                # Legacy 1-cell-per-facing path: the rendered image *is*
-                # the cell (canvas == sprite size by construction).
-                cells.append((facing.label, rendered))
-            else:
-                # Image-space slicing.  `_load_rgba` flipped Blender's
-                # bottom-up render to top-down, so slice offsets follow
-                # image coords: cx_px > 0 right of canvas centre, cy_px
-                # > 0 below.  One W×W cell per slice, padded with zero
-                # alpha where the crop runs off the canvas edge.
-                cx0 = canvas_w / 2.0
-                cy0 = canvas_h / 2.0
-                for sl in facing.slices:
-                    cx_px, cy_px = sl.offset
-                    x0 = int(round(cx0 + cx_px - sprite_w / 2))
-                    y0 = int(round(cy0 + cy_px - sprite_w / 2))
-                    cell = np.zeros((sprite_w, sprite_w, 4), dtype=np.float32)
-                    sx0 = max(0, -x0)
-                    sy0 = max(0, -y0)
-                    dx0 = max(0, x0)
-                    dy0 = max(0, y0)
-                    cw = min(sprite_w - sx0, canvas_w - dx0)
-                    ch = min(sprite_w - sy0, canvas_h - dy0)
-                    if cw > 0 and ch > 0:
-                        cell[sy0:sy0 + ch, sx0:sx0 + cw] = (
-                            rendered[dy0:dy0 + ch, dx0:dx0 + cw]
-                        )
-                    # Per-slice pixel-ownership mask (e.g. dimetric L1
-                    # Voronoi ∩ hex for square_building) clips pixels
-                    # outside this tile's footprint so the engine paints
-                    # multi-tile sprites without overdraw between
-                    # neighbours.  None = no clip (single-tile / hex bake).
-                    if sl.alpha_mask is not None:
-                        cell[..., 3] *= sl.alpha_mask
-                    cells.append((sl.label, cell))
-                    if keep_per_facing:
-                        # Per-slice PNG, top-down (cell array already is
-                        # top-down because _load_rgba flipped on load).
-                        from PIL import Image as _PILImage
-                        _bytes = (cell * 255).clip(0, 255).astype("uint8")
-                        _PILImage.fromarray(_bytes, "RGBA").save(
-                            out_dir / f"{name}_{sl.label}.png"
-                        )
-
-        cols = cols_per_row or len(cells)
-        rows = (len(cells) + cols - 1) // cols
-        h, w = cells[0][1].shape[:2]
-        atlas = np.zeros((rows * h, cols * w, 4), dtype=np.float32)
-        for i, (_, cell) in enumerate(cells):
-            r, c = divmod(i, cols)
-            atlas[r * h:(r + 1) * h, c * w:(c + 1) * w] = cell
-        out_path = out_dir / f"{name}.png"
-        _save_atlas(bpy, atlas, name, out_path)
-        _print_atlas_summary(out_path, cells, cols, rows)
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    for facing in viewpoint.facings:
+        cam.location = facing.camera_location
+        cam.rotation_euler = facing.camera_rotation_euler
+        sun.rotation_euler = facing.sun_rotation_euler
+        M_scale = mathutils.Matrix.Diagonal((
+            facing.model_scale, facing.model_scale, facing.model_scale, 1.0,
+        ))
+        M_target = (extrinsic
+                    @ mathutils.Matrix.Translation(facing.model_translation)
+                    @ M_scale
+                    @ mathutils.Matrix.Rotation(radians(facing.model_rot_z_deg), 4, "Z")
+                    @ fit)
+        if model_offset is not None:
+            # Pre-translate the mesh by -offset in world coords so
+            # the model's authored centre lands at world origin --
+            # the rotation above then pivots around the model
+            # centre, not around an arbitrary world point.
+            M_target = M_target @ mathutils.Matrix.Translation(
+                (-model_offset[0], -model_offset[1], -model_offset[2])
+            )
+        _apply_facing(records, M_target)
+        scn.render.filepath = str(out_dir / f"{name}_{facing.label}.png")
+        bpy.ops.render.render(animation=False, write_still=True)
 
 
 def _parse_args(argv):
@@ -1037,9 +929,6 @@ def _parse_args(argv):
                          "tree_square; SEASONS controls leaf-colour overrides "
                          "(currently summer only; expand when the rest are "
                          "calibrated)")
-    ap.add_argument("--keep-per-facing", action="store_true",
-                    help="write per-facing PNGs alongside the atlas (used by diff)")
-    ap.add_argument("--cols-per-row", type=int, default=None)
     ap.add_argument("--bridge-piece", default=None,
                     choices=["image", "start", "ramp"],
                     help="piece kind for viewpoint=bridge_hex (image=3-axis "
@@ -1199,12 +1088,10 @@ def main(argv):
             )
         model_offset = tuple(parts)
 
-    render_atlas(bpy, mathutils, vp, args.out, args.name,
-                 cols_per_row=args.cols_per_row,
-                 keep_per_facing=args.keep_per_facing,
-                 materials=materials,
-                 material_id_map=args.material_id_map,
-                 model_offset=model_offset)
+    render_facings(bpy, mathutils, vp, args.out, args.name,
+                   materials=materials,
+                   material_id_map=args.material_id_map,
+                   model_offset=model_offset)
     return 0
 
 

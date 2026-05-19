@@ -53,13 +53,14 @@ def _load_module(path: Path):
 def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
             materials: dict | None, lighting=None,
             id_map: bool = False) -> Path:
+    from pak.compose import compose_atlas
+    from pak.viewpoints import building_square_viewpoint
     script = HERE / "render.py"
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
         "--out", str(out_dir), "--name", name,
         "--viewpoint", "square_building",
         "--building-footprint", f"1,1,{layouts},1",
-        "--keep-per-facing",
     ]
     if id_map:
         cmd += ["--material-id-map"]
@@ -68,6 +69,14 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
     if lighting is not None and not id_map:
         cmd += ["--lighting", json.dumps(lighting.to_jsonable())]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    compose_atlas(
+        building_square_viewpoint(
+            layouts=layouts, dims_x=1, dims_y=1, heights=1,
+            lighting=None if id_map else lighting,
+        ),
+        render_dir=out_dir, out_dir=out_dir, name=name,
+        cols_per_row=layouts,
+    )
     return out_dir / f"{name}.png"
 
 

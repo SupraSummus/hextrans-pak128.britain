@@ -58,6 +58,18 @@ def _load_bake_script(path: Path):
     return mod
 
 
+def _compose(out_dir: Path, name: str, layouts: int) -> None:
+    from pak.compose import compose_atlas
+    from pak.viewpoints import building_square_viewpoint
+    compose_atlas(
+        building_square_viewpoint(
+            layouts=layouts, dims_x=1, dims_y=1, heights=1,
+        ),
+        render_dir=out_dir, out_dir=out_dir, name=name,
+        cols_per_row=layouts,
+    )
+
+
 def _render_id_map(blend_path: Path, out_dir: Path, name: str,
                    layouts: int) -> tuple[Path, dict[str, tuple[int, int, int]]]:
     """Run render.py with --material-id-map.  Returns the rendered atlas
@@ -68,9 +80,9 @@ def _render_id_map(blend_path: Path, out_dir: Path, name: str,
         "--out", str(out_dir), "--name", name,
         "--viewpoint", "square_building",
         "--building-footprint", f"1,1,{layouts},1",
-        "--keep-per-facing",
         "--material-id-map",
     ], check=True, stdout=subprocess.DEVNULL)
+    _compose(out_dir, name, layouts)
     sidecar = out_dir / f"{name}.materials.json"
     mat_to_id = {k: tuple(v) for k, v in json.loads(sidecar.read_text()).items()}
     return out_dir / f"{name}.png", mat_to_id
@@ -85,12 +97,12 @@ def _render_normal(blend_path: Path, out_dir: Path, name: str, layouts: int,
         "--out", str(out_dir), "--name", name,
         "--viewpoint", "square_building",
         "--building-footprint", f"1,1,{layouts},1",
-        "--keep-per-facing",
     ]
     if materials:
         from pak.materials import to_jsonable
         cmd += ["--materials", json.dumps(to_jsonable(materials))]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    _compose(out_dir, name, layouts)
     return out_dir / f"{name}.png"
 
 

@@ -76,7 +76,7 @@ def _render_blend_if_missing(blend_repo_path: str, render_dir: Path,
         "blender", "-b", str(blend),
         "-P", str(REPO_ROOT / "pak" / "render.py"), "--",
         "--out", str(render_dir), "--name", bake_stem,
-        "--viewpoint", "bridge_square", "--keep-per-facing",
+        "--viewpoint", "bridge_square",
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 

@@ -26,7 +26,7 @@ Plus one viewpoint factory:
   to-screen-rotation convention and the first real bake will pin
   the sign.
 
-All three feed the same `render_atlas()` pipeline; the only
+All three feed the same `render_facings()` pipeline; the only
 difference is which `Viewpoint` instance gets passed in.
 """
 

@@ -95,13 +95,14 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
             model_offset_xyz: tuple[float, float, float] | None = None,
             strip: str | None = None,
             ) -> None:
+    from pak.compose import compose_atlas
+    from pak.viewpoints import building_square_viewpoint
     script = HERE / "render.py"
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
         "--out", str(out_dir), "--name", name,
         "--viewpoint", "square_building",
         "--building-footprint", f"{dims_x},{dims_y},{layouts},1",
-        "--keep-per-facing",
     ]
     if blend_ortho_per_tile is not None:
         cmd += ["--building-ortho-per-tile", str(blend_ortho_per_tile)]
@@ -121,6 +122,18 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
         import json
         cmd += ["--lighting", json.dumps(lighting.to_jsonable())]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    # Compose on the parent side: per-slice PNGs (`<name>_L*_Y*_X*_H*.
+    # png`) come from this step, consumed by `_load_our_cell` below.
+    compose_atlas(
+        building_square_viewpoint(
+            layouts=layouts, dims_x=dims_x, dims_y=dims_y, heights=1,
+            lighting=lighting,
+            ortho_per_tile=blend_ortho_per_tile,
+        ),
+        render_dir=out_dir, out_dir=out_dir, name=name,
+        cols_per_row=layouts * dims_x * dims_y,
+        keep_per_facing=True,
+    )
 
 
 def _split_upstream(up_png: Path, layouts: int, season_row: int = 0):

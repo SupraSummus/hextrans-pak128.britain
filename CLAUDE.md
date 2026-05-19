@@ -161,11 +161,14 @@ The **silent-failure landmines** to pin for the blend pipeline:
 3. **Image pixel orientation.**  `bpy.types.Image.pixels` is
    bottom-up (origin at bottom-left).  PIL and
    `hextrans-pak128/tools/threed/bespoke.py::bake_atlas` work
-   top-down.  `render.py` flips on load and again on save so
-   the in-memory atlas representation matches upstream's
-   convention (and bbox printouts read row-from-top).  Forget the
-   flip and the atlas comes out vertically mirrored — silently
-   rendered, silently saved, only caught by eye.
+   top-down.  Atlas composition (`pak.compose`) goes through PIL
+   only -- read PNG, slice/paste in numpy, save PNG -- so the trap
+   doesn't bite the current pipeline.  Reach for `bpy.data.images.
+   load` / `.pixels` and you immediately need to flip on both ends
+   for the in-memory representation to agree with PIL's, and an
+   asymmetric flip ships a vertically mirrored atlas silently.
+   The fix is "don't IO through bpy"; the workflow lives in
+   compose.
 4. **`matrix_basis` drops shear.**  Assigning a 4×4 to
    `obj.matrix_basis` (or routing it via a parent Empty's basis)
    decomposes the matrix into translation/rotation/scale and
@@ -239,9 +242,10 @@ ships its own Camera object with the artist's chosen
 ortho_scale: vehicle blends sit at 24, but several building
 blends (e.g. `citybuildings/1600-detatched-house-2f.blend`) are
 authored at 12 — half the per-cell zoom, building roughly fills
-the cell instead of overflowing it.  `pak/render.py::_strip_scene`
-reads the camera's ortho_scale before stripping it; `_compute_fit`
-then builds the per-asset scale `2R / blend_ortho_scale` (defaults
+the cell instead of overflowing it.  `pak/render.py::strip_scene`
+reads the camera's ortho_scale before stripping it; the per-
+viewpoint `fit_matrix` callable then builds the scale `2R /
+blend_ortho_scale` (defaults
 to `2R / UPSTREAM_ORTHO_SCALE = 1/12` when the blend has no
 camera).  Each blend renders at the per-pixel scale its author
 intended.  Width and height for land vehicles are authored at
@@ -268,7 +272,7 @@ by multi-tile buildings), not the fit matrix.
 
 **`blend_model_offset_xyz` applies pre-rotation, model-local.** The
 renderer translates the mesh by `-offset` BEFORE the per-facing Z
-rotation (see `render.py::render_atlas`, the
+rotation (see `render.py::render_facings`, the
 `M_target @ Matrix.Translation((-mx,-my,-mz))` line).  Multi-tile
 layouts rotate the model (`(2·step·L) % 360` in
 `building_square_viewpoint`), so the screen displacement caused by
@@ -786,9 +790,9 @@ default 8-view bake.  Per-asset .dat keys (`EmptyImage[S]=…0.0`,
 renders the wrong sprite per facing — there is no run-time
 consistency check.
 
-Single-row is the default.  `render.py --cols-per-row N` exists for
-atlases that grow tall enough to be awkward (way ribi tables,
-multi-state machinery); not relevant for 8-facing vehicles.
+Single-row is the default.  `compose_atlas(..., cols_per_row=N)`
+exists for atlases that grow tall enough to be awkward (way ribi
+tables, multi-state machinery); not relevant for 8-facing vehicles.
 
 ## Bake tooling
 
@@ -804,13 +808,25 @@ sourcing without cloning" above.
 
 **Render.**  `render.py` is the `blender -b -P` harness; takes a
 `Viewpoint`, strips the blend's authored Camera / Sphere / Lamp,
-installs its own, emits an atlas PNG.  Same code path serves
-square (upstream-calibration) and hex (production) projections.
-`viewpoints.py` carries `SQUARE_VIEWPOINT` / `HEX_VIEWPOINT` and
-the building / tree factory variants; facing labels match across
-projections so .dat keys port without relabelling.  `bake_way.py`
-is the way-bake driver (Workbench backend, blender-only); see
-[`docs/bake-way.md`](docs/bake-way.md).
+installs its own, writes one PNG per Facing.  Same code path
+serves square (upstream-calibration) and hex (production)
+projections.  `viewpoints.py` carries `SQUARE_VIEWPOINT` /
+`HEX_VIEWPOINT` and the building / tree factory variants; facing
+labels match across projections so .dat keys port without
+relabelling.  `bake_way.py` is the way-bake driver (Workbench
+backend, blender-only); see [`docs/bake-way.md`](docs/bake-way.md).
+
+**Compose.**  `compose.py` (pure PIL + numpy, no bpy) runs in the
+parent Python after Blender exits: reads the per-facing PNGs,
+crops per `Facing.slices` (multi-tile) and applies any
+`Slice.alpha_mask`, pastes the cells into the final atlas,
+writes `<name>.png` and prints a bbox summary.  Bake drivers
+construct the same `Viewpoint` they pass to Blender via CLI and
+hand it to `compose_atlas` -- factories are deterministic so the
+slice layout the parent expects matches what Blender just
+rendered.  Per-piece bridge and per-season building atlases
+stitch one layer above, in `pak.bake` (`_stitch_bridge_atlas`,
+`_stitch_seasons`).
 
 **Dat schema.**  `dat.py` defines the `Vehicle` / `Way` /
 `Building` / `Tree` dataclasses + `parse` / `port_*` seeders +
