@@ -90,6 +90,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                 blend_source=spec.blend_source,
                 blend_ortho_per_tile=spec.blend_ortho_per_tile,
                 model_offset_xyz=spec.blend_model_offset_xyz,
+                strip=spec.strip,
             )
             print(f"wrote {out_dir / 'grid_tiles.png'}")
             print(diff_buildings.format_multitile_table(per_cell))
@@ -129,6 +130,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                 name=spec.name,
                 blend_source=spec.blend_source,
                 blend_ortho_per_tile=spec.blend_ortho_per_tile,
+                strip=spec.strip,
             )
         else:
             mat, perm, drgb = diff_buildings.run(
@@ -138,6 +140,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                 name=spec.name,
                 blend_source=spec.blend_source,
                 blend_ortho_per_tile=spec.blend_ortho_per_tile,
+                strip=spec.strip,
             )
             seasons = [("summer", mat, perm, drgb)]
 

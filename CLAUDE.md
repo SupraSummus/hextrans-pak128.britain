@@ -265,6 +265,24 @@ authoring and surfaces drift on assets that don't.  Positional
 anchoring goes through the per-tile `model_translation` axis (used
 by multi-tile buildings), not the fit matrix.
 
+**`blend_model_offset_xyz` applies pre-rotation, model-local.** The
+renderer translates the mesh by `-offset` BEFORE the per-facing Z
+rotation (see `render.py::render_atlas`, the
+`M_target @ Matrix.Translation((-mx,-my,-mz))` line).  For
+multi-tile buildings whose layouts rotate the model (0°/180°/0°/180°
+for a 2×1, 0°/90°/180°/270° for a 2×2), an XY offset rotates with
+each layout — pinning `(-0.27, +0.27)` shifts L0/L2 correctly but
+L1/L3 by the opposite vector, helping half and hurting half.  **Z is
+rotation-invariant** under the XY layout rotation and projects only
+onto screen-Y, so a pure-Z offset shifts every layout uniformly.
+`pak.diag_centroid_align` reports both an XY (z=0) and a pure-Z
+candidate per layout; the discriminator is per-layout consistency
+of the screen `(dx, dy)`: dy consistent + dx≈0 means pure-Z drift
+(safe to pin on any multi-tile asset), dy/dx rotating with the
+layout means an XY drift the current field can't express.  A
+post-rotation world-frame translation mechanism is a separate
+follow-up — see `TODO.md` → "Multi-tile XY offset gap".
+
 **Alignment mode is asset-class-dependent.**  Trains, trams, water
 craft and aircraft use upstream's **`vehicles` alignment** camera
 positions (`op_list "2"`); road vehicles, buildings, signals and

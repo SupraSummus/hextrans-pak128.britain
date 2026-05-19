@@ -50,13 +50,28 @@ from pak.upstream import image_stem
 
 # Dimetric world->screen rates at the upstream-normal-cardinal
 # projection in our 512x512 canvas at the per-tile=24 standard ortho
-# (ortho=48 effective).  World +x maps to screen (+7.54, +3.78);
-# world +y maps to (-7.54, +3.78).  Used to suggest a world XY
-# translation that would produce a given screen offset, treating the
-# silhouette's vertical drift as ground-plane displacement (the most
-# common case for building footings authored at z=0).
+# (ortho=48 effective).  Pixels-per-world on the camera plane =
+# 512/48 = 10.67; camera at 45° azimuth, 30° elevation gives:
+#   world +x → screen (+7.54, +3.78)  = 10.67·(cos 45°, sin 45°·sin 30°)
+#   world +y → screen (-7.54, +3.78)
+#   world +z → screen (0,    -9.24)   = 10.67·(0,        -cos 30°)
+# The XY candidate assumes the drift is ground-plane displacement;
+# the Z candidate assumes the model floats above/below z=0.  Picking
+# between them: dy consistent across layouts + dx≈0 -> pure-Z drift
+# (Z is rotation-invariant); (dx, dy) rotating with the layout -> XY
+# drift -- but that one can't be pinned via `blend_model_offset_xyz`
+# on multi-tile assets (see CLAUDE.md -> "blend_model_offset_xyz
+# applies pre-rotation, model-local").
 _WORLD_TO_SCREEN_X_PER_WORLD = 7.54
 _WORLD_TO_SCREEN_Y_PER_WORLD = 3.78
+_WORLD_TO_SCREEN_Z_PER_WORLD = 9.24
+
+
+def _screen_to_world_z(dy: int) -> float:
+    """SPEC.z candidate.  `_iou_shift`'s screen-y is image-down, world
+    +Z is image-up, and the renderer applies `Translation(-offset)`
+    -- the signs cancel to a straight division."""
+    return -dy / _WORLD_TO_SCREEN_Z_PER_WORLD
 
 
 def _iou_shift(our_mask: np.ndarray, up_mask: np.ndarray,
@@ -139,7 +154,7 @@ def main(argv: list[str]) -> int:
 
     print(f"=== {script.name} centroid-alignment sweep ===")
     print(f"  {'L':<3} {'raw IoU':>9} {'aligned':>9} {'dx':>5} {'dy':>5}"
-          f"  {'world dx':>9} {'world dy':>9}")
+          f"  {'wx (z=0)':>9} {'wy (z=0)':>9} {'wz (xy=0)':>10}")
     dxs, dys = [], []
     for L in range(layouts):
         cells_by_yx = {
@@ -154,14 +169,19 @@ def main(argv: list[str]) -> int:
         raw = _iou_shift(our_mask, up_mask, 0, 0)
         dx, dy, peak = _sweep_offset(our_mask, up_mask)
         wx, wy = _screen_to_world_xy(dx, dy)
+        wz = _screen_to_world_z(dy)
         dxs.append(dx); dys.append(dy)
         print(f"  {L:<3} {raw:>9.3f} {peak:>9.3f} {dx:>5} {dy:>5}"
-              f"  {wx:>+9.2f} {wy:>+9.2f}")
+              f"  {wx:>+9.2f} {wy:>+9.2f} {wz:>+10.2f}")
     mdx, mdy = sum(dxs) / len(dxs), sum(dys) / len(dys)
     mwx, mwy = _screen_to_world_xy(round(mdx), round(mdy))
+    mwz = _screen_to_world_z(mdy)
     print(f"  --  mean offset: screen ({mdx:+.1f},{mdy:+.1f}), "
-          f"world (xy, z=0): ({mwx:+.2f},{mwy:+.2f}) "
-          f"-- candidate for blend_model_offset_xyz")
+          f"world (xy, z=0): ({mwx:+.2f},{mwy:+.2f}); "
+          f"world (xy=0, z): {mwz:+.2f}")
+    print( "      Pick Z when dy is consistent and dx ≈ 0 (rotation-"
+          "invariant, safe on multi-tile).  XY only applies on single-"
+          "tile assets -- multi-tile XY can't be pinned today.")
     return 0
 
 

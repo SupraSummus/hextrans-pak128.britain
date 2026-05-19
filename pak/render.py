@@ -1171,6 +1171,13 @@ def _parse_args(argv):
                     help="JSON serialisation of the bake script's optional "
                          "`LIGHTING = Lighting(...)` block; per-asset world-"
                          "ambient + sun overrides.  See pak.materials.Lighting.")
+    ap.add_argument("--strip", default=None,
+                    help="Comma-separated mesh-object names to drop on "
+                         "entry, overriding the viewpoint's default "
+                         "(`Sphere`).  Used by per-asset bakes to remove "
+                         "blend-shipped debug / registration meshes that "
+                         "carry no material slot (so a materials override "
+                         "can't reach them).")
     ap.add_argument("--material-id-map", action="store_true",
                     help="Diagnostic: instead of the normal render, "
                          "replace every material with a flat unlit "
@@ -1242,6 +1249,11 @@ def main(argv):
         vp = factory(ages=ages, seasons=seasons)
     else:
         raise SystemExit(f"unknown viewpoint: {args.viewpoint!r}")
+
+    if args.strip is not None:
+        vp = replace(vp, strip_meshes=tuple(
+            n for n in args.strip.split(",") if n
+        ))
 
     materials = None
     if args.materials:
