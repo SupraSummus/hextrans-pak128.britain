@@ -111,10 +111,10 @@ UPSTREAM_ORTHO_SCALE = 24.0
 
 INTRA_TILE_PER_BLEND_UNIT = (2.0 * HEX_TILE_RADIUS) / UPSTREAM_ORTHO_SCALE
 # = 1/12 at the current pakset constants.  This is the same ratio
-# `pak.render::_compute_fit` applies under `fit_kind="hex"` for
-# vehicles, and the same ratio the way bake will switch to once
-# multi-atom-per-chord composition lands (TODO.md → "Way multi-
-# atom-per-chord composition").
+# `pak.viewpoints._hex_fit` applies in the standard hex viewpoint
+# fit_matrix for vehicles, and the same ratio the way bake will
+# switch to once multi-atom-per-chord composition lands (TODO.md →
+# "Way multi-atom-per-chord composition").
 
 
 # Sun: from south (-y), 60 deg above horizon. Light travels north and

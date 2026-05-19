@@ -416,9 +416,9 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     convention are all best-guess on the first pass.  When the first
     real bake surfaces misalignment, fix in
     `viewpoints.building_hex_viewpoint` (rotation sign / koord-tile
-    mapping) and in `render.py::_compute_fit` (the `fit_kind="hex"`
-    centring may need a multi-tile variant that anchors on the
-    building's koord origin rather than the model's XY bbox).
+    mapping) and in its `fit_matrix` factory (the standard `_hex_fit`
+    may need a multi-tile variant that anchors on the building's
+    koord origin rather than the model's XY bbox).
     """
     if spec.blend is None:
         raise ValueError(f"{basename}: SPEC missing blend=")

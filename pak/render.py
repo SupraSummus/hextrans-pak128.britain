@@ -32,7 +32,8 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
-from dataclasses import dataclass, replace
+from collections.abc import Callable
+from dataclasses import dataclass
 from math import radians
 from pathlib import Path
 
@@ -73,45 +74,107 @@ class Facing:
     slices: list[tuple[str, tuple[int, int]]] | None = None
 
 
+def _configure_cycles(scn) -> None:
+    """Pin Cycles knobs that are otherwise non-deterministic across CI
+    runs even on identical hardware: adaptive sampling (per-pixel
+    termination on a noise estimate), the denoiser (the blend may save
+    it on), and the sample seed (the blend may save a non-zero value).
+    Cross-CPU determinism (Intel vs AMD AVX2 transcendentals / embree)
+    is still not guaranteed -- see CLAUDE.md -> CI."""
+    scn.cycles.use_denoising = False
+    scn.cycles.use_adaptive_sampling = False
+    scn.cycles.seed = 0
+
+
+def _configure_eevee(scn) -> None:
+    """EEVEE substitute for BI: taa_render_samples=8 gives proper edge
+    alpha-AA (1 writes 0-or-255 only and drops the edge ring); GTAO,
+    bloom, SSR, volumetrics off for determinism across CI runners.
+    World ambient defaults to 0.30 grey; per-asset overrides flow
+    through `Viewpoint.world_ambient` (set at factory time from
+    `Lighting.world_ambient`)."""
+    scn.eevee.taa_render_samples = 8
+    scn.eevee.use_gtao = False
+    scn.eevee.use_bloom = False
+    scn.eevee.use_ssr = False
+    scn.eevee.use_volumetric_lights = False
+    scn.eevee.use_soft_shadows = False
+    scn.eevee.use_shadow_high_bitdepth = True
+    if scn.world is not None:
+        scn.world.use_nodes = False
+        try:
+            scn.world.color = (0.30, 0.30, 0.30)
+        except AttributeError:
+            pass
+
+
+def configure_workbench(scn) -> None:
+    """Flat-shading substitute: rendered pixel == material's diffuse
+    colour directly.  No path tracing, no embree, no SIMD-sensitive
+    reductions -- byte-stable across CPUs in practice.  Imported by
+    `pak/bake_way.py` (ways have their own harness for composition
+    reasons -- see CLAUDE.md -> "Way-bake architecture" -- but share
+    the engine-config contract)."""
+    shading = scn.display.shading
+    shading.light = "FLAT"
+    shading.color_type = "MATERIAL"
+    shading.show_shadows = False
+    shading.show_cavity = False
+    shading.show_specular_highlight = False
+
+
+@dataclass(frozen=True)
+class Renderer:
+    """Engine choice + everything render.py needs to dispatch on it.
+    Collapses the `engine: str` + `_ENGINE_CONFIGURERS[name]` dict
+    lookup + `if engine == "BLENDER_EEVEE"` branches into one value.
+
+    `rebind_textures` flags engines whose blends ship pre-2.5 MTex
+    slots the renderer rebuilds as Principled BSDF node graphs.  True
+    for EEVEE (`_reload_external_textures`, `_bind_textures_via_nodes`
+    fire from `render_atlas`); false for Cycles and Workbench, where
+    blends either use their authored node graphs verbatim or render
+    flat-diffuse."""
+    name: str  # set as `scn.render.engine`
+    configure: Callable[[object], None]  # called on `scn` after engine set
+    rebind_textures: bool = False
+
+
+CYCLES = Renderer(name="CYCLES", configure=_configure_cycles)
+EEVEE = Renderer(name="BLENDER_EEVEE", configure=_configure_eevee,
+                 rebind_textures=True)
+WORKBENCH = Renderer(name="BLENDER_WORKBENCH", configure=configure_workbench)
+
+
 @dataclass
 class Viewpoint:
     """Self-contained recipe for rendering one asset N ways.
 
-    `ortho_scale=None` means "use the blend's authored ortho_scale" —
-    used by `square_building` to match upstream's rendering exactly
-    (which honours each blend's own camera, e.g. 12 for buildings vs
-    24 for vehicles).  A float pins the camera to that value
-    regardless of what the blend declared (used by SQUARE_VIEWPOINT at
-    24 and HEX_VIEWPOINT at 2R, both of which want a fixed pak-side
-    scale)."""
+    `camera_ortho`, `sun_energy` and `fit_matrix` are callables of
+    `BlendAuthored` -- the policy lives in the closure rather than as
+    separate "scale by N when authored is None" fields on the
+    dataclass.  Common shapes live in `pak.viewpoints` as helpers
+    (`_authored_ortho`, `_authored_sun`, `_hex_fit`, `_identity_matrix`,
+    `_fixed_hex_scale`).
+
+    `extrinsic` is the OUTERMOST factor applied per facing
+    (hex_proj_shear for hex, identity for square); `fit_matrix` is the
+    INNERMOST (blend->intra-tile scale), so the per-facing transform
+    composes them as `extrinsic @ T @ S @ R @ fit_matrix(authored)`."""
     name: str
     image_width: int
-    ortho_scale: float | None
-    # `None` means "use the blend's authored sun energy, scaled by the
-    # engine-substitution factor declared in `sun_energy_scale`".  A
-    # float pins the value directly -- used by SQUARE_VIEWPOINT and
-    # HEX_VIEWPOINT to assert the upstream 0.028 verbatim under Cycles
-    # (the empirical vehicle/way substitute for the lost BI authoring
-    # engine; not literally what upstream rendered with).
-    sun_energy: float | None
-    # "hex": centre + z_floor + INTRA_TILE_PER_BLEND_UNIT scale.
-    # "none": identity (used by SQUARE_VIEWPOINT — operates in blend
-    # coords so it can pixel-diff against upstream's published cells).
-    fit_kind: str
-    extrinsic: tuple | None  # 4x4 row-major tuple, or None for identity
     facings: list[Facing]
-    # Engine-substitution multiplier applied to the authored sun energy
-    # when `sun_energy is None`.  BI-authored 0.028 reads as near-zero
-    # under EEVEE's PBR pipeline; the building viewpoints scale by
-    # ≈71.4 (= 2.0/0.028) to approximate BI's apparent brightness.
-    sun_energy_scale: float = 1.0
-    # Vehicles & ways: "CYCLES".  Buildings: "BLENDER_EEVEE" (BI's
+    camera_ortho: Callable[[BlendAuthored], float]
+    sun_energy: Callable[[BlendAuthored], float]
+    fit_matrix: Callable[[BlendAuthored], tuple]  # 4x4 row-major tuple
+    extrinsic: tuple | None = None  # 4x4 row-major tuple, or None for identity
+    # Vehicles & ways: `CYCLES`.  Buildings: `EEVEE` (BI's
     # use_nodes=False materials render closer to upstream under EEVEE
     # than Cycles).  Both are empirical substitutes for upstream's
     # actual authoring engine (Blender Internal under 2.79, dropped
     # in 2.80) -- see CLAUDE.md -> "Building-bake architecture".
-    # "BLENDER_WORKBENCH" available for flat-shading paths (ways).
-    engine: str = "CYCLES"
+    # `WORKBENCH` available for flat-shading paths (ways).
+    engine: Renderer = CYCLES
     # Object names stripped from the scene on entry (in addition to all
     # Camera and Light objects, which always go).  Default `("Sphere",)`
     # drops upstream's sun-direction visualizer mesh.  Tree blends add
@@ -139,25 +202,13 @@ class Viewpoint:
     # (`Facing.slices`).
     canvas_width: int | None = None
     canvas_height: int | None = None
-    # Divisor applied to the blend's authored ortho_scale before
-    # `_compute_fit` reads it under `fit_kind="hex"`.  Multi-tile
-    # building blends are authored at `ortho_scale = dims · per-tile-
-    # ortho` (the artist sized the camera to fit the whole footprint
-    # at the standard per-tile pixel rate); dividing by `max(dims_x,
-    # dims_y)` recovers the per-tile-ortho the fit-scale should
-    # actually use, so the rendered building lands at upstream's per-
-    # cell size after slicing.  Default 1.0 = honour the blend's
-    # authored ortho directly (single-tile, vehicle, way, tree paths).
-    fit_ortho_divisor: float = 1.0
-    # Per-tile ortho target -- overrides `fit_ortho_divisor` at render
-    # time by computing `divisor = authored / (per_tile *
-    # fit_ortho_max_dims)`.  Used when the artist sized the blend for
-    # the whole composition rather than per-tile (e.g. stonehenge
-    # ortho=72 over 2x2, per_tile=24 -> divisor 1.5).  Set with
-    # `fit_ortho_max_dims` together; otherwise the divisor stays at
-    # `fit_ortho_divisor`.
-    fit_ortho_per_tile: float | None = None
-    fit_ortho_max_dims: int | None = None
+    # EEVEE world ambient override.  When set, `_install_camera_and_sun`
+    # forces `scn.world.color` to this triple after the engine
+    # configurer runs (which defaults to 0.30 grey for EEVEE).  Used by
+    # building viewpoint factories to apply per-asset
+    # `Lighting.world_ambient` at construction time, removing the need
+    # for a render-time `_apply_lighting` mutation pass.
+    world_ambient: tuple[float, float, float] | None = None
 
 
 def _reload_external_textures(bpy) -> None:
@@ -592,47 +643,20 @@ def strip_scene(
 
 def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
                             authored: BlendAuthored):
-    """Create one camera and one SUN light, configured per the Viewpoint
-    with fallback to authored values for fields the Viewpoint defers
-    (sun_energy=None, ortho_scale=None).  Per-facing pose changes
-    (location, rotation) happen in the render loop.
-
-    When the Viewpoint defers to authored ortho (`ortho_scale=None`,
-    `fit_kind="none"` path -- `square_building` calibration diff),
-    `fit_ortho_divisor` divides the camera ortho directly: model
-    unchanged (fit identity), camera view narrows, model appears
-    bigger in the canvas.  This is how the `square_building` path
-    normalises across blends that ship at different
-    overall-composition orthos (e.g. stonehenge ortho=72 sized for
-    the whole landscape vs. signalbox ortho=48 sized for `dims·24`)
-    -- the divisor brings them to a common per-tile rate."""
-    ortho = (viewpoint.ortho_scale
-             if viewpoint.ortho_scale is not None
-             else authored.ortho_scale)
-    if ortho is None:
-        raise SystemExit(
-            "Viewpoint declared ortho_scale=None and blend has no ortho camera"
-        )
-    if viewpoint.ortho_scale is None:
-        ortho = ortho / viewpoint.fit_ortho_divisor
+    """Create one camera and one SUN light, configured per the
+    Viewpoint's `camera_ortho` / `sun_energy` callables (resolved
+    against the BlendAuthored captured by `strip_scene`).  Per-facing
+    pose changes (location, rotation) happen in the render loop."""
     cam_data = bpy.data.cameras.new("_render_camera")
     cam_data.type = "ORTHO"
-    cam_data.ortho_scale = ortho
+    cam_data.ortho_scale = viewpoint.camera_ortho(authored)
     cam = bpy.data.objects.new("_render_camera", cam_data)
     bpy.context.scene.collection.objects.link(cam)
     bpy.context.scene.camera = cam
     cam.rotation_mode = "XYZ"
 
-    if viewpoint.sun_energy is not None:
-        sun_energy = viewpoint.sun_energy
-    elif authored.sun_energy is not None:
-        sun_energy = authored.sun_energy * viewpoint.sun_energy_scale
-    else:
-        raise SystemExit(
-            "Viewpoint declared sun_energy=None and blend has no SUN light"
-        )
     sun_data = bpy.data.lights.new("_render_sun", type="SUN")
-    sun_data.energy = sun_energy
+    sun_data.energy = viewpoint.sun_energy(authored)
     sun = bpy.data.objects.new("_render_sun", sun_data)
     bpy.context.scene.collection.objects.link(sun)
     sun.rotation_mode = "XYZ"
@@ -654,100 +678,24 @@ def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
     scn.display_settings.display_device = "sRGB"
     # Pin thread count for all engines: multi-threaded reduction order
     # is otherwise non-deterministic across CI runs even on identical
-    # hardware.  Engine-specific determinism knobs go in
-    # `_ENGINE_CONFIGURERS` below.
+    # hardware.  Engine-specific determinism knobs go in each
+    # `Renderer.configure` callback (`_configure_cycles` etc).
     scn.render.threads_mode = "FIXED"
     scn.render.threads = 1
 
-    scn.render.engine = viewpoint.engine
-    _ENGINE_CONFIGURERS[viewpoint.engine](scn)
+    scn.render.engine = viewpoint.engine.name
+    viewpoint.engine.configure(scn)
+    # Per-viewpoint world-ambient override (e.g. `Lighting.world_ambient`
+    # baked into a building viewpoint at factory time).  Applied after
+    # the engine configurer so it overrides EEVEE's default 0.30 grey.
+    if viewpoint.world_ambient is not None and scn.world is not None:
+        try:
+            scn.world.use_nodes = False
+            scn.world.color = viewpoint.world_ambient
+        except AttributeError:
+            pass
 
     return cam, sun
-
-
-def _configure_cycles(scn) -> None:
-    """Pin Cycles knobs that are otherwise non-deterministic across CI
-    runs even on identical hardware: adaptive sampling (per-pixel
-    termination on a noise estimate), the denoiser (the blend may save
-    it on), and the sample seed (the blend may save a non-zero value).
-    Cross-CPU determinism (Intel vs AMD AVX2 transcendentals / embree)
-    is still not guaranteed -- see CLAUDE.md -> CI."""
-    scn.cycles.use_denoising = False
-    scn.cycles.use_adaptive_sampling = False
-    scn.cycles.seed = 0
-
-
-def _configure_eevee(scn) -> None:
-    """EEVEE substitute for BI: taa_render_samples=8 gives proper edge
-    alpha-AA (1 writes 0-or-255 only and drops the edge ring); GTAO,
-    bloom, SSR, volumetrics off for determinism across CI runners.
-    World ambient defaults to 0.30 grey; per-asset Lighting overrides
-    via `_apply_lighting`."""
-    scn.eevee.taa_render_samples = 8
-    scn.eevee.use_gtao = False
-    scn.eevee.use_bloom = False
-    scn.eevee.use_ssr = False
-    scn.eevee.use_volumetric_lights = False
-    scn.eevee.use_soft_shadows = False
-    scn.eevee.use_shadow_high_bitdepth = True
-    if scn.world is not None:
-        scn.world.use_nodes = False
-        try:
-            scn.world.color = (0.30, 0.30, 0.30)
-        except AttributeError:
-            pass
-
-
-def _apply_lighting(bpy, sun, authored, viewpoint, lighting) -> None:
-    """Per-asset Lighting overrides applied on top of the Viewpoint +
-    BlendAuthored defaults.  Called from `render_atlas` after
-    `_install_camera_and_sun` and the engine configurer; each field is
-    independently optional."""
-    scn = bpy.context.scene
-    if lighting.world_ambient is not None and scn.world is not None:
-        try:
-            scn.world.color = lighting.world_ambient
-        except AttributeError:
-            pass
-    if lighting.sun_energy_scale is not None and authored.sun_energy is not None:
-        sun.data.energy = authored.sun_energy * lighting.sun_energy_scale
-    if (lighting.sun_elev_deg is not None or
-            lighting.sun_az_offset_deg is not None):
-        import math
-
-        from pak.viewpoints import sun_rotation_for_camera
-        elev = (lighting.sun_elev_deg if lighting.sun_elev_deg is not None
-                else 30.0)
-        az_off = (lighting.sun_az_offset_deg
-                  if lighting.sun_az_offset_deg is not None else -90.0)
-        # Recompute each facing's sun rotation in place against the override.
-        for f in viewpoint.facings:
-            cam_z_deg = math.degrees(f.camera_rotation_euler[2])
-            f.sun_rotation_euler = sun_rotation_for_camera(
-                cam_z_deg, sun_elev_deg=elev, sun_az_offset_deg=az_off,
-            )
-
-
-def configure_workbench(scn) -> None:
-    """Flat-shading substitute: rendered pixel == material's diffuse
-    colour directly.  No path tracing, no embree, no SIMD-sensitive
-    reductions -- byte-stable across CPUs in practice.  Imported by
-    `pak/bake_way.py` (ways have their own harness for composition
-    reasons -- see CLAUDE.md -> "Way-bake architecture" -- but share
-    the engine-config contract)."""
-    shading = scn.display.shading
-    shading.light = "FLAT"
-    shading.color_type = "MATERIAL"
-    shading.show_shadows = False
-    shading.show_cavity = False
-    shading.show_specular_highlight = False
-
-
-_ENGINE_CONFIGURERS = {
-    "CYCLES": _configure_cycles,
-    "BLENDER_EEVEE": _configure_eevee,
-    "BLENDER_WORKBENCH": configure_workbench,
-}
 
 
 def exit_edit_mode(bpy) -> None:
@@ -868,40 +816,6 @@ def _bake_world_into_meshes(bpy, mathutils):
     return records
 
 
-def _compute_fit(mathutils, records, fit_kind: str,
-                 blend_ortho: float | None = None):
-    """Build the world->fitted-frame 4x4 the per-facing transform composes
-    over.
-
-    `fit_kind="none"` -- identity (model renders at native blend-coord
-    scale).  Used by the square calibration view, where upstream camera
-    positions are in blend coords.
-
-    `fit_kind="hex"` -- scale by `2 * HEX_TILE_RADIUS / blend_ortho` to
-    convert blend coords -> intra-tile coords; no XY recentre, no
-    z-floor drop.  The artist's authored XYZ placement is the contract
-    -- same as upstream's BI render reads it.  Vehicles authored
-    near origin and at z>=0 (the upstream contributing-graphics spec)
-    sit centred in the cell; assets that aren't surface that as a
-    real authoring quirk rather than have it masked by our recentre.
-
-    `blend_ortho` is the blend's authored ortho_scale read by
-    `strip_scene` -- falls back to `UPSTREAM_ORTHO_SCALE` (24,
-    vehicle-blend convention) when the blend has no camera.  Buildings
-    tend to ship at ortho_scale=12 (twice the per-cell zoom); honouring
-    that per-asset is what makes them render at upstream's per-pixel
-    scale instead of half-size."""
-    M = mathutils.Matrix
-    if fit_kind == "none":
-        return M.Identity(4)
-    if fit_kind == "hex":
-        from pak.hex_synth import HEX_TILE_RADIUS, UPSTREAM_ORTHO_SCALE
-        ortho = blend_ortho if blend_ortho is not None else UPSTREAM_ORTHO_SCALE
-        scale = 2.0 * HEX_TILE_RADIUS / ortho
-        return M.Diagonal((scale, scale, scale, 1.0))
-    raise SystemExit(f"unknown fit_kind: {fit_kind!r}")
-
-
 def _apply_facing(records, M_target) -> None:
     """Rewrite each mesh's vertices to `M_target @ canonical_world_co`.
     Called once per facing; matrix_world stays the identity."""
@@ -964,7 +878,6 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
                  name: str, cols_per_row: int | None = None,
                  keep_per_facing: bool = False,
                  materials: dict | None = None,
-                 lighting=None,
                  material_id_map: bool = False,
                  model_offset: tuple[float, float, float] | None = None,
                  ) -> None:
@@ -989,41 +902,18 @@ def render_atlas(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
 
     authored = strip_scene(bpy, viewpoint.strip_meshes,
                            viewpoint.strip_material_substrings)
-    if viewpoint.engine == "BLENDER_EEVEE":
+    if viewpoint.engine.rebind_textures:
         _reload_external_textures(bpy)
-    # When the Viewpoint declares a target per-tile ortho, derive the
-    # divisor now that `authored.ortho_scale` is known.  Replaces
-    # `fit_ortho_divisor` so the camera-install + fit steps below see
-    # the right effective ortho.
-    if viewpoint.fit_ortho_per_tile is not None:
-        if viewpoint.fit_ortho_max_dims is None:
-            raise SystemExit(
-                "Viewpoint.fit_ortho_per_tile requires fit_ortho_max_dims"
-            )
-        if authored.ortho_scale is None:
-            raise SystemExit(
-                "Viewpoint.fit_ortho_per_tile needs the blend to declare "
-                "an ortho_scale; got none"
-            )
-        divisor = authored.ortho_scale / (
-            viewpoint.fit_ortho_per_tile * viewpoint.fit_ortho_max_dims
-        )
-        viewpoint = replace(viewpoint, fit_ortho_divisor=divisor)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)
-    if lighting is not None:
-        _apply_lighting(bpy, sun, authored, viewpoint, lighting)
     records = _bake_world_into_meshes(bpy, mathutils)
     if material_id_map:
         mat_to_id = _swap_to_id_map(bpy)
         sidecar = Path(out_dir) / f"{name}.materials.json"
         sidecar.parent.mkdir(parents=True, exist_ok=True)
         sidecar.write_text(json.dumps(mat_to_id, indent=2, sort_keys=True))
-    elif viewpoint.engine == "BLENDER_EEVEE" and materials:
+    elif viewpoint.engine.rebind_textures and materials:
         _bind_textures_via_nodes(bpy, materials)
-    effective_ortho = (authored.ortho_scale / viewpoint.fit_ortho_divisor
-                       if authored.ortho_scale is not None else None)
-    fit = _compute_fit(mathutils, records, viewpoint.fit_kind,
-                       effective_ortho)
+    fit = mathutils.Matrix(viewpoint.fit_matrix(authored))
     extrinsic = (mathutils.Matrix(viewpoint.extrinsic) if viewpoint.extrinsic
                  else mathutils.Matrix.Identity(4))
 
@@ -1150,17 +1040,16 @@ def _parse_args(argv):
                          "world origin (default = identity, honour authoring).")
     ap.add_argument("--building-ortho-per-tile", default=None, type=float,
                     help="Target per-tile ortho for the multi-tile bake.  "
-                         "When set, divisor = authored / (per_tile * "
-                         "max(dims_x, dims_y)), computed after the blend's "
-                         "authored ortho is read.  Default None falls back "
-                         "to the viewpoint's `fit_ortho_divisor=max(dims)` "
-                         "heuristic, which assumes the blend was authored "
-                         "at `max(dims) * (authored/max(dims))` per tile "
-                         "(i.e. honour what the artist authored).  Override "
-                         "when the artist sized the camera for the whole "
-                         "composition rather than per-tile -- e.g. "
-                         "stonehenge ortho=72 over a 2x2 footprint, "
-                         "per_tile=24 -> divisor 1.5.")
+                         "When set, the building_hex_viewpoint factory "
+                         "pins fit_matrix to a constant scale of "
+                         "2R/(per_tile * max(dims_x, dims_y)) "
+                         "independent of the blend's authored ortho.  "
+                         "Default None: the factory derives per-tile "
+                         "ortho from authored / max(dims), assuming the "
+                         "artist sized the camera at the per-tile rate.  "
+                         "Override when the artist sized for the whole "
+                         "composition -- e.g. stonehenge ortho=72 over "
+                         "a 2x2 footprint, per_tile=24.")
     ap.add_argument("--materials", default="",
                     help="JSON serialisation of the bake script's "
                          "`MATERIALS = {...}` dict (see pak.materials).  "
@@ -1206,6 +1095,14 @@ def main(argv):
     )
 
     args = _parse_args(argv)
+
+    lighting = None
+    if args.lighting:
+        import json
+
+        from pak.materials import Lighting
+        lighting = Lighting.from_jsonable(json.loads(args.lighting))
+
     if args.viewpoint == "hex":
         vp = HEX_VIEWPOINT
     elif args.viewpoint == "square":
@@ -1229,14 +1126,16 @@ def main(argv):
         if len(parts) == 3:
             parts.append(1)  # heights=1 default for back-compat
         dx, dy, l, h = parts
-        factory = (building_hex_viewpoint if args.viewpoint == "hex_building"
-                   else building_square_viewpoint)
-        vp = factory(layouts=l, dims_x=dx, dims_y=dy, heights=h)
-        if args.building_ortho_per_tile is not None:
-            vp = replace(
-                vp,
-                fit_ortho_per_tile=args.building_ortho_per_tile,
-                fit_ortho_max_dims=max(dx, dy),
+        if args.viewpoint == "hex_building":
+            vp = building_hex_viewpoint(
+                layouts=l, dims_x=dx, dims_y=dy, heights=h,
+                ortho_per_tile=args.building_ortho_per_tile,
+                lighting=lighting,
+            )
+        else:
+            vp = building_square_viewpoint(
+                layouts=l, dims_x=dx, dims_y=dy, heights=h,
+                lighting=lighting,
             )
     elif args.viewpoint in ("tree_hex", "tree_square"):
         if not args.tree_grid:
@@ -1250,7 +1149,16 @@ def main(argv):
     else:
         raise SystemExit(f"unknown viewpoint: {args.viewpoint!r}")
 
+    if lighting is not None and args.viewpoint not in (
+        "hex_building", "square_building",
+    ):
+        raise SystemExit(
+            f"--lighting only supported by hex_building/square_building "
+            f"viewpoints; got {args.viewpoint!r}"
+        )
+
     if args.strip is not None:
+        from dataclasses import replace
         vp = replace(vp, strip_meshes=tuple(
             n for n in args.strip.split(",") if n
         ))
@@ -1261,13 +1169,6 @@ def main(argv):
 
         from pak.materials import from_jsonable
         materials = from_jsonable(json.loads(args.materials))
-
-    lighting = None
-    if args.lighting:
-        import json
-
-        from pak.materials import Lighting
-        lighting = Lighting.from_jsonable(json.loads(args.lighting))
 
     model_offset = None
     if args.model_offset:
@@ -1282,7 +1183,6 @@ def main(argv):
                  cols_per_row=args.cols_per_row,
                  keep_per_facing=args.keep_per_facing,
                  materials=materials,
-                 lighting=lighting,
                  material_id_map=args.material_id_map,
                  model_offset=model_offset)
     return 0

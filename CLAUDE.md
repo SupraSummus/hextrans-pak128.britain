@@ -255,9 +255,10 @@ canonical inverts every such asset's facings (the standard
 configuration was the failing case in the original `render.py`
 auto-fit) — trust the contract instead.
 
-**Artist-authored XYZ is the placement contract.**  `_compute_fit`
-with `fit_kind="hex"` is scale-only: convert blend coords to
-intra-tile coords by `2*HEX_TILE_RADIUS/blend_ortho` and stop.  No
+**Artist-authored XYZ is the placement contract.**  The hex
+`fit_matrix` (built by `_hex_fit()` in `pak.viewpoints`) is
+scale-only: convert blend coords to intra-tile coords by
+`2*HEX_TILE_RADIUS/blend_ortho` and stop.  No
 XY recentre, no z-floor drop.  Britain blends are authored against
 the contributing-graphics spec (long-axis Y, centre near origin,
 footings at z=0 for buildings); the scale-only fit honours that

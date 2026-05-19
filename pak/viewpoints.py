@@ -42,7 +42,128 @@ from pak.hex_synth import (
     UPSTREAM_ORTHO_SCALE,
     hex_proj_shear,
 )
-from pak.render import Facing, Viewpoint
+from pak.render import EEVEE, BlendAuthored, Facing, Viewpoint
+
+# === Authored-resolution helpers ==========================================
+#
+# Each viewpoint declares its camera ortho, sun energy and fit matrix as a
+# `Callable[[BlendAuthored], …]` so policy lives in the closure rather than
+# scattered as "scale by N when authored is None" fields on `Viewpoint`.
+# These small factories build the common shapes once.
+
+_IDENTITY_4X4: tuple = (
+    (1.0, 0.0, 0.0, 0.0),
+    (0.0, 1.0, 0.0, 0.0),
+    (0.0, 0.0, 1.0, 0.0),
+    (0.0, 0.0, 0.0, 1.0),
+)
+
+
+def _scale_diag(s: float) -> tuple:
+    return ((s, 0.0, 0.0, 0.0),
+            (0.0, s, 0.0, 0.0),
+            (0.0, 0.0, s, 0.0),
+            (0.0, 0.0, 0.0, 1.0))
+
+
+def _identity_matrix(_authored: BlendAuthored) -> tuple:
+    """`fit_matrix` for square (blend-coord) renders."""
+    return _IDENTITY_4X4
+
+
+def _pinned(v: float):
+    """Constant value -- viewpoint ignores authored."""
+    return lambda _a: v
+
+
+def _authored_ortho():
+    """Read `authored.ortho_scale` -- raise if the blend has no
+    ortho camera.  Used by viewpoints that want each blend's own
+    authored ortho (typically buildings at 12 vs vehicles at 24)."""
+    def _go(a: BlendAuthored) -> float:
+        if a.ortho_scale is None:
+            raise SystemExit(
+                "Viewpoint expected authored ortho_scale; blend has no ortho camera"
+            )
+        return a.ortho_scale
+    return _go
+
+
+def _authored_sun(scale: float = 1.0):
+    """Read `authored.sun_energy` and scale -- raise if the blend has
+    no SUN light.  Building viewpoints pass `_BI_TO_EEVEE_SUN_SCALE`
+    to compensate for upstream's BI-authored 0.028 under EEVEE."""
+    def _go(a: BlendAuthored) -> float:
+        if a.sun_energy is None:
+            raise SystemExit(
+                "Viewpoint expected authored sun_energy; blend has no SUN light"
+            )
+        return a.sun_energy * scale
+    return _go
+
+
+def _hex_fit(divisor: float = 1.0):
+    """Standard hex fit: `Diagonal(2R / (authored.ortho or UPSTREAM)
+    / divisor)`.  `divisor > 1` is the multi-tile correction --
+    blends authored at `ortho = per_tile * dims` shrink by `divisor =
+    dims` so each tile lands at the per-tile pixel rate.  Falls back
+    to `UPSTREAM_ORTHO_SCALE` (vehicle convention, 24) when the blend
+    has no ortho camera; the divisor doesn't apply in that case."""
+    def _go(a: BlendAuthored) -> tuple:
+        ortho = (a.ortho_scale if a.ortho_scale is not None
+                 else UPSTREAM_ORTHO_SCALE)
+        ortho /= divisor
+        return _scale_diag(2.0 * HEX_TILE_RADIUS / ortho)
+    return _go
+
+
+def _fixed_hex_scale(s: float):
+    """`fit_matrix` that returns a constant `Diagonal(s)`, independent
+    of authored ortho.  Used by `building_hex_viewpoint(ortho_per_tile=…)`
+    where the renderer is told the per-tile ortho explicitly rather
+    than deriving it from the blend's authored value."""
+    return lambda _a: _scale_diag(s)
+
+
+def _lighting_overrides_facings(
+    facings: list[Facing], lighting,
+) -> list[Facing]:
+    """Apply `Lighting.sun_elev_deg` / `Lighting.sun_az_offset_deg` to
+    every facing, with the same defaults the old `_apply_lighting` used
+    when only one of them was set (`elev=30°`, `az=-90°`).  Returns a
+    new list; original facings unchanged."""
+    if lighting is None or (
+        lighting.sun_elev_deg is None and lighting.sun_az_offset_deg is None
+    ):
+        return facings
+    from dataclasses import replace
+    elev = lighting.sun_elev_deg if lighting.sun_elev_deg is not None else 30.0
+    az = (lighting.sun_az_offset_deg
+          if lighting.sun_az_offset_deg is not None else -90.0)
+    return [
+        replace(f, sun_rotation_euler=sun_rotation_for_camera(
+            math.degrees(f.camera_rotation_euler[2]),
+            sun_elev_deg=elev, sun_az_offset_deg=az,
+        ))
+        for f in facings
+    ]
+
+
+def _wrap_sun_energy_with_lighting(sun_energy, lighting):
+    """Wrap the viewpoint's `sun_energy` callable so that when both
+    `Lighting.sun_energy_scale` is set AND the blend has an authored
+    sun_energy, the override `authored.sun_energy * scale` replaces the
+    Viewpoint's resolved value.  Preserves the `_apply_lighting`
+    guard: if either is None the original callable's result stands."""
+    if lighting is None or lighting.sun_energy_scale is None:
+        return sun_energy
+    scale = lighting.sun_energy_scale
+
+    def _go(a: BlendAuthored) -> float:
+        if a.sun_energy is not None:
+            return a.sun_energy * scale
+        return sun_energy(a)
+    return _go
 
 # Upstream sun lamp energy, from Lamp.001 in the Britain blends.  Matching
 # this keeps the calibration diff's mean|dRGB| meaningful -- a different
@@ -87,9 +208,9 @@ _UPSTREAM = [
 SQUARE_VIEWPOINT = Viewpoint(
     name="square",
     image_width=DEFAULT_W,
-    ortho_scale=UPSTREAM_ORTHO_SCALE,
-    sun_energy=_SUN_ENERGY,
-    fit_kind="none",
+    camera_ortho=_pinned(UPSTREAM_ORTHO_SCALE),
+    sun_energy=_pinned(_SUN_ENERGY),
+    fit_matrix=_identity_matrix,
     extrinsic=None,
     facings=[
         Facing(
@@ -197,9 +318,9 @@ _HEX_FACINGS = [
 HEX_VIEWPOINT = Viewpoint(
     name="hex",
     image_width=DEFAULT_W,
-    ortho_scale=2.0 * HEX_TILE_RADIUS,
-    sun_energy=_SUN_ENERGY,
-    fit_kind="hex",
+    camera_ortho=_pinned(2.0 * HEX_TILE_RADIUS),
+    sun_energy=_pinned(_SUN_ENERGY),
+    fit_matrix=_hex_fit(),
     extrinsic=hex_proj_shear(),
     facings=[
         Facing(
@@ -274,6 +395,7 @@ def hex_tile_screen_offset(qx: int, ry: int) -> tuple[float, float]:
 
 def building_square_viewpoint(
     layouts: int, dims_x: int = 1, dims_y: int = 1, heights: int = 1,
+    lighting=None,
 ) -> Viewpoint:
     """Square-dimetric Viewpoint mirroring `building_square_viewpoint`'s
     role for the calibration diff: one Facing per `(l, y, x, h)` cell
@@ -288,8 +410,8 @@ def building_square_viewpoint(
     but only the camera-rotation form matches upstream's actually-
     published per-layout PNGs (which is what the diff measures against).
 
-    `fit_kind="none"` renders at the blend's authored ortho_scale, so
-    the result is directly comparable to upstream's published cells
+    Identity `fit_matrix` renders at the blend's authored ortho_scale,
+    so the result is directly comparable to upstream's published cells
     (which are at the same blend-native scale).
 
     Multi-tile assets (`dims_x > 1` or `dims_y > 1`) render one
@@ -331,24 +453,27 @@ def building_square_viewpoint(
             model_rot_z_deg=(2.0 * step * l) % 360.0,
         ))
     canvas_w = canvas_h = 512 if multi_tile else None
+    sun_energy = _wrap_sun_energy_with_lighting(
+        _authored_sun(_BI_TO_EEVEE_SUN_SCALE), lighting,
+    )
     return Viewpoint(
         name="square_building",
         image_width=DEFAULT_W,
-        # `None` => use the blend's authored ortho_scale.  Buildings are
-        # typically authored at 12 (twice the per-cell zoom vs vehicles'
-        # 24); honouring that is what makes the diff align with
-        # upstream's actually-published per-blend renders.
-        ortho_scale=None,
-        # `None` => use the blend's authored sun energy (0.028 in
-        # Britain blends) scaled by `_BI_TO_EEVEE_SUN_SCALE`.
-        sun_energy=None,
-        sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE,
-        fit_kind="none",
+        # Authored ortho: buildings typically ship at 12 (twice the
+        # per-cell zoom of vehicles' 24); honouring that is what makes
+        # the diff align with upstream's per-blend renders.
+        camera_ortho=_authored_ortho(),
+        # Authored sun energy (0.028 in Britain blends) scaled by
+        # `_BI_TO_EEVEE_SUN_SCALE` to compensate for EEVEE PBR; may
+        # be further overridden by `Lighting.sun_energy_scale`.
+        sun_energy=sun_energy,
+        fit_matrix=_identity_matrix,
         extrinsic=None,
-        facings=facings,
-        engine="BLENDER_EEVEE",
+        facings=_lighting_overrides_facings(facings, lighting),
+        engine=EEVEE,
         canvas_width=canvas_w,
         canvas_height=canvas_h,
+        world_ambient=lighting.world_ambient if lighting else None,
     )
 
 
@@ -409,10 +534,9 @@ def bridge_hex_viewpoint(piece: str) -> Viewpoint:
     return Viewpoint(
         name=f"bridge_hex_{piece}",
         image_width=DEFAULT_W,
-        ortho_scale=2.0 * HEX_TILE_RADIUS,
-        sun_energy=None,
-        sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE,
-        fit_kind="hex",
+        camera_ortho=_pinned(2.0 * HEX_TILE_RADIUS),
+        sun_energy=_authored_sun(_BI_TO_EEVEE_SUN_SCALE),
+        fit_matrix=_hex_fit(),
         extrinsic=hex_proj_shear(),
         facings=[
             Facing(
@@ -424,7 +548,7 @@ def bridge_hex_viewpoint(piece: str) -> Viewpoint:
             )
             for label in HEX_BRIDGE_PIECE_LABELS[piece]
         ],
-        engine="BLENDER_EEVEE",
+        engine=EEVEE,
         strip_meshes=("Sphere", "Plane.005", "Plane.007"),
         strip_material_substrings=(
             "Rail", "Chair", "Wood", "Ballast", "Tarmac",
@@ -488,10 +612,9 @@ def bridge_square_viewpoint() -> Viewpoint:
     return Viewpoint(
         name="bridge_square",
         image_width=DEFAULT_W,
-        ortho_scale=None,  # use blend's authored 12.0
-        sun_energy=_SUN_ENERGY,
-        sun_energy_scale=1.0,
-        fit_kind="none",
+        camera_ortho=_authored_ortho(),  # use blend's authored 12.0
+        sun_energy=_pinned(_SUN_ENERGY),
+        fit_matrix=_identity_matrix,
         extrinsic=None,
         facings=facings,
         strip_meshes=("Sphere", "Plane.005", "Plane.007"),
@@ -524,13 +647,12 @@ def fence_square_viewpoint() -> Viewpoint:
     return Viewpoint(
         name="fence_square",
         image_width=DEFAULT_W,
-        ortho_scale=None,   # use blend's authored 12.0
-        sun_energy=2.0,
-        sun_energy_scale=1.0,
-        fit_kind="none",
+        camera_ortho=_authored_ortho(),  # use blend's authored 12.0
+        sun_energy=_pinned(2.0),
+        fit_matrix=_identity_matrix,
         extrinsic=None,
         facings=facings,
-        engine="BLENDER_EEVEE",
+        engine=EEVEE,
     )
 
 
@@ -603,10 +725,9 @@ def tree_square_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
     return Viewpoint(
         name="tree_square",
         image_width=DEFAULT_W,
-        ortho_scale=None,  # use blend's authored 12.0
-        sun_energy=2.0,
-        sun_energy_scale=1.0,
-        fit_kind="none",
+        camera_ortho=_authored_ortho(),  # use blend's authored 12.0
+        sun_energy=_pinned(2.0),
+        fit_matrix=_identity_matrix,
         extrinsic=None,
         facings=_tree_facings(
             ages, seasons,
@@ -614,7 +735,7 @@ def tree_square_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
             camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
             sun_rotation_euler=sun_rotation_for_camera(cam_z),
         ),
-        engine="BLENDER_EEVEE",
+        engine=EEVEE,
         strip_meshes=("Sphere", "Plane"),
     )
 
@@ -624,7 +745,7 @@ def tree_hex_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
     no rotation table) replicated across `ages × seasons` cells, each
     scaled per `_TREE_AGE_SCALES`.
 
-    `fit_kind="hex"` converts the blend's authored coords into the
+    `_hex_fit()` converts the blend's authored coords into the
     pakset's intra-tile system at `2R/blend_ortho` per blend unit; the
     Britain tree blends are authored at ortho_scale=12, so a full-grown
     tree (~8 blend units tall) lands ~1.3 intra-tile units tall — about
@@ -638,10 +759,9 @@ def tree_hex_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
     return Viewpoint(
         name="tree_hex",
         image_width=DEFAULT_W,
-        ortho_scale=2.0 * HEX_TILE_RADIUS,
-        sun_energy=2.0,
-        sun_energy_scale=1.0,
-        fit_kind="hex",
+        camera_ortho=_pinned(2.0 * HEX_TILE_RADIUS),
+        sun_energy=_pinned(2.0),
+        fit_matrix=_hex_fit(),
         extrinsic=hex_proj_shear(),
         facings=_tree_facings(
             ages, seasons,
@@ -649,13 +769,15 @@ def tree_hex_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
             camera_rotation_euler=_HEX_CAM_ROT,
             sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
         ),
-        engine="BLENDER_EEVEE",
+        engine=EEVEE,
         strip_meshes=("Sphere", "Plane"),
     )
 
 
 def building_hex_viewpoint(
     layouts: int, dims_x: int, dims_y: int, heights: int = 1,
+    ortho_per_tile: float | None = None,
+    lighting=None,
 ) -> Viewpoint:
     """Hex Viewpoint for a multi-tile building of footprint `dims_x × dims_y`
     with `layouts` rotation variants and `heights` vertical-stack
@@ -695,6 +817,14 @@ def building_hex_viewpoint(
     it — for the `1600-detatched-house-2f` blend that's the side with
     the gap in the hedge, so layout 0 lands a flat front on the hex N
     edge.
+
+    `ortho_per_tile` (optional): explicit per-tile ortho target.  Use
+    when the artist sized the blend for the whole composition rather
+    than per-tile (e.g. stonehenge ortho=72 over a 2x2 footprint,
+    `ortho_per_tile=24` recovers the per-tile rate).  Replaces the
+    default `2R / (authored / max_dims)` fit scale with the constant
+    `2R / (per_tile * max_dims)`.  Wired through from `pak/bake.py`'s
+    `Building.blend_ortho_per_tile` via `--building-ortho-per-tile`.
     """
     step = 360.0 / layouts
     multi_tile = dims_x > 1 or dims_y > 1
@@ -761,20 +891,32 @@ def building_hex_viewpoint(
                         facings.append(Facing(
                             label=f"L{l}_Y{y}_X{x}_H{h}", **shared_kwargs,
                         ))
+    max_dims = max(dims_x, dims_y)
+    if ortho_per_tile is not None:
+        # Authored ortho irrelevant -- pinned per-tile rate.
+        fit_matrix = _fixed_hex_scale(
+            2.0 * HEX_TILE_RADIUS / (ortho_per_tile * max_dims),
+        )
+    elif multi_tile:
+        # Multi-tile blends are typically authored at `ortho = max(dims)
+        # * per-tile-ortho`; divide so each cell lands at the per-tile
+        # pixel rate.
+        fit_matrix = _hex_fit(divisor=float(max_dims))
+    else:
+        fit_matrix = _hex_fit()
+    sun_energy = _wrap_sun_energy_with_lighting(
+        _authored_sun(_BI_TO_EEVEE_SUN_SCALE), lighting,
+    )
     return Viewpoint(
         name="hex_building",
         image_width=DEFAULT_W,
-        ortho_scale=ortho_for_canvas,
-        sun_energy=None,
-        sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE,
-        fit_kind="hex",
+        camera_ortho=_pinned(ortho_for_canvas),
+        sun_energy=sun_energy,
+        fit_matrix=fit_matrix,
         extrinsic=hex_proj_shear(),
-        facings=facings,
-        engine="BLENDER_EEVEE",
+        facings=_lighting_overrides_facings(facings, lighting),
+        engine=EEVEE,
         canvas_width=canvas_w,
         canvas_height=canvas_h,
-        # Multi-tile blends are authored at `ortho_scale = max(dims) ×
-        # per-tile-ortho`; divide so `_compute_fit` reads the per-tile
-        # ortho the building actually wants.
-        fit_ortho_divisor=float(max(dims_x, dims_y)) if multi_tile else 1.0,
+        world_ambient=lighting.world_ambient if lighting else None,
     )

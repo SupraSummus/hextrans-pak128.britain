@@ -59,7 +59,7 @@ the blend's authored ortho_scale (12, half the vehicle convention).
 
 * **Hex projection has no ground truth.**  `tree_square_viewpoint`
   diffs against upstream's published `<stem>-<season>-<age>_S.png`;
-  hex is `fit_kind="hex"` against blend coords (intra-tile scale =
-  `2R/blend_ortho`) and is validated only against the matching
+  hex applies `_hex_fit()` against blend coords (intra-tile scale
+  = `2R/blend_ortho`) and is validated only against the matching
   square render.  A future hex regression that doesn't affect the
   square diff has no automated catch -- see TODO.md.

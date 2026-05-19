@@ -58,7 +58,7 @@ Two layers, kept honestly split:
 
   * **Hex** scales the blend by `INTRA_TILE_PER_BLEND_UNIT` (=
     `2R/UPSTREAM_ORTHO_SCALE` = `1/12` at current constants, the
-    same blend → intra-tile conversion `fit_kind="hex"` uses for
+    same blend → intra-tile conversion `_hex_fit()` uses for
     vehicles) — so a hex rail's gauge, sleeper width and
     ballast extent land at the right **intra-tile** size.  Two
     coord systems not to conflate:

@@ -223,6 +223,39 @@ Britain blend referencing this image lands at higher dRGB than it
 should (interior shading shows the diffuse colour with no surface
 detail).
 
+**`grounds/shore_trans.py` baker isn't byte-stable across
+numpy/PIL builds.**  Pure-numpy parametric baker, no Cycles, yet
+shore_trans landed at a different SHA on this sandbox CPU than
+on CI -- 319 pixels (0.0081%) flip red↔blue at rows 1121-1122,
+diagnosed via `pak.diag_png_drift`.  The other 7 parametric
+ground bakers (`light_texture`, `back_wall`, `marker`, `borders`,
+`water`, `way_ground`, `fence`) are stable.  Likely a floating-
+point order-of-operations difference in a numpy reduction the
+shore_trans baker happens to hit on a tie.  Concrete next move
+when CI flakes again on shore_trans: bisect which numpy operation
+in the baker reorders, replace with an order-stable form (e.g.
+explicit accumulator + Python loop, or `np.add.reduceat` with a
+pinned axis).  Bites silently otherwise; the only signal is the
+CI rebake step's `git diff --exit-code` failing.
+
+**EEVEE townhouse atlas isn't byte-stable across consecutive
+runs.**  `citybuildings/res_kg_1870_townhouse.png` re-bakes to a
+different SHA on consecutive `python3.12 -m citybuildings.res_kg_
+1870_townhouse` invocations on the same machine with no code
+change; every other EEVEE building (`com_kg_1870_pub`,
+`com_kg_1970_small_office`, `ind_1860_jh_gasometer`, `res_1600_
+kg_01`, `res_kg_1890_detatched`, `res_kg_1920_detatched`) is
+byte-stable, so something specific to this blend triggers EEVEE
+TAA jitter that the standard determinism pins
+(`use_gtao=False`, fixed thread count, etc) don't cover.  Cycles
+vehicles and Workbench ways are stable too.  Concrete next move:
+diff a `--keep-per-facing` dump across two runs to see if all
+facings drift uniformly or just one; if just one, the
+non-determinism is per-facing render order, not global, and
+points at the per-facing mesh-rewrite path
+(`_apply_facing` + `_bake_world_into_meshes`).  Until pinned,
+`rebake` CI will flake whenever the townhouse re-bakes.
+
 **Gasometer renders see-through under EEVEE.**  Symptom:
 ind_1860_jh_gasometer sits at IoU 0.80 / dRGB 65 vs the fleet's
 ~0.92 / ~30, with the silhouette XOR red+blue across the upper
@@ -243,8 +276,9 @@ that uses node-graph alpha -- a fresh-eyes test confirmed
 is a no-op under EEVEE 4.0, so any alpha integration has to build
 a real Principled BSDF graph with the Alpha socket wired.
 
-**Multi-tile vehicle overflow.**  `HEX_VIEWPOINT`'s `fit_kind="hex"`
-applies a single pakset-wide scale (`2R / upstream_ortho_scale = 2R/24`)
+**Multi-tile vehicle overflow.**  `HEX_VIEWPOINT`'s `fit_matrix`
+(`_hex_fit()`) applies a single pakset-wide scale
+(`2R / upstream_ortho_scale = 2R/24`)
 under the calibration contract documented in CLAUDE.md, so a long loco
 at its real upstream size renders larger than one cell.  The vehicle
 atlas is one row of W×W cells; a mainline loco needs to be sliced
@@ -295,8 +329,8 @@ carries `slices` listing per-cell W×W crops at
 `Viewpoint.canvas_width/canvas_height` + `Facing.slices` in
 `pak/render.py` do the underlying render-once-crop-many; the bake
 driver routes through automatically based on `dims`.
-`Viewpoint.fit_ortho_divisor=max(dims)` divides authored blend
-ortho before `_compute_fit` so the artist's
+`building_hex_viewpoint`'s `fit_matrix = _hex_fit(divisor=
+max(dims))` divides authored blend ortho so the artist's
 `ortho = dims · per-tile-ortho` convention renders at the per-
 tile size the engine paints at.  All 8 atlas cells populate,
 building straddles the hex tile boundaries.
@@ -314,9 +348,10 @@ building); if seams misalign, the slice-centre formula in
 sniffer.**  `Building.blend_ortho_per_tile` lets a SPEC pin the
 multi-tile per-tile ortho target when the blend's authored ortho
 isn't `max(dims)·24` -- stonehenge ships ortho=72 over a 2x2
-footprint, so SPEC declares per_tile=24 to recover the standard
-rate (renderer computes divisor = 72/(24·2) = 1.5).  The default
-fallback (`fit_ortho_divisor=max(dims)`) is still implicit-
+footprint, so SPEC declares per_tile=24 which the factory bakes
+into `fit_matrix = _fixed_hex_scale(2R/(per_tile · max_dims))`,
+constant against the blend's authored ortho.  The default
+fallback (`_hex_fit(divisor=max(dims))`) is still implicit-
 assumption-based -- equivalent to "honour the artist's authored
 per-tile rate".  Concrete next move when the third multi-tile
 building ports: if a pattern emerges (e.g. every attraction at
