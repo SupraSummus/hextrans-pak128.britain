@@ -494,8 +494,8 @@ class Building:
     lighting: Lighting | None = _bake_meta()
     blend_source: str = _bake_meta(default="jp")
     # Per-asset override for the target per-tile ortho.  Default
-    # None -> `building_hex_viewpoint`'s `fit_ortho_divisor =
-    # max(dims_x, dims_y)` heuristic, which assumes the blend was
+    # None -> `building_hex_viewpoint`'s `_hex_fit(divisor=
+    # max(dims_x, dims_y))` heuristic, which assumes the blend was
     # authored at `ortho_scale = max(dims) * (authored/max(dims))`
     # -- equivalent to "per-tile = authored / max(dims)", honouring
     # what the artist authored.  When the artist sized the camera

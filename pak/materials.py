@@ -210,7 +210,8 @@ class Lighting:
     form / hybrid path and the alpha-premultiplied blurred dRGB metric
     the optimum shifts per asset.  Set `lighting=Lighting(...)` on the
     SPEC to override.  Buildings without a `lighting=` value fall back
-    to the globals in `pak.viewpoints` and `pak.render._configure_eevee`.
+    to the defaults baked into `pak.viewpoints.building_*_viewpoint`
+    and `pak.render._configure_eevee`.
 
     `world_ambient`: replaces `scn.world.color`; modern EEVEE uses
         this as the constant ambient term BI's `world.amb` field

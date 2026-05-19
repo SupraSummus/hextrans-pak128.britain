@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import unittest
 
+from pak.render import CYCLES, EEVEE, BlendAuthored
 from pak.viewpoints import (
     DEFAULT_W,
     HEX_VIEWPOINT,
@@ -85,12 +86,11 @@ class TestBuildingViewpoints(unittest.TestCase):
         # Calibration target lock: vehicles + ways need CYCLES (upstream
         # was Cycles); buildings need EEVEE (BI texture rebinding +
         # Lambert shading land closer to upstream's BI output there).
-        self.assertEqual(SQUARE_VIEWPOINT.engine, "CYCLES")
-        self.assertEqual(HEX_VIEWPOINT.engine, "CYCLES")
-        self.assertEqual(building_square_viewpoint(layouts=4).engine,
-                         "BLENDER_EEVEE")
-        self.assertEqual(building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1).engine,
-                         "BLENDER_EEVEE")
+        self.assertIs(SQUARE_VIEWPOINT.engine, CYCLES)
+        self.assertIs(HEX_VIEWPOINT.engine, CYCLES)
+        self.assertIs(building_square_viewpoint(layouts=4).engine, EEVEE)
+        self.assertIs(building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1).engine,
+                      EEVEE)
 
 
 class TestBuildingHexMultiTile(unittest.TestCase):
@@ -106,7 +106,6 @@ class TestBuildingHexMultiTile(unittest.TestCase):
         self.assertEqual(len(vp.facings), 6)
         self.assertIsNone(vp.canvas_width)
         self.assertIsNone(vp.canvas_height)
-        self.assertAlmostEqual(vp.fit_ortho_divisor, 1.0)
         for f in vp.facings:
             self.assertIsNone(f.slices)
 
@@ -120,7 +119,31 @@ class TestBuildingHexMultiTile(unittest.TestCase):
             self.assertIsNotNone(f.slices)
             self.assertEqual(len(f.slices), 2)
         self.assertGreater(vp.canvas_width, DEFAULT_W)
-        self.assertAlmostEqual(vp.fit_ortho_divisor, 2.0)
+
+    def test_multi_tile_fit_matrix_doubles_scale_vs_single(self):
+        # Multi-tile blends are authored at `ortho = max(dims) ·
+        # per-tile-ortho`; the fit divisor `max(dims)` should produce
+        # exactly twice the scale of the single-tile fit at the same
+        # authored ortho (matching the previous `fit_ortho_divisor=2.0`
+        # state pin for a 2x1 footprint).
+        authored = BlendAuthored(ortho_scale=12.0)
+        single = building_hex_viewpoint(layouts=6, dims_x=1, dims_y=1)
+        multi = building_hex_viewpoint(layouts=4, dims_x=2, dims_y=1)
+        s = single.fit_matrix(authored)[0][0]
+        m = multi.fit_matrix(authored)[0][0]
+        self.assertAlmostEqual(m, 2 * s, places=6)
+
+    def test_ortho_per_tile_pins_scale_regardless_of_authored(self):
+        # When `ortho_per_tile` is set, fit_matrix returns a constant
+        # scale of `2R / (per_tile * max_dims)` independent of the
+        # blend's authored ortho_scale.  Replaces the previous
+        # render-time `fit_ortho_per_tile` recomputation.
+        vp = building_hex_viewpoint(
+            layouts=4, dims_x=2, dims_y=2, ortho_per_tile=24.0,
+        )
+        m12 = vp.fit_matrix(BlendAuthored(ortho_scale=12.0))[0][0]
+        m72 = vp.fit_matrix(BlendAuthored(ortho_scale=72.0))[0][0]
+        self.assertAlmostEqual(m12, m72, places=9)
 
     def test_multi_tile_slice_labels_follow_iter_order(self):
         # Atlas col formula `l * dims_x*dims_y + y * w + x` is the

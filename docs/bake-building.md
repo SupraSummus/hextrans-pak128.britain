@@ -93,15 +93,15 @@ Three landmines the first real building port surfaces:
   on the first asymmetric building port; see TODO.md → "Building-
   bake layout rotation sign needs asymmetric asset" for the
   concrete probe.
-* **Multi-tile centring.**  `fit_kind="hex"` centres on the
-  model's XY bounding box, which is right for single-tile
-  assets.  For a multi-tile blend whose authored frame puts tile
-  (0,0) at world origin (or the footprint centre at origin, or
-  somewhere else entirely — unknown upstream convention), the
-  per-cell translations may need to compose with a per-asset
-  offset.  Surfaces as "every cell renders the same part of the
-  model".  Fix: a `fit_kind="hex_building"` variant in
-  `render.py::_compute_fit` that anchors on a known footprint
+* **Multi-tile centring.**  The standard hex `fit_matrix` is
+  scale-only against the model's authored frame, which is right
+  for single-tile assets.  For a multi-tile blend whose authored
+  frame puts tile (0,0) at world origin (or the footprint centre
+  at origin, or somewhere else entirely — unknown upstream
+  convention), the per-cell translations may need to compose with
+  a per-asset offset.  Surfaces as "every cell renders the same
+  part of the model".  Fix: a building-aware `fit_matrix` variant
+  in `pak.viewpoints` that anchors on a known footprint
   reference instead.
 * **Alignment mode.**  `HEX_VIEWPOINT`'s camera is the
   "vehicles"-alignment Britain blends are authored against;
@@ -158,26 +158,30 @@ is the single source of truth for the building sun direction —
 used by both the `building_square_viewpoint` (apples-to-apples
 diff against upstream's per-cardinal cells, cam_z varies per
 facing) and `building_hex_viewpoint` (shipped atlas, cam_z=0).
-Sun energy enters via `_strip_scene`: each Britain blend ships
+Sun energy enters via `strip_scene`: each Britain blend ships
 its own SUN lamp at the BI-authored `energy=0.028`, which
 `render.py::BlendAuthored` captures before stripping the lamp.
-Building viewpoints declare `sun_energy=None,
-sun_energy_scale=_BI_TO_EEVEE_SUN_SCALE` (= 2.0/0.028 ≈ 71.4)
-so `_install_camera_and_sun` resolves to `authored × scale ≈ 2.0`
-under EEVEE.  Vehicles/ways pin `sun_energy=0.028` directly under
-Cycles where the upstream PNG is the calibration target.
+Building viewpoints declare `sun_energy=_authored_sun(
+_BI_TO_EEVEE_SUN_SCALE)` (= 2.0/0.028 ≈ 71.4) so
+`_install_camera_and_sun` resolves to `authored × scale ≈ 2.0`
+under EEVEE.  Vehicles/ways pin `sun_energy=_pinned(0.028)`
+directly under Cycles where the upstream PNG is the calibration
+target.
 
 The remaining EEVEE-substitution magic numbers — sun direction
 (elev=30°, az=-90° defaults) and world ambient (0.30 grey in
-`pak.render`) — are the global fallback; per-asset values land
-via `lighting=Lighting(world_ambient, sun_energy_scale,
-sun_elev_deg, sun_az_offset_deg)` on the SPEC (see
-`pak.materials.Lighting`).  `_apply_lighting`
-in `pak.render` overrides each field where non-None after
-`_install_camera_and_sun` runs; missing entries fall through to
-the global.  Today only `res_1600_kg_01` carries one (ambient
-0.55, elev 45°); see TODO → "Lighting overrides exist; only the
-pilot uses them" for sweeping the fleet.
+`pak.render._configure_eevee`) — are the global fallback; per-
+asset values land via `lighting=Lighting(world_ambient,
+sun_energy_scale, sun_elev_deg, sun_az_offset_deg)` on the SPEC
+(see `pak.materials.Lighting`).  The building viewpoint factory
+absorbs the Lighting at construction: facing sun rotations get
+recomputed against the override, the `sun_energy` callable is
+wrapped to apply `Lighting.sun_energy_scale`, and `Viewpoint.
+world_ambient` is set from `Lighting.world_ambient` (applied by
+`_install_camera_and_sun` after the engine configurer runs).
+Today only `res_1600_kg_01` carries one (ambient 0.55, elev 45°);
+see TODO → "Lighting overrides exist; only the pilot uses them"
+for sweeping the fleet.
 
 Authored `world.color` (Britain blends ship (0.906, 1.0, 1.0))
 is *not* extracted: that value was BI's background sky, not its
