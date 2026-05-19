@@ -336,26 +336,38 @@ a candidate offset.  The diff scores raw IoU at the structural
 anchor -- no auto-sweep -- so misalignment surfaces as IoU
 residual rather than being silently absorbed.
 
-Worst raw stitched IoU: signalbox 0.55 (was 0.557 against the
-old (256, 256) anchor; sign of the residual flipped but magnitude
-unchanged), stonehenge 0.49.  Pinning `blend_model_offset_xyz`
-on stonehenge tried -- per-layout best offsets don't collapse to
-one world translation (each layout's MUSGRAVE/CLOUDS noise phase
-rotates with the model, producing a different per-layout best
-shift), and pinning the mean helps one layout while hurting the
-others.  Stonehenge SPEC stays at default; the floor is the
-Cycles-vs-BI procedural-material rendering gap.  Concrete next
-move when a third multi-tile building ports: if its residual
-*does* collapse to one offset, the SPEC field gets exercised in
-production for the first time.  If not, the per-layout drift is
-a procedural-noise renderer-mismatch floor across the class.
+Worst raw stitched IoU: signalbox **0.69** (was 0.55 -- pinned
+`blend_model_offset_xyz=(0,0,+2.14)` per `diag_centroid_align`'s
+pure-Z candidate), stonehenge **0.52** (was 0.49 -- corner-plane
+strip).  Signalbox's pure-Z case worked cleanly because Z is
+rotation-invariant; stonehenge's residual is XY drift that the
+current pre-rotation `blend_model_offset_xyz` can't express on a
+multi-tile asset (see "Multi-tile XY offset gap" below).
+Stonehenge's MUSGRAVE/CLOUDS noise floor exists too but is a
+distinct, smaller residual stacked on top of the positional drift.
 
-Stonehenge sits at IoU 0.49, signalbox at 0.55 -- both below
+Stonehenge sits at IoU 0.52, signalbox at 0.69 -- both still below
 `FAIL_IOU=0.88`.  Either lower the floor, add per-asset
 relaxation (`FAIL_IOU` override on SPEC), or mark these as
 known-fail and exclude from the gate.  No decision yet -- the
 diff still emits useful per-layout numbers and the visual grid
 for human inspection.
+
+**Open: multi-tile XY offset gap.**  `blend_model_offset_xyz`
+applies pre-rotation (model-local) per `render.py::render_atlas`,
+so on multi-tile buildings whose layouts rotate the model an XY
+offset rotates with each layout -- it lands correctly for L0/L2 in
+a 0°/180°/0°/180° cycle but flips for L1/L3.  Z is rotation-
+invariant and works (signalbox just exercised this).  Stonehenge
+has a clean XY drift the diag identifies (mean (-0.27, +0.27),
+clustered within ±1 px across layouts) that can't be pinned today.
+Concrete next move when an asset really needs it: add a second
+field on `Building`, e.g. `blend_world_offset_xyz`, that augments
+every facing's `model_translation` (the existing post-rotation
+world-frame slot multi-tile cell positioning already uses).  Cheap
+to plumb: one CLI arg through `render.py`, one tuple add at the
+build-facings step.  Hold off until stonehenge isn't the only
+customer.
 
 **Open: hex vs square building viewpoints disagree on footprint
 centring.**  `building_hex_viewpoint` shifts slice positions by

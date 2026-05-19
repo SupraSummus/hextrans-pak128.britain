@@ -50,14 +50,20 @@ SPEC = Building(
     # tile, vs the standard 24).  Pin per-tile=24 to render at
     # the standard rate -- 72 / (24 * 2) = 1.5 divisor.
     blend_ortho_per_tile=24.0,
-    # `pak.diag_centroid_align` reports per-layout residuals that
-    # don't reduce to a single model translation: tried pinning the
-    # mean and only one layout aligns; others get worse.  Leave None
-    # -- the residual is per-layout shape mismatch from procedural
-    # Stone material's MUSGRAVE/CLOUDS noise rotating with the model
-    # (every layout renders a different noise phase in world coords
-    # while upstream BI samples differently).  Worst stitched IoU
-    # ~0.49 is the floor.
+    # Plane.002/.004/.005 are three corner registration quads at z=0.02
+    # with no material slot, rendered as flat-grey diamonds by Cycles
+    # but not by upstream's BI pipeline (BI skips unmaterialled faces).
+    # Strip them on entry so the bake silhouette matches upstream.
+    strip="Sphere,Plane.002,Plane.004,Plane.005",
+    # `pak.diag_centroid_align` after the strip reports a clean XY
+    # drift (mean (-0.27, +0.27), dy ≈ 0 -> no Z component).  But
+    # `blend_model_offset_xyz` is pre-rotation (see CLAUDE.md ->
+    # "blend_model_offset_xyz applies pre-rotation, model-local"); the
+    # 2x2 layouts rotate 0°/90°/180°/270°, so an XY offset would rotate
+    # with each layout and only help one of four.  Empirically
+    # confirmed: pinning the mean lifted L1 0.557 -> 0.921 and hurt the
+    # other three.  Leave None until the post-rotation world-frame
+    # offset mechanism lands (TODO.md -> "Multi-tile XY offset gap").
 )
 
 

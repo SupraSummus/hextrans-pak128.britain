@@ -74,6 +74,11 @@ SPEC = Building(
     blend="signals/mechanical-signalbox-large.blend",
     upstream_dat="signalboxes/mechanical-signalbox-large.dat",
     materials=MATERIALS,
+    # `pak.diag_centroid_align` reports dy ≈ -20 across all 4 layouts
+    # with dx ≈ 0 in the mean -- the textbook pure-Z drift pattern
+    # (see CLAUDE.md -> "blend_model_offset_xyz applies pre-rotation").
+    # Per-layout Z candidates +2.71/+2.49/+1.52/+1.84 -> mean +2.14.
+    blend_model_offset_xyz=(0.0, 0.0, 2.14),
 )
 
 

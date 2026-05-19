@@ -362,6 +362,8 @@ def _render_building_season(
         # negative components like "-0.27,..." as a new option flag.
         cmd += ["--model-offset=" +
                 ",".join(str(v) for v in spec.blend_model_offset_xyz)]
+    if spec.strip:
+        cmd += ["--strip", spec.strip]
     if materials:
         from pak.materials import to_jsonable
         cmd += ["--materials", json.dumps(to_jsonable(materials))]

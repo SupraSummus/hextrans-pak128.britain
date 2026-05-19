@@ -518,6 +518,16 @@ class Building:
     # `pak.diag_centroid_align` sweep).  Units: world units, same
     # frame as the blend's authored XYZ.
     blend_model_offset_xyz: tuple[float, float, float] | None = _bake_meta()
+    # Comma-separated mesh names to drop from the scene on entry.
+    # Default `Sphere` is the upstream sun-direction visualizer; per-blend
+    # overrides go here when a blend ships extra debug meshes that have no
+    # material slot (so `materials=` can't reach them) and aren't picked up
+    # by upstream's BI renderer either — e.g. attractions/stonehenge.blend
+    # ships three corner registration quads (Plane.002/004/005) with empty
+    # `material_slots` that Cycles renders as flat-grey squares.  Same
+    # shape as `Way.strip`; both wire through `render.py`'s
+    # `Viewpoint.strip_meshes`.
+    strip: str = _bake_meta(default="Sphere")
 
 
 @dataclass

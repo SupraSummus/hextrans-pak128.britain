@@ -93,6 +93,7 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
             materials: dict | None = None, lighting=None,
             blend_ortho_per_tile: float | None = None,
             model_offset_xyz: tuple[float, float, float] | None = None,
+            strip: str | None = None,
             ) -> None:
     script = HERE / "render.py"
     cmd = [
@@ -109,6 +110,8 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
         # negative components like "-0.27,..." as a new option flag.
         cmd += ["--model-offset=" +
                 ",".join(str(v) for v in model_offset_xyz)]
+    if strip:
+        cmd += ["--strip", strip]
     if materials:
         import json
 
@@ -364,6 +367,7 @@ def run_multitile(
     blend_source: str = "jp",
     blend_ortho_per_tile: float | None = None,
     model_offset_xyz: tuple[float, float, float] | None = None,
+    strip: str | None = None,
 ):
     """Render the multi-tile blend through `square_building`, build the
     per-layout stitched upstream canvas from upstream's per-cell PNGs,
@@ -395,7 +399,8 @@ def run_multitile(
             dims_x=dims_x, dims_y=dims_y,
             materials=materials, lighting=lighting,
             blend_ortho_per_tile=blend_ortho_per_tile,
-            model_offset_xyz=model_offset_xyz)
+            model_offset_xyz=model_offset_xyz,
+            strip=strip)
     our_canvases = _load_our_renders(out_dir, render_name, layouts)
 
     up_dat_path = fetch_pak(upstream_dat)
@@ -535,7 +540,8 @@ def _diff_one_season(blend: str, upstream_dat: str, *, layouts: int,
                      name: str | None = None,
                      blend_source: str = "jp",
                      blend_ortho_per_tile: float | None = None,
-                     model_offset_xyz: tuple[float, float, float] | None = None):
+                     model_offset_xyz: tuple[float, float, float] | None = None,
+                     strip: str | None = None):
     """Render `blend`, diff each layout against the `season_row` row
     of the upstream atlas (derived from `upstream_dat`'s `BackImage`
     refs), and return `(grid_cells, mat, perm, drgb)`.
@@ -554,7 +560,8 @@ def _diff_one_season(blend: str, upstream_dat: str, *, layouts: int,
     _render(blend_path, out_dir, render_name, layouts,
             materials=materials, lighting=lighting,
             blend_ortho_per_tile=blend_ortho_per_tile,
-            model_offset_xyz=model_offset_xyz)
+            model_offset_xyz=model_offset_xyz,
+            strip=strip)
     up_path = fetch_pak(f"{image_stem(upstream_dat, name=name)}.png")
     up_cells = _split_upstream(up_path, layouts, season_row=season_row)
     our_rgba = _load_our_renders(out_dir, render_name, layouts)
@@ -584,7 +591,8 @@ def run(blend: str, upstream_dat: str, *, layouts: int, out_dir: Path,
         name: str | None = None,
         blend_source: str = "jp",
         blend_ortho_per_tile: float | None = None,
-        model_offset_xyz: tuple[float, float, float] | None = None):
+        model_offset_xyz: tuple[float, float, float] | None = None,
+        strip: str | None = None):
     """Render `blend` through `square_building`, diff each layout
     against the columns of the upstream atlas (derived from
     `upstream_dat`'s `BackImage` refs), return (matrix, permutation, drgb).
@@ -604,6 +612,7 @@ def run(blend: str, upstream_dat: str, *, layouts: int, out_dir: Path,
         blend_source=blend_source,
         blend_ortho_per_tile=blend_ortho_per_tile,
         model_offset_xyz=model_offset_xyz,
+        strip=strip,
     )
     compose_grid(cells, out_path=out_dir / grid_name,
                  strip_magic_rgb=MAGIC_PINK, title=title)
@@ -619,6 +628,7 @@ def run_seasonal(
     blend_source: str = "jp",
     blend_ortho_per_tile: float | None = None,
     model_offset_xyz: tuple[float, float, float] | None = None,
+    strip: str | None = None,
 ):
     """Diff summer then winter against the matching upstream rows and
     write **one** combined grid (`grid.png`) covering both seasons —
@@ -635,6 +645,7 @@ def run_seasonal(
         blend_source=blend_source,
         blend_ortho_per_tile=blend_ortho_per_tile,
         model_offset_xyz=model_offset_xyz,
+        strip=strip,
     )
     winter_cells, *winter_stats = _diff_one_season(
         blend_winter, upstream_dat, layouts=layouts, out_dir=out_dir,
@@ -644,6 +655,7 @@ def run_seasonal(
         blend_source=blend_source,
         blend_ortho_per_tile=blend_ortho_per_tile,
         model_offset_xyz=model_offset_xyz,
+        strip=strip,
     )
     compose_grid(
         summer_cells + winter_cells,
