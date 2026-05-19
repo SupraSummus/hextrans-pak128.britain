@@ -66,9 +66,8 @@ def _render(blend_path: Path, out_dir: Path, name: str, ages: int, seasons: int)
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
         "--out", str(out_dir), "--name", name,
-        "--viewpoint", "tree_square", "--keep-per-facing",
+        "--viewpoint", "tree_square",
         "--tree-grid", f"{ages},{seasons}",
-        "--cols-per-row", str(ages),
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 

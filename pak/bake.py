@@ -43,6 +43,13 @@ from pak.fetch_blend import fetch
 from pak.fetch_jh_blend import fetch as fetch_jh
 from pak.materials import Material
 
+# `pak.compose` and `pak.viewpoints` pull in numpy via hex_synth;
+# kept off the module-import path so `pak.reemit_dats` /
+# `pak.fetch_wavs` -- both of which import bake-unit scripts that
+# `from pak.bake import bake_main` -- still work in dat-only CI
+# environments without numpy installed.  Imported lazily inside
+# each bake_* function below.
+
 _RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
 _BAKE_WAY_SCRIPT = Path(__file__).resolve().parent / "bake_way.py"
 
@@ -160,6 +167,8 @@ def bake_vehicle(
     for atlas and dat — typically the bake script's
     `Path(__file__).stem`.  Returns the dat path.
     """
+    from pak.compose import compose_atlas
+    from pak.viewpoints import HEX_VIEWPOINT, SQUARE_VIEWPOINT
     specs = [spec] if isinstance(spec, Vehicle) else list(spec)
     blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
@@ -168,6 +177,8 @@ def bake_vehicle(
         blend=blend_path,
         args={"out": out_dir, "name": basename, "viewpoint": viewpoint},
     )
+    vp = HEX_VIEWPOINT if viewpoint == "hex" else SQUARE_VIEWPOINT
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=basename)
 
     out_dat = emit_vehicles(specs, out_dir=out_dir, basename=basename)
     _print_wrote(out_dat)
@@ -247,6 +258,8 @@ def _render_bridge_piece(
     """Render one piece blend through `bridge_hex_viewpoint(piece)`
     into `<out_dir>/<name>.png` and return the path.  One blender
     subprocess per call."""
+    from pak.compose import compose_atlas
+    from pak.viewpoints import bridge_hex_viewpoint
     blend_path = fetch_jh(blend)
     _run_blender(
         script=_RENDER_SCRIPT,
@@ -257,6 +270,8 @@ def _render_bridge_piece(
             "bridge-piece": piece,
         },
     )
+    compose_atlas(bridge_hex_viewpoint(piece),
+                  render_dir=out_dir, out_dir=out_dir, name=name)
     return out_dir / f"{name}.png"
 
 
@@ -351,6 +366,8 @@ def _render_building_season(
 ) -> Path:
     """Render one season's atlas to `<out_dir>/<name>.png` and return
     the path.  One blender subprocess per call."""
+    from pak.compose import compose_atlas
+    from pak.viewpoints import building_hex_viewpoint
     blend_path = _fetch_blend(blend, spec.blend_source)
     # One atlas row per `(season, height)` stripe; each row holds
     # `layouts * dims_x * dims_y` cells (layouts span columns).  See
@@ -361,7 +378,6 @@ def _render_building_season(
         "viewpoint": "hex_building",
         "building-footprint":
             f"{spec.dims_x},{spec.dims_y},{spec.layouts},{spec.heights}",
-        "cols-per-row": cells_per_row,
     }
     if spec.blend_ortho_per_tile is not None:
         args["building-ortho-per-tile"] = spec.blend_ortho_per_tile
@@ -377,6 +393,14 @@ def _render_building_season(
     if lighting is not None:
         args["lighting"] = json.dumps(lighting.to_jsonable())
     _run_blender(script=_RENDER_SCRIPT, blend=blend_path, args=args)
+    vp = building_hex_viewpoint(
+        layouts=spec.layouts, dims_x=spec.dims_x, dims_y=spec.dims_y,
+        heights=spec.heights,
+        ortho_per_tile=spec.blend_ortho_per_tile,
+        lighting=lighting,
+    )
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=name,
+                  cols_per_row=cells_per_row)
     return out_dir / f"{name}.png"
 
 
@@ -482,6 +506,8 @@ def bake_tree(
     `viewpoint` selects `tree_hex` (shipped atlas) or `tree_square`
     (calibration diff).  Returns the dat path.
     """
+    from pak.compose import compose_atlas
+    from pak.viewpoints import tree_hex_viewpoint, tree_square_viewpoint
     specs = [spec] if isinstance(spec, Tree) else list(spec)
     # All specs must agree on seasons for one shared atlas; emit_trees
     # walks per-Tree `seasons` independently, but the rendered atlas is
@@ -498,9 +524,12 @@ def bake_tree(
             "out": out_dir, "name": basename,
             "viewpoint": viewpoint,
             "tree-grid": f"{ages},{seasons}",
-            "cols-per-row": ages,
         },
     )
+    factory = tree_hex_viewpoint if viewpoint == "tree_hex" else tree_square_viewpoint
+    compose_atlas(factory(ages=ages, seasons=seasons),
+                  render_dir=out_dir, out_dir=out_dir, name=basename,
+                  cols_per_row=ages)
 
     out_dat = emit_trees(
         specs, out_dir=out_dir, basename=basename,

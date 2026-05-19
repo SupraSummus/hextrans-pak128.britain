@@ -84,7 +84,7 @@ def _render(blend_path: Path, out_dir: Path, name: str) -> None:
     cmd = [
         "blender", "-b", str(blend_path), "-P", str(script), "--",
         "--out", str(out_dir), "--name", name,
-        "--viewpoint", "square", "--keep-per-facing",
+        "--viewpoint", "square",
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 

@@ -54,7 +54,7 @@ def render_fence_blend(out_dir: Path) -> dict[str, np.ndarray]:
     script = REPO_ROOT / "pak" / "render.py"
     cmd = ["blender", "-b", str(blend_path), "-P", str(script), "--",
            "--out", str(out_dir), "--name", "fence_blend",
-           "--viewpoint", "fence_square", "--keep-per-facing"]
+           "--viewpoint", "fence_square"]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     return {label: np.array(Image.open(out_dir / f"fence_blend_{label}.png"))
             for label in ("S", "W", "N", "E")}
