@@ -510,19 +510,12 @@ class Building:
     materials_winter: dict[str, Material] | None = _bake_meta()
     lighting: Lighting | None = _bake_meta()
     blend_source: str = _bake_meta(default="jp")
-    # Per-asset override for the target per-tile ortho.  Default
-    # None -> `building_hex_viewpoint`'s `_hex_fit(divisor=
-    # max(dims_x, dims_y))` heuristic, which assumes the blend was
-    # authored at `ortho_scale = max(dims) * (authored/max(dims))`
-    # -- equivalent to "per-tile = authored / max(dims)", honouring
-    # what the artist authored.  When the artist sized the camera
-    # to fit the whole composition rather than the footprint (e.g.
-    # stonehenge ortho=72 over a 2x2 footprint, fitting stones +
-    # surrounding landscape planes), declare the per-tile target
-    # explicitly here -- the renderer computes `divisor = authored
-    # / (per_tile * max(dims))`.  Standard pakset rate is 24
-    # (vehicles convention).
-    blend_ortho_per_tile: float | None = _bake_meta()
+    # Blend-frame world units per engine tile.  Sole anchor for the
+    # asset's render scale (camera ortho, canvas, fit_matrix all
+    # derive from this and `dims`).  Default 12 = the contributing-
+    # graphics building convention; override for assets that render
+    # at a different per-tile rate.
+    blend_units_per_tile: float = _bake_meta(default=12.0)
     # World-space offset declaring where the model's centre actually
     # sits, when the artist authored it away from world origin.  The
     # renderer pre-translates by `-offset` before everything else, so

@@ -119,9 +119,9 @@ def _hex_fit(divisor: float = 1.0):
 
 def _fixed_hex_scale(s: float):
     """`fit_matrix` that returns a constant `Diagonal(s)`, independent
-    of authored ortho.  Used by `building_hex_viewpoint(ortho_per_tile=…)`
-    where the renderer is told the per-tile ortho explicitly rather
-    than deriving it from the blend's authored value."""
+    of the blend's authored ortho.  Used by `building_hex_viewpoint`
+    where the SPEC's `blend_units_per_tile` is the authoritative
+    scale anchor."""
     return lambda _a: _scale_diag(s)
 
 
@@ -464,16 +464,53 @@ def sq_tile_pixel_mask(
     return keep.astype(np.float32)
 
 
+def _building_slices(
+    layout: int, height: int, dims_x: int, dims_y: int,
+    screen_offset,
+    pixel_mask=None,
+) -> list[Slice]:
+    """Per-(layout, height) slices for a building viewpoint, iterated
+    under the engine's `(l & 1) ? (y, x) : (x, y)` dims swap.
+
+    `pixel_mask` skipped on single-cell footprints because clipping
+    against the cell-shape would crop content (towers, gables) that
+    upstream's 128² single-tile PNGs keep.
+    """
+    from pak.dat import building_footprint_centroid
+    xc, yc = building_footprint_centroid(dims_x, dims_y, layout)
+    yh, xw = (dims_x, dims_y) if layout & 1 else (dims_y, dims_x)
+    cells = [(y, x) for y in range(yh) for x in range(xw)]
+    offsets = [
+        tuple(int(round(v)) for v in screen_offset(x - xc, y - yc))
+        for y, x in cells
+    ]
+    def mask_for(i):
+        if pixel_mask is None or len(offsets) <= 1:
+            return None
+        return pixel_mask(
+            offsets[i],
+            [o for j, o in enumerate(offsets) if j != i],
+        )
+    return [
+        Slice(
+            label=f"L{layout}_Y{y}_X{x}_H{height}",
+            offset=offsets[i],
+            alpha_mask=mask_for(i),
+        )
+        for i, (y, x) in enumerate(cells)
+    ]
+
+
 def building_square_viewpoint(
-    layouts: int, dims_x: int = 1, dims_y: int = 1, heights: int = 1,
-    lighting=None, ortho_per_tile: float | None = None,
+    layouts: int, units_per_tile: float, dims_x: int = 1, dims_y: int = 1,
+    heights: int = 1, lighting=None,
 ) -> Viewpoint:
-    """Square-dimetric Viewpoint for the multi-tile calibration diff:
-    one Facing per layout rendered under upstream's normal-alignment
-    cardinal cameras.  Multi-tile renders carry `slices` listing per-
-    cell positions on the layout canvas; the render harness then emits
-    both the full canvas (for the stitched diff) and per-cell 128²
-    sprites (for the per-tile diff).
+    """Square-dimetric Viewpoint for the N-tile calibration diff: one
+    Facing per layout rendered under upstream's normal-alignment
+    cardinal cameras, each carrying `slices` listing per-cell positions
+    on the layout canvas.  The render harness emits both the full
+    canvas (for the stitched multi-tile diff) and per-cell 128² sprites
+    (for the single-tile diff or per-cell multi-tile diff).
 
     Layout `l` selects one of the four cardinal cameras
     (S, W, N, E in `_UPSTREAM_NORMAL_CARDINAL`) — equivalent to upstream
@@ -482,20 +519,8 @@ def building_square_viewpoint(
     does.  The two conventions render the same silhouette per layout,
     but only the camera-rotation form matches upstream's actually-
     published per-layout PNGs (which is what the diff measures against).
-
-    Identity `fit_matrix` renders at the blend's authored ortho_scale,
-    so the result is directly comparable to upstream's published cells
-    (which are at the same blend-native scale).
-
-    Multi-tile assets (`dims_x > 1` or `dims_y > 1`) render one
-    full-canvas Facing per layout at a 512² square canvas; `slices`
-    fans out from the canvas centre at `sq_tile_screen_offset(x - xc,
-    y - yc)` per cell, with `(xc, yc)` the per-layout footprint
-    centroid.  Heights > 1 still unsupported.
+    Heights > 1 still unsupported.
     """
-    from pak.dat import building_footprint_centroid
-
-    multi_tile = dims_x > 1 or dims_y > 1
     if heights != 1:
         raise NotImplementedError(
             "square_building viewpoint is single-height only"
@@ -519,64 +544,26 @@ def building_square_viewpoint(
     facings: list[Facing] = []
     for l in range(layouts):
         _label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
-        slice_list: list[Slice] | None = None
-        if multi_tile:
-            # Per-layout footprint centroid in (x, y) koord units mirrors
-            # the engine's even/odd dims swap.  `building_writer.cc`
-            # iterates `y in [0, size.y), x in [0, size.x)` on even
-            # layouts and swaps to `y in [0, size.x), x in [0, size.y)`
-            # on odd layouts; the centroid follows the same rule.
-            xc, yc = building_footprint_centroid(dims_x, dims_y, l)
-            yh, xw = (dims_x, dims_y) if l & 1 else (dims_y, dims_x)
-            cells = [(y, x) for y in range(yh) for x in range(xw)]
-            # Integer per-cell slice offsets.  See `pak.diff_buildings._tile_
-            # topleft` for the equivalent arithmetic on the stitch side
-            # (the +32 / -32 canvas-anchor / cell-anchor offsets cancel,
-            # so the slice offset equals the koord screen offset).
-            offsets = [
-                tuple(int(round(v))
-                      for v in sq_tile_screen_offset(x - xc, y - yc))
-                for y, x in cells
-            ]
-            slice_list = [
-                Slice(
-                    label=f"L{l}_Y{y}_X{x}_H0",
-                    offset=offsets[i],
-                    alpha_mask=sq_tile_pixel_mask(
-                        offsets[i],
-                        [o for j, o in enumerate(offsets) if j != i],
-                    ),
-                )
-                for i, (y, x) in enumerate(cells)
-            ]
         facings.append(Facing(
-            label=f"L{l}_H0" if multi_tile else f"L{l}_Y0_X0_H0",
+            label=f"L{l}_H0",
             camera_location=loc,
             camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
             sun_rotation_euler=sun_rotation_for_camera(cam_z),
             model_rot_z_deg=(2.0 * step * l) % 360.0,
-            slices=slice_list,
+            slices=_building_slices(
+                l, 0, dims_x, dims_y, sq_tile_screen_offset,
+                pixel_mask=sq_tile_pixel_mask,
+            ),
         ))
-    canvas_w = canvas_h = 512 if multi_tile else None
+    max_dims = max(dims_x, dims_y)
+    canvas_w = canvas_h = DEFAULT_W * max_dims
+    camera_ortho = _pinned(units_per_tile * max_dims)
     sun_energy = _wrap_sun_energy_with_lighting(
         _authored_sun(_BI_TO_EEVEE_SUN_SCALE), lighting,
     )
-    # Multi-tile blends authored at `ortho = per_tile * dims` need an
-    # explicit override -- e.g. stonehenge ships ortho=72 to fit
-    # surrounding landscape (per-tile=36) while upstream's per-cell
-    # PNGs are at per-tile=24.  Stitched on our 512² canvas, upstream
-    # is at `ortho_canvas = per_tile * max_dims`; we match by pinning
-    # the same.
-    if ortho_per_tile is not None:
-        camera_ortho = _pinned(ortho_per_tile * max(dims_x, dims_y))
-    else:
-        camera_ortho = _authored_ortho()
     return Viewpoint(
         name="square_building",
         image_width=DEFAULT_W,
-        # Authored ortho: buildings typically ship at 12 (twice the
-        # per-cell zoom of vehicles' 24); honouring that is what makes
-        # the diff align with upstream's per-blend renders.
         camera_ortho=camera_ortho,
         # Authored sun energy (0.028 in Britain blends) scaled by
         # `_BI_TO_EEVEE_SUN_SCALE` to compensate for EEVEE PBR; may
@@ -890,30 +877,27 @@ def tree_hex_viewpoint(ages: int, seasons: int = 1) -> Viewpoint:
 
 
 def building_hex_viewpoint(
-    layouts: int, dims_x: int, dims_y: int, heights: int = 1,
-    ortho_per_tile: float | None = None,
+    layouts: int, units_per_tile: float,
+    dims_x: int, dims_y: int, heights: int = 1,
     lighting=None,
 ) -> Viewpoint:
-    """Hex Viewpoint for a multi-tile building of footprint `dims_x × dims_y`
-    with `layouts` rotation variants and `heights` vertical-stack
-    cells.
+    """Hex Viewpoint for an N-tile building of footprint `dims_x × dims_y`
+    with `layouts` rotation variants and `heights` vertical-stack cells.
 
-    Single-tile (`dims_x == dims_y == 1`): one Facing per
-    `(layout, height)` rendered at sprite-sized canvas, no slicing
-    needed (legacy 1-cell-per-facing path).
-
-    Multi-tile: one Facing per `(layout, height)` rendered at a wider
-    canvas sized to cover the full footprint at the hex screen lattice,
-    with the model untranslated (artist's authored XYZ contract — the
-    blend's per-tile anchor placement passes straight through to
-    pixels).  Each Facing carries a `slices` list naming the per-cell
-    sprite to crop from the rendered canvas; slice centres land at
-    `hex_screen_offset(qx=x, ry=y)` so the engine's paint position for
-    that tile and our sliced sprite agree.  Slice labels follow the
-    `pak.dat.iter_building_cells` order — even layouts iterate
-    `y ∈ [0, dims_y), x ∈ [0, dims_x)`; odd layouts swap to
-    `y ∈ [0, dims_x), x ∈ [0, dims_y)`, mirroring the engine's
-    `h = (l & 1) ? size.x : size.y` rule in `building_writer.cc`.
+    One Facing per `(layout, height)` rendered into a canvas sized to
+    cover the full footprint at the hex screen lattice, with the model
+    untranslated (artist's authored XYZ contract — the blend's per-tile
+    anchor placement passes straight through to pixels).  Each Facing
+    carries a `slices` list naming the per-cell sprite to crop from the
+    rendered canvas; slice centres land at `hex_screen_offset(qx=x,
+    ry=y)` so the engine's paint position for that tile and our sliced
+    sprite agree.  Slice labels follow the `pak.dat.iter_building_cells`
+    order — even layouts iterate `y ∈ [0, dims_y), x ∈ [0, dims_x)`;
+    odd layouts swap to `y ∈ [0, dims_x), x ∈ [0, dims_y)`, mirroring
+    the engine's `h = (l & 1) ? size.x : size.y` rule in
+    `building_writer.cc`.  Single-tile (`dims_x == dims_y == 1`) is the
+    degenerate case: canvas collapses to sprite size, one slice per
+    facing at offset (0, 0).
 
     Per-cell Z stacking (`heights > 1`) shifts the whole model down by
     `-h * HEX_HEIGHT_LEVEL_WORLD_Z` per height-h facing; the engine
@@ -932,104 +916,47 @@ def building_hex_viewpoint(
     it — for the `1600-detatched-house-2f` blend that's the side with
     the gap in the hedge, so layout 0 lands a flat front on the hex N
     edge.
-
-    `ortho_per_tile` (optional): explicit per-tile ortho target.  Use
-    when the artist sized the blend for the whole composition rather
-    than per-tile (e.g. stonehenge ortho=72 over a 2x2 footprint,
-    `ortho_per_tile=24` recovers the per-tile rate).  Replaces the
-    default `2R / (authored / max_dims)` fit scale with the constant
-    `2R / (per_tile * max_dims)`.  Wired through from `pak/bake.py`'s
-    `Building.blend_ortho_per_tile` via `--building-ortho-per-tile`.
     """
     step = 360.0 / layouts
-    from pak.dat import building_footprint_centroid
-    multi_tile = dims_x > 1 or dims_y > 1
-    # Canvas size and ortho only matter for the multi-tile slicing path
-    # (single-tile renders into the sprite-sized canvas the Viewpoint
-    # defaults pick up).  The iteration's dims-aware swap means both
-    # (dims_x, dims_y) and (dims_y, dims_x) reach the canvas, so the
-    # max-koord corner uses `max(dims) - 1` along both axes.
-    if multi_tile:
-        cx_max, cy_max = hex_tile_screen_offset(
-            max(dims_x, dims_y) - 1, max(dims_x, dims_y) - 1,
-        )
-        canvas_w = int(math.ceil(cx_max + DEFAULT_W))
-        canvas_h = int(math.ceil(cy_max + DEFAULT_W))
-        # ortho_scale = canvas width in world units at the standard hex
-        # pixel rate (W/(2R) px per world unit).  Larger dimension wins
-        # in Blender's camera; pick max(w, h).
-        ortho_for_canvas = 2.0 * HEX_TILE_RADIUS * max(canvas_w, canvas_h) / DEFAULT_W
-    else:
-        cx_max = cy_max = 0.0
-        canvas_w = canvas_h = None
-        ortho_for_canvas = 2.0 * HEX_TILE_RADIUS
+    max_dims = max(dims_x, dims_y)
+    # Canvas sized to cover the full footprint at the hex screen lattice.
+    # The iteration's dims-aware swap means both (dims_x, dims_y) and
+    # (dims_y, dims_x) reach the canvas, so the max-koord corner uses
+    # `max_dims - 1` along both axes.  Collapses to (DEFAULT_W,
+    # DEFAULT_W) for 1×1 footprints.
+    cx_max, cy_max = hex_tile_screen_offset(max_dims - 1, max_dims - 1)
+    canvas_w = int(math.ceil(cx_max + DEFAULT_W))
+    canvas_h = int(math.ceil(cy_max + DEFAULT_W))
+    # ortho_scale = canvas width in world units at the standard hex
+    # pixel rate (W/(2R) px per world unit).  Larger dimension wins in
+    # Blender's camera; pick max(w, h).
+    ortho_for_canvas = 2.0 * HEX_TILE_RADIUS * max(canvas_w, canvas_h) / DEFAULT_W
 
     facings: list[Facing] = []
     # Iteration order `h, l, y, x` mirrors `pak.dat.iter_building_cells`
     # within a single season — each (h) becomes one atlas row, with
     # layouts spanning columns left-to-right (each layout block is a
     # `dims_x*dims_y`-wide footprint).  See `emit_building`'s col
-    # formula `l * dims_x*dims_y + y * w + x`.
+    # formula `l * dims_x*dims_y + y * w + x`.  Per-tile pixel-ownership
+    # mask for the hex lattice is unfinished -- see TODO.md.
     for h in range(heights):
         for l in range(layouts):
-            if l & 1:
-                yh, xw = dims_x, dims_y
-            else:
-                yh, xw = dims_y, dims_x
-            shared_kwargs = dict(
+            facings.append(Facing(
+                label=f"L{l}_H{h}",
+                slices=_building_slices(
+                    l, h, dims_x, dims_y, hex_tile_screen_offset,
+                ),
                 camera_location=_HEX_CAM_LOC,
                 camera_rotation_euler=_HEX_CAM_ROT,
                 sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
                 model_rot_z_deg=step * l,
                 model_translation=(0.0, 0.0, -h * HEX_HEIGHT_LEVEL_WORLD_Z),
-            )
-            if multi_tile:
-                # One Facing per (l, h); slices fan out across the cells
-                # at hex screen-koord positions, shifted so the
-                # per-layout footprint centroid sits at canvas centre
-                # (where the model renders).  Per-tile pixel-ownership
-                # mask for the hex lattice is unfinished (square dimetric
-                # has `sq_tile_pixel_mask`); alpha_mask=None until that
-                # lands -- see TODO.md.
-                cx_koord, cy_koord = building_footprint_centroid(
-                    dims_x, dims_y, l,
-                )
-                anchor_x, anchor_y = hex_tile_screen_offset(cx_koord, cy_koord)
-                slice_list = [
-                    Slice(
-                        label=f"L{l}_Y{y}_X{x}_H{h}",
-                        offset=(
-                            int(round(hex_tile_screen_offset(x, y)[0] - anchor_x)),
-                            int(round(hex_tile_screen_offset(x, y)[1] - anchor_y)),
-                        ),
-                        alpha_mask=None,
-                    )
-                    for y in range(yh) for x in range(xw)
-                ]
-                facings.append(Facing(
-                    label=f"L{l}_H{h}", slices=slice_list, **shared_kwargs,
-                ))
-            else:
-                # Single-tile: legacy 1-cell-per-facing — one Facing
-                # per cell, square sprite-sized canvas.
-                for y in range(yh):
-                    for x in range(xw):
-                        facings.append(Facing(
-                            label=f"L{l}_Y{y}_X{x}_H{h}", **shared_kwargs,
-                        ))
-    max_dims = max(dims_x, dims_y)
-    if ortho_per_tile is not None:
-        # Authored ortho irrelevant -- pinned per-tile rate.
-        fit_matrix = _fixed_hex_scale(
-            2.0 * HEX_TILE_RADIUS / (ortho_per_tile * max_dims),
-        )
-    elif multi_tile:
-        # Multi-tile blends are typically authored at `ortho = max(dims)
-        # * per-tile-ortho`; divide so each cell lands at the per-tile
-        # pixel rate.
-        fit_matrix = _hex_fit(divisor=float(max_dims))
-    else:
-        fit_matrix = _hex_fit()
+            ))
+    # Per-layout world width `units_per_tile * max_dims` maps to
+    # `max_dims` engine tiles (= `2R * max_dims` engine world).
+    fit_matrix = _fixed_hex_scale(
+        2.0 * HEX_TILE_RADIUS / (units_per_tile * max_dims),
+    )
     sun_energy = _wrap_sun_energy_with_lighting(
         _authored_sun(_BI_TO_EEVEE_SUN_SCALE), lighting,
     )

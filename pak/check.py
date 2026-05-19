@@ -91,7 +91,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                 materials=spec.materials, lighting=spec.lighting,
                 name=spec.name,
                 blend_source=spec.blend_source,
-                blend_ortho_per_tile=spec.blend_ortho_per_tile,
+                blend_units_per_tile=spec.blend_units_per_tile,
                 model_offset_xyz=spec.blend_model_offset_xyz,
                 strip=spec.strip,
             )
@@ -130,7 +130,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                 lighting=spec.lighting,
                 name=spec.name,
                 blend_source=spec.blend_source,
-                blend_ortho_per_tile=spec.blend_ortho_per_tile,
+                blend_units_per_tile=spec.blend_units_per_tile,
                 strip=spec.strip,
             )
         else:
@@ -140,7 +140,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
                 lighting=spec.lighting,
                 name=spec.name,
                 blend_source=spec.blend_source,
-                blend_ortho_per_tile=spec.blend_ortho_per_tile,
+                blend_units_per_tile=spec.blend_units_per_tile,
                 strip=spec.strip,
             )
             seasons = [("summer", mat, perm, drgb)]

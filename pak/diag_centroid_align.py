@@ -1,10 +1,10 @@
-"""Centroid-alignment diagnostic for the multi-tile calibration diff.
+"""Centroid-alignment diagnostic for the building calibration diff.
 
 Walks the existing `out/diff/<asset>/` artefacts left by
-`pak.check` on a multi-tile Building bake unit, reproduces the
-per-layout upstream stitched canvas (same lattice + ground anchor
-as `diff_buildings.run_multitile`), and sweeps a per-layout (dx,
-dy) pixel offset to find the IoU peak.
+`pak.check` on a Building bake unit, reproduces the per-layout
+upstream stitched canvas (same lattice + ground anchor as
+`diff_buildings.run_multitile`), and sweeps a per-layout (dx, dy)
+pixel offset to find the IoU peak.
 
 Joins the per-layout 2D measurements into a single model-local
 3D offset by least squares.  Each layout L applies `R_z(step·L)`
@@ -62,6 +62,7 @@ from pak.dat import Building, building_footprint_centroid
 from pak.diff import MAGIC_PINK
 from pak.diff_buildings import (
     _atlas_cell,
+    _canvas_size,
     _load_our_renders,
     _parse_backimage_entries,
     _silhouette_mask,
@@ -224,9 +225,6 @@ def main(argv: list[str]) -> int:
     spec = specs_of(mod)[0]
     if not isinstance(spec, Building):
         raise SystemExit(f"{script.name}: SPEC is not a Building")
-    if spec.dims_x <= 1 and spec.dims_y <= 1:
-        raise SystemExit(f"{script.name}: single-tile, no multi-tile stitch")
-
     out_dir = REPO_ROOT / "out" / "diff" / script.stem
     if not out_dir.exists():
         raise SystemExit(
@@ -240,8 +238,8 @@ def main(argv: list[str]) -> int:
     from PIL import Image
 
     render_name = Path(spec.blend).stem
-    our_canvases = _load_our_renders(out_dir, render_name, layouts,
-                                     multi_tile=True)
+    our_canvases = _load_our_renders(out_dir, render_name, layouts)
+    canvas_w, canvas_h = _canvas_size(spec.dims_x, spec.dims_y)
 
     up_dat_path = fetch_pak(spec.upstream_dat)
     up_png_path = fetch_pak(
@@ -269,6 +267,7 @@ def main(argv: list[str]) -> int:
         }
         up_stitched = _stitch_upstream_layout(
             cells_by_yx, centroid_by_L[L], magic_rgb=MAGIC_PINK,
+            canvas_w=canvas_w, canvas_h=canvas_h,
         )
         our_mask = _silhouette_mask(our_canvases[L])
         up_mask = _silhouette_mask(up_stitched)

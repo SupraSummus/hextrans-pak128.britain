@@ -859,13 +859,15 @@ one-shot seeder for paste-ready `materials={...}` blocks.
 silhouette IoU / dRGB / XOR primitives plus the `cell_metric` +
 `compose_grid` helpers every per-class harness composes against;
 specialisations live in `diff_upstream` (vehicles), `diff_buildings`
-(square-projection layout-permutation matrix for single-tile;
-`run_multitile` for multi-tile, which renders the blend through the
-multi-tile `square_building` viewpoint, slices our 512² canvas at the
-tile lattice, and stitches upstream's per-cell PNGs back onto the same
-lattice — emits `grid_tiles.png` per (L, y, x) cell plus
-`grid_stitched.png` per layout, both square-vs-square so the IoU is
-calibration-grade), `diff_trees`,
+(two calibration metrics over one rendering pipeline -- `run` does
+layout-permutation discovery against upstream's strip-atlas, used
+for assets where the dat-level L→column mapping isn't fixed;
+`run_multitile` parses upstream's `backimage[l][y][x]` keys for a
+direct per-cell map, slices our 512² canvas at the tile lattice,
+and stitches upstream's per-cell PNGs back onto the same lattice
+-- emits `grid_tiles.png` per (L, y, x) cell plus `grid_stitched.
+png` per layout, both square-vs-square so the IoU is calibration-
+grade), `diff_trees`,
 `diff_grounds` (parametric grounds via `SquareGeom`), `diff_fence`.
 `MAGIC_PINK` is the canonical transparency key; alpha threshold on
 `silhouette_mask` tunes per class (vehicles/trees `>16`,
