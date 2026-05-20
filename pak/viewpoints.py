@@ -641,17 +641,23 @@ def building_square_viewpoint(
 
 # Model rotation per hex bridge label.  Default model heading is
 # south (rot z=0); each label rotates the model so the named edge
-# faces the hex camera.  Both image (axis) and start/ramp (dir)
-# labels live in this one table so adding a label updates one place.
-# Pulled per-piece below via `HEX_BRIDGE_PIECE_LABELS` from
-# `pak.dat` -- single source of truth for label set + order.
-_HEX_BRIDGE_MODEL_ROT_DEG: dict[str, float] = {
-    # Axes: 3 orientations 60deg apart (axial -- which end is near
-    # doesn't matter, model symmetry handles the flip).
+# faces the hex camera (start/ramp) or the named axis aligns with
+# the model's long span (image).  Pillar.blend is authored 90deg
+# rotated from straight/end/slope (column cross-section runs along
+# world +X, not +Y), so it gets a separate axis table 90deg offset
+# from image's -- without it the n_s pillar renders edge-on
+# (silhouette ~5 px wide where ~40 px broadside is expected).
+_HEX_BRIDGE_IMAGE_ROT_DEG: dict[str, float] = {
     "n_s":     0.0,
     "ne_sw":  60.0,
     "nw_se": 120.0,
-    # Directions: 6 orientations 60deg apart.
+}
+_HEX_BRIDGE_PILLAR_ROT_DEG: dict[str, float] = {
+    "n_s":    90.0,
+    "ne_sw": 150.0,
+    "nw_se": 210.0,
+}
+_HEX_BRIDGE_EDGE_ROT_DEG: dict[str, float] = {
     "n":  180.0,
     "ne": 240.0,
     "se": 300.0,
@@ -659,16 +665,26 @@ _HEX_BRIDGE_MODEL_ROT_DEG: dict[str, float] = {
     "sw":  60.0,
     "nw": 120.0,
 }
+_HEX_BRIDGE_PIECE_ROT_DEG: dict[str, dict[str, float]] = {
+    "image":  _HEX_BRIDGE_IMAGE_ROT_DEG,
+    "start":  _HEX_BRIDGE_EDGE_ROT_DEG,
+    "ramp":   _HEX_BRIDGE_EDGE_ROT_DEG,
+    "pillar": _HEX_BRIDGE_PILLAR_ROT_DEG,
+}
 
 
 def bridge_hex_viewpoint(piece: str) -> Viewpoint:
-    """Hex Viewpoint for a JH bridge piece blend (image / start / ramp).
+    """Hex Viewpoint for a JH bridge piece blend
+    (image / start / ramp / pillar).
 
     `piece` selects which label set from `HEX_BRIDGE_PIECE_LABELS` to
-    render -- 3 axial for `image`, 6 directional for `start` / `ramp`.
-    Per-label model rotation comes from `_HEX_BRIDGE_MODEL_ROT_DEG`;
-    the camera, sun and projection match `HEX_VIEWPOINT`.  Per-piece
-    JH blends (`ways/<family>/{straight,end,slope}.blend`) drop in
+    render -- 3 axial for `image` / `pillar`, 6 directional for
+    `start` / `ramp`.  Per-label model rotation comes from
+    `_HEX_BRIDGE_PIECE_ROT_DEG[piece]`; pillar uses a 90deg-offset
+    table because pillar.blend is authored 90deg rotated from
+    straight/end/slope.  Camera, sun and projection match
+    `HEX_VIEWPOINT`.  Per-piece JH blends
+    (`ways/<family>/{straight,end,slope,pillar}.blend`) drop in
     directly.
 
     Way material substrings (`Rail` / `Chair` / `Wood` / `Ballast` /
@@ -706,7 +722,7 @@ def bridge_hex_viewpoint(piece: str) -> Viewpoint:
                 camera_location=_HEX_CAM_LOC,
                 camera_rotation_euler=_HEX_CAM_ROT,
                 sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
-                model_rot_z_deg=_HEX_BRIDGE_MODEL_ROT_DEG[label],
+                model_rot_z_deg=_HEX_BRIDGE_PIECE_ROT_DEG[piece][label],
             )
             for label in HEX_BRIDGE_PIECE_LABELS[piece]
         ],

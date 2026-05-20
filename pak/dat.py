@@ -94,16 +94,17 @@ _HEX_WAY_ATLAS_COLS: int = 8
 #   same 6 labels as start.
 #
 # Atlas: row 0 image (cols 0..2; cols 3..5 transparent), row 1 start
-# (cols 0..5), row 2 ramp (cols 0..5).  The hex-engine bridge schema
-# is unverified -- hex `bridge_writer.cc` is the authoritative key
-# source; tokens here are translated from upstream's square
-# [NS]/[EW] / [N]/[S]/[E]/[W] keys (see TODO.md -> "Hex bridge cell
-# coverage").
-HEX_BRIDGE_PIECE_ORDER: tuple[str, ...] = ("image", "start", "ramp")
+# (cols 0..5), row 2 ramp (cols 0..5), row 3 pillar (cols 0..2).
+# The hex-engine bridge schema is unverified -- hex `bridge_writer.cc`
+# is the authoritative key source; tokens here are translated from
+# upstream's square [NS]/[EW] / [N]/[S]/[E]/[W] keys (see TODO.md ->
+# "Hex bridge cell coverage").
+HEX_BRIDGE_PIECE_ORDER: tuple[str, ...] = ("image", "start", "ramp", "pillar")
 HEX_BRIDGE_PIECE_LABELS: dict[str, tuple[str, ...]] = {
-    "image": ("n_s", "ne_sw", "nw_se"),
-    "start": ("n", "ne", "se", "s", "sw", "nw"),
-    "ramp":  ("n", "ne", "se", "s", "sw", "nw"),
+    "image":  ("n_s", "ne_sw", "nw_se"),
+    "start":  ("n", "ne", "se", "s", "sw", "nw"),
+    "ramp":   ("n", "ne", "se", "s", "sw", "nw"),
+    "pillar": ("n_s", "ne_sw", "nw_se"),
 }
 HEX_BRIDGE_ATLAS_COLS: int = max(
     len(labels) for labels in HEX_BRIDGE_PIECE_LABELS.values()
@@ -377,16 +378,17 @@ class Bridge:
     icon: str | None = None
     cursor: str | None = None
 
-    # Bake-pipeline metadata.  Not emitted into the dat.  Three blend
+    # Bake-pipeline metadata.  Not emitted into the dat.  Four blend
     # paths -- one per piece kind -- because JH ships the plate-
-    # girder family as three separate `.blend` files
-    # (straight / end / slope); `bake_bridge` renders each through
+    # girder family as separate `.blend` files (straight / end /
+    # slope / pillar); `bake_bridge` renders each through
     # `bridge_hex_viewpoint(piece)` and stitches the per-piece atlases
-    # into one PNG.  All three are required; partial families need a
+    # into one PNG.  All four are required; partial families need a
     # `_bridge_piece_blends` change first.
-    blend_image: str | None = _bake_meta()
-    blend_start: str | None = _bake_meta()
-    blend_ramp: str | None = _bake_meta()
+    blend_image:  str | None = _bake_meta()
+    blend_start:  str | None = _bake_meta()
+    blend_ramp:   str | None = _bake_meta()
+    blend_pillar: str | None = _bake_meta()
     upstream_dat: str | None = _bake_meta()
 
 
@@ -948,9 +950,10 @@ def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
 # `BackImage[<axis>][<season>]` for image, `BackRamp[<dir>][<season>]`
 # for ramp.  Capitalisation matches upstream's plate-girder.dat.
 _HEX_BRIDGE_PIECE_KEYS: dict[str, str] = {
-    "image": "Image",
-    "start": "Start",
-    "ramp":  "Ramp",
+    "image":  "Image",
+    "start":  "Start",
+    "ramp":   "Ramp",
+    "pillar": "Pillar",
 }
 
 

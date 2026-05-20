@@ -257,19 +257,20 @@ def bake_way_main(spec: Way, file: str) -> Path:
 
 def _bridge_piece_blends(spec: Bridge) -> dict[str, str]:
     """Resolve `(piece, blend_path)` for every piece in
-    `HEX_BRIDGE_PIECE_ORDER`.  All three pieces are required today;
+    `HEX_BRIDGE_PIECE_ORDER`.  All four pieces are required today;
     partial coverage (span-only / start-only) isn't supported until
     a real asset needs it."""
     blends = {
-        "image": spec.blend_image,
-        "start": spec.blend_start,
-        "ramp":  spec.blend_ramp,
+        "image":  spec.blend_image,
+        "start":  spec.blend_start,
+        "ramp":   spec.blend_ramp,
+        "pillar": spec.blend_pillar,
     }
     missing = [p for p in HEX_BRIDGE_PIECE_ORDER if blends[p] is None]
     if missing:
         raise ValueError(
             f"Bridge SPEC missing piece blends: {missing} "
-            f"(need blend_image, blend_start, blend_ramp)"
+            f"(need blend_image, blend_start, blend_ramp, blend_pillar)"
         )
     return blends
 
@@ -324,10 +325,11 @@ def bake_bridge(spec: Bridge, *, basename: str, out_dir: Path) -> Path:
     dat.
 
     Per-piece renders (`<basename>__<piece>.png`) go through
-    `bridge_hex_viewpoint(piece)` -- 3 facings for the image span,
-    6 each for start / ramp endpoints -- then `_stitch_bridge_atlas`
-    composes them into `<out_dir>/<basename>.png` matching
-    `pak.dat.emit_bridge`'s row formula (image / start / ramp).
+    `bridge_hex_viewpoint(piece)` -- 3 facings for image / pillar
+    (axes), 6 each for start / ramp (edges) -- then
+    `_stitch_bridge_atlas` composes them into
+    `<out_dir>/<basename>.png` matching `pak.dat.emit_bridge`'s row
+    formula (image / start / ramp / pillar).
 
     See TODO.md -> "Hex bridge cell coverage" for the depth-clipped
     Back/Front, variant 2 + season 1, and engine-schema follow-ups
