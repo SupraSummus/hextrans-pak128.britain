@@ -192,8 +192,8 @@ def cell_metric(ours_rgba: np.ndarray, up_rgba: np.ndarray, *,
 
 @dataclass(frozen=True)
 class GridCell:
-    """One column of a 3-row diff grid: render-pair plus the masks used
-    for the XOR row.  `label` is drawn above the column."""
+    """One row of a diff grid (ours / upstream / XOR triple).  `label`
+    is rendered sideways in the left gutter alongside the row."""
     ours_rgba: np.ndarray
     up_rgba: np.ndarray
     our_mask: np.ndarray
@@ -236,6 +236,7 @@ def compose_grid(cells: list[GridCell], *,
     h = title_h + rows * (cell_px + pad) + pad + label_h
 
     bg = checker(cell_px)
+    white = Image.new("RGBA", (cell_px, cell_px), (255, 255, 255, 255))
     grid = Image.new("RGBA", (w, h), (245, 245, 245, 255))
     draw = ImageDraw.Draw(grid)
 
@@ -247,6 +248,9 @@ def compose_grid(cells: list[GridCell], *,
         x = gutter_w + pad + c * (cell_px + pad)
         draw.text((x + 4, header_y + 2), name, fill=(0, 0, 0, 255))
 
+    x_ours = gutter_w + pad
+    x_up = x_ours + cell_px + pad
+    x_xor = x_up + cell_px + pad
     for i, cell in enumerate(cells):
         y = title_h + label_h + pad + i * (cell_px + pad)
         strip = Image.new("RGBA", (cell_px, gutter_w), (245, 245, 245, 255))
@@ -262,18 +266,12 @@ def compose_grid(cells: list[GridCell], *,
                      & (up_arr[..., 2] == b))
             up_arr[keyed, 3] = 0
         up_img = Image.fromarray(up_arr, "RGBA")
-        x_ours = gutter_w + pad
-        x_up = x_ours + cell_px + pad
-        x_xor = x_up + cell_px + pad
+        xor_img = Image.fromarray(xor_image(cell.our_mask, cell.up_mask), "RGBA")
         grid.paste(Image.alpha_composite(bg, ours_img), (x_ours, y))
         grid.paste(Image.alpha_composite(bg, up_img), (x_up, y))
         # White backdrop for the XOR cell so red/blue/grey marks pop
         # off the grid's light-grey card background.
-        xor_rgba = Image.fromarray(
-            xor_image(cell.our_mask, cell.up_mask), "RGBA",
-        )
-        white = Image.new("RGBA", (cell_px, cell_px), (255, 255, 255, 255))
-        grid.paste(Image.alpha_composite(white, xor_rgba), (x_xor, y))
+        grid.paste(Image.alpha_composite(white, xor_img), (x_xor, y))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     grid.save(out_path)

@@ -159,51 +159,30 @@ def _start_or_ramp_cells(atlas, row_back, row_front, cols: dict[str, int]) -> di
 
 def _grid_and_metrics(rendered_dir, render_stem, upstream_cells, out_dir):
     import numpy as np
-    from PIL import Image, ImageDraw
+    from PIL import Image
 
-    from pak.diff import MAGIC_PINK, checker, drgb_intersection, iou, silhouette_mask, xor_image
+    from pak.diff import MAGIC_PINK, GridCell, cell_metric, compose_grid
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for facing, im in upstream_cells.items():
         im.save(out_dir / f"upstream_{facing}.png")
 
-    facings = list(upstream_cells.keys())
-    cols, rows = len(facings), 3
-    PAD, LH = 8, 18
-    W = cols * (CELL + PAD) + PAD
-    H = rows * (CELL + PAD) + PAD + LH
-    bg = checker(CELL)
-    grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
-    draw = ImageDraw.Draw(grid)
-
+    cells: list[GridCell] = []
     metrics: list[FacingMetric] = []
-    for i, v in enumerate(facings):
-        draw.text((PAD + i * (CELL + PAD) + CELL // 2 - 6, 2), v, fill=(0, 0, 0, 255))
-        ours = Image.open(rendered_dir / f"{render_stem}_{v}.png").convert("RGBA")
-        up = upstream_cells[v]
-        x = PAD + i * (CELL + PAD)
-        grid.paste(Image.alpha_composite(bg, ours), (x, LH + PAD))
-        grid.paste(Image.alpha_composite(bg, up), (x, LH + PAD + CELL + PAD))
-        a = np.asarray(ours, dtype=np.int16)
-        b = np.asarray(up, dtype=np.int16)
-        # Bridges: use the building/fence threshold (>0) -- upstream
-        # bridge cells are tightly anti-aliased and dropping AA edges
-        # at `>16` would inflate XOR drift on the silhouette ring.
-        am = silhouette_mask(a, alpha_threshold=0,
-                             magic_rgb=MAGIC_PINK)
-        bm = silhouette_mask(b, alpha_threshold=0,
-                             magic_rgb=MAGIC_PINK)
-        xor_px = int((am ^ bm).sum())
-        metrics.append(FacingMetric(
-            facing=v,
-            iou=iou(am, bm),
-            xor_px=xor_px,
-            drgb=drgb_intersection(a, b, am, bm),
-        ))
-        grid.paste(Image.fromarray(xor_image(am, bm), "RGBA"),
-                   (x, LH + PAD + 2 * (CELL + PAD)))
-
-    grid.save(out_dir / "grid.png")
+    for v, up_img in upstream_cells.items():
+        ours = np.asarray(Image.open(rendered_dir / f"{render_stem}_{v}.png")
+                          .convert("RGBA"))
+        up = np.asarray(up_img)
+        # `alpha_threshold=0`: upstream bridge cells are tightly
+        # anti-aliased; dropping AA edges at `>16` would inflate XOR
+        # drift on the silhouette ring.
+        m, om, um = cell_metric(ours, up, alpha_threshold=0,
+                                magic_rgb=MAGIC_PINK)
+        metrics.append(FacingMetric(facing=v, iou=m.iou,
+                                    xor_px=m.xor_px, drgb=m.drgb))
+        cells.append(GridCell(ours, up, om, um, v))
+    compose_grid(cells, out_path=out_dir / "grid.png",
+                 strip_magic_rgb=MAGIC_PINK)
     return metrics
 
 
