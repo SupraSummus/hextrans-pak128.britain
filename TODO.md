@@ -319,11 +319,8 @@ Closes the original "rotation sign" probe.
 
 **Open: in-engine eyeball (second pass).**  First load under
 hextrans surfaced the asymmetric-footprint centring bug (fixed
-above).  Need a second pass to confirm seams now align;
-remaining suspects if not: the missing per-tile hex pixel mask
-(see "hex-projection per-tile pixel mask" below — slices
-currently overlap on canvas, so adjacent cells will paint each
-other's pixels during the engine's z-ordered draw) and the
+above).  Need a second pass to confirm seams now align with the
+hex pixel mask in place; remaining suspect if not is the
 hex-grid-vs-engine `(layout & 1)` cell-axis convention (engine
 only paints cells along koord +x or +y in `gebaeude.cc`, so the
 6-rotation model under our hex policy lands four of its
@@ -368,21 +365,23 @@ on stonehenge (worst 0.31) since the splitter relies on the
 canvas-anchor convention.  Concrete next move = the offset gap
 entry below.
 
-**Open: hex-projection per-tile pixel mask.**  `sq_tile_pixel_mask`
-gives the strict ownership clip (L1-Voronoi ∩ hexagon) for the
-square dimetric calibration diff so multi-tile sprites partition the
-canvas without overdraw between neighbours; `building_hex_viewpoint`'s
-multi-tile path still emits `alpha_mask=None` on every slice.  Hex
-tiles are regular hexagons (not dimetric diamonds), so the lattice
-metric and ownership shape differ.  Concrete next move: derive the
-per-tile ownership shape by inverting `hex_tile_screen_offset` over
-the hex footprint (the convention should fall out of
-`koord.cc::neighbours[]` + `synth_geometry.h`'s hex extent), add
-`hex_tile_pixel_mask` next to `sq_tile_pixel_mask`, and plumb it
-through the multi-tile slice list.  Trigger: now hot — first
-in-engine inspection of the signalbox surfaced misrenders; this is
-one of the two outstanding suspects (the other is the cell-axis
-schema gap below).
+**Open: hex pixel-mask sprite-tall extension.**  `hex_tile_pixel_
+mask` clips each multi-tile slice to the projected hex shape
+(lower half of the slice, dy ∈ [-W/4, +W/4] from the ground
+anchor) -- the strict Voronoi cell of the hex lattice under the
+shear projection's world-Euclidean metric `dx² + 3·dy²`.  The
+dimetric analogue (`sq_tile_pixel_mask`) extends its diamond to
+sprite-tall so towers / gables on multi-tile buildings keep
+their upward silhouette; the hex version does not, so a tall
+multi-tile building would have its upper-half-sprite content
+clipped per slice.  Not bitten on the ported multi-tile catalog
+(signalbox, stonehenge — both low-profile).  Concrete next move
+when a tall multi-tile asset ports: extend the cell-shape upward
+above dy=-W/4.  Cleanest extension is probably "drop the
+NE-NW top edge, cap at sprite top with a horizontal line", giving
+each tile its own inscribed-rectangle column above the projected
+hex; mirrors the dimetric apex extension to (W/2, 0).  Soft
+trigger.
 
 **Open: hex multi-tile cell-axis schema mismatch.**  The engine's
 `building_desc_t::get_size(layout)` (`descriptor/building_desc.h`)
@@ -399,8 +398,8 @@ neighbour directions (and the `building_tile_desc_t::get_offset` /
 `get_tile_list` consumers in `gebaeude.cc`); on the pak side, lift
 `iter_building_cells` and `building_hex_viewpoint`'s slice
 generation to walk those 6 directions instead of the binary swap.
-Soft trigger — only matters once the pixel-mask gap is closed and
-the residual misalignment is the visible artefact.
+Soft trigger — only matters once the residual misalignment is
+the visible artefact in-engine.
 
 **Open: `Building.symmetry` schema knob — extension.**
 `Symmetry` enum ships `NONE` (default) and `CONTINUOUS`
