@@ -146,49 +146,19 @@ def _parse_backimage_entries(dat_path: Path, *, name: str | None = None):
     can't be parsed (e.g. `backimage[…]=-` for missing slots).
 
     `name` filters multi-object dats (citybuildings dats hold up to
-    seven buildings); unset takes the first object.
+    seven buildings); unset takes the first object.  Sub-atlas /
+    `frontimage` refs are ignored — the diff targets `backimage` only.
+    """
+    from pak.dat import find_object, iter_image_refs, parse
 
-    Image refs that come back as `<basename>.<row>.<col>` (no `.<season>`
-    suffix on the file stem) are addressed against the upstream PNG by
-    integer `(row, col)` cell coords; sub-atlases / `frontimage` are
-    ignored — the diff targets `backimage` only."""
-    import re
-
-    from pak.dat import parse
-
-    objects = parse(dat_path)
-    if not objects:
-        raise SystemExit(f"empty dat: {dat_path}")
-    if name is None:
-        obj = objects[0]
-    else:
-        wanted = name.lower()
-        match = next(
-            (o for o in objects
-             if any(k.lower() == "name" and v.strip().lower() == wanted
-                    for k, v in o)),
-            None,
-        )
-        if match is None:
-            raise SystemExit(f"no obj named {name!r} in {dat_path}")
-        obj = match
-    rec = re.compile(
-        r"^backimage"
-        r"\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]\[(\d+)\]$",
-    )
-    ref = re.compile(r"\.(\d+)\.(\d+)\s*$")
+    obj = find_object(parse(dat_path), name, source=dat_path)
     entries: list[dict] = []
-    for k, v in obj:
-        m = rec.match(k.lower())
-        if not m:
+    for ref in iter_image_refs(obj, family="backimage"):
+        if ref.row is None or len(ref.indices) != 6:
             continue
-        n = ref.search(v.strip())
-        if not n:
-            continue
-        l, y, x, h, p, s = (int(g) for g in m.groups())
-        row, col = int(n.group(1)), int(n.group(2))
+        l, y, x, h, p, s = (int(i) for i in ref.indices)
         entries.append(dict(l=l, y=y, x=x, h=h, phase=p, season=s,
-                            row=row, col=col))
+                            row=ref.row, col=ref.col))
     return entries
 
 

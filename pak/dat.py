@@ -784,6 +784,93 @@ def parse(path: Path) -> list[list[tuple[str, str]]]:
     return objects
 
 
+_IMAGE_FAMILY_RE = re.compile(
+    r"^(emptyimage|backimage|frontimage|freightimage|hasdriverimage"
+    r"|livery_image|image)((?:\[[^\]]*\])+)$",
+    re.I,
+)
+# Trailing `.<row>.<col>` with optional `,offsetx,offsety` per-image
+# screen offset (upstream uses these on vehicle refs).  Anchored at
+# end so multi-dot basenames like `images/fence-3` keep their dots.
+_IMAGE_ROWCOL_RE = re.compile(r"\.(\d+)\.(\d+)\s*(?:,[^\s]*)?$")
+
+
+@dataclass(frozen=True)
+class ImageRef:
+    """One `*image[...]=<value>` entry parsed from a dat object.
+
+    `basename`/`row`/`col` are `None` when the value doesn't carry a
+    `.<row>.<col>` atlas tail (e.g. `backimage[…]=-` placeholders).
+    """
+    family: str
+    indices: tuple[str, ...]
+    basename: str | None
+    row: int | None
+    col: int | None
+
+
+def find_object(
+    objects: list[list[tuple[str, str]]],
+    name: str | None = None,
+    *,
+    source: str | Path | None = None,
+) -> list[tuple[str, str]]:
+    """Return the entries of the object whose `Name=` matches `name`
+    case-insensitively.  When `name` is `None`, returns the first
+    object.  Raises `SystemExit` when no match; `source` (dat path
+    or label) sharpens the error message.
+
+    Multi-object upstream dats (citybuildings, train carriage
+    families, `tunnels.dat`) need the name filter so the right
+    block's entries come back.  Single-object dats can leave
+    `name` unset.
+    """
+    where = f" in {source}" if source else ""
+    if not objects:
+        raise SystemExit(f"empty dat{where}")
+    if name is None:
+        return objects[0]
+    wanted = name.lower()
+    for obj in objects:
+        if any(k.lower() == "name" and v.strip().lower() == wanted
+               for k, v in obj):
+            return obj
+    raise SystemExit(f"no obj named {name!r}{where}")
+
+
+def iter_image_refs(
+    obj: list[tuple[str, str]],
+    *,
+    family: str | None = None,
+):
+    """Yield `ImageRef` for every image-family entry in `obj`.
+
+    Recognised families: `image`, `emptyimage`, `backimage`,
+    `frontimage`, `freightimage`, `hasdriverimage`, `livery_image`.
+    Pass `family` (case-insensitive) to filter; `None` yields all.
+    Entries whose value doesn't match `<basename>.<row>.<col>` yield
+    an `ImageRef` with `basename`/`row`/`col` all `None`.
+    """
+    want = family.lower() if family else None
+    for key, value in obj:
+        m = _IMAGE_FAMILY_RE.match(key)
+        if m is None:
+            continue
+        fam = m.group(1).lower()
+        if want is not None and fam != want:
+            continue
+        indices = tuple(_INDEX_RE.findall(m.group(2)))
+        v = value.strip()
+        tail = _IMAGE_ROWCOL_RE.search(v)
+        if tail:
+            basename = v[:tail.start()]
+            row, col = int(tail.group(1)), int(tail.group(2))
+        else:
+            basename, row, col = None, None, None
+        yield ImageRef(family=fam, indices=indices,
+                       basename=basename, row=row, col=col)
+
+
 def _vehicle_block(vehicle: Vehicle, basename: str) -> list[str]:
     lines = ["obj=vehicle"]
     for name in _VEHICLE_FIELDS_SCALAR:

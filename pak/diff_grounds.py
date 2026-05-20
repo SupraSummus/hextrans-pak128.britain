@@ -31,7 +31,6 @@ per-asset floor when tightening the bar after a quality improvement.
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 import sys
 import tempfile
@@ -66,7 +65,7 @@ ASSETS: dict[str, dict] = {
 
 def parse_slope_to_cell(dat_path: Path,
                         obj_name: str | None = None) -> dict[int, tuple[int, int]]:
-    """`{slope_id: (row, col)}` from a ground dat's `Image[N]` entries
+    """`{slope_id: (row, col)}` from a ground dat's `Image[N][0]` entries
     pointing at `<stem>.<row>.<col>`.
 
     Upstream `landscape/grounds/TextureGrounds.dat` is multi-object —
@@ -74,24 +73,13 @@ def parse_slope_to_cell(dat_path: Path,
     `Image[0][0]` namespace.  `obj_name` selects which `Name=`
     declaration's entries to keep; when omitted, the first object's
     entries are returned."""
-    name_pat = re.compile(r"Name=(\S+)")
-    img_pat = re.compile(r"Image\[(\d+)\]\[0\]=\S+\.(\d+)\.(\d+)")
+    from pak.dat import find_object, iter_image_refs, parse
+    obj = find_object(parse(dat_path), obj_name, source=dat_path)
     out: dict[int, tuple[int, int]] = {}
-    current_name: str | None = None
-    target_name = obj_name
-    for line in dat_path.read_text(errors="replace").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
+    for ref in iter_image_refs(obj, family="image"):
+        if ref.row is None or len(ref.indices) != 2 or ref.indices[1] != "0":
             continue
-        m = name_pat.match(stripped)
-        if m:
-            current_name = m.group(1)
-            if target_name is None:
-                target_name = current_name
-            continue
-        m = img_pat.match(stripped)
-        if m and current_name == target_name:
-            out[int(m.group(1))] = (int(m.group(2)), int(m.group(3)))
+        out[int(ref.indices[0])] = (ref.row, ref.col)
     return out
 
 
