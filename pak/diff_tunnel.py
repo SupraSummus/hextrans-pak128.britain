@@ -76,11 +76,11 @@ def run(blend: str, upstream_dat: str, *, out_dir: Path, name: str,
     upstream dats; single-object dats can pass any of the names).
     """
     import numpy as np
-    from PIL import Image, ImageDraw
+    from PIL import Image
 
     from pak.bake import fetch_blend_by_source, run_render
     from pak.compose import compose_atlas
-    from pak.diff import MAGIC_PINK, checker, drgb_intersection, iou, silhouette_mask, xor_image
+    from pak.diff import MAGIC_PINK, GridCell, cell_metric, compose_grid
     from pak.fetch_pak import fetch as fetch_pak
     from pak.upstream import image_stem
     from pak.viewpoints import tunnel_square_viewpoint
@@ -99,37 +99,18 @@ def run(blend: str, upstream_dat: str, *, out_dir: Path, name: str,
     upstream_png = fetch_pak(f"{image_stem(upstream_dat, name=name)}.png")
     atlas = Image.open(upstream_png).convert("RGBA")
 
-    PAD, LH = 8, 18
-    cols = len(TUNNEL_FACING_LABELS)
-    rows = 3
-    W = cols * (CELL + PAD) + PAD
-    H = rows * (CELL + PAD) + PAD + LH
-    bg = checker(CELL)
-    grid = Image.new("RGBA", (W, H), (245, 245, 245, 255))
-    draw = ImageDraw.Draw(grid)
+    cells: list[GridCell] = []
     metrics: list[FacingMetric] = []
-    for i, facing in enumerate(TUNNEL_FACING_LABELS):
-        draw.text((PAD + i * (CELL + PAD) + CELL // 2 - 16, 2),
-                  f"Front[{facing}]", fill=(0, 0, 0, 255))
-        ours = _ours_cell(rendered, facing)
-        up = _upstream_front_cell(atlas, facing)
-        x = PAD + i * (CELL + PAD)
-        grid.paste(Image.alpha_composite(bg, ours), (x, LH + PAD))
-        grid.paste(Image.alpha_composite(bg, up),
-                   (x, LH + PAD + CELL + PAD))
-        a = np.asarray(ours, dtype=np.int16)
-        b = np.asarray(up, dtype=np.int16)
-        am = silhouette_mask(a, alpha_threshold=0, magic_rgb=MAGIC_PINK)
-        bm = silhouette_mask(b, alpha_threshold=0, magic_rgb=MAGIC_PINK)
-        metrics.append(FacingMetric(
-            facing=facing,
-            iou=iou(am, bm),
-            xor_px=int((am ^ bm).sum()),
-            drgb=drgb_intersection(a, b, am, bm),
-        ))
-        grid.paste(Image.fromarray(xor_image(am, bm), "RGBA"),
-                   (x, LH + PAD + 2 * (CELL + PAD)))
-    grid.save(out_dir / "grid.png")
+    for facing in TUNNEL_FACING_LABELS:
+        ours = np.asarray(_ours_cell(rendered, facing))
+        up = np.asarray(_upstream_front_cell(atlas, facing))
+        m, om, um = cell_metric(ours, up, alpha_threshold=0,
+                                magic_rgb=MAGIC_PINK)
+        metrics.append(FacingMetric(facing=facing, iou=m.iou,
+                                    xor_px=m.xor_px, drgb=m.drgb))
+        cells.append(GridCell(ours, up, om, um, f"Front[{facing}]"))
+    compose_grid(cells, out_path=out_dir / "grid.png",
+                 strip_magic_rgb=MAGIC_PINK)
     return metrics
 
 
