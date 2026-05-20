@@ -58,21 +58,19 @@ holding a non-hidden mesh when the per-collection filter yields
 zero meshes — Blender's renderer respects the collection flag
 regardless of our vertex transforms.
 
-**Per-cell rendering.**  `viewpoints.building_hex_viewpoint
+**Per-layout rendering.**  `viewpoints.building_hex_viewpoint
 (layouts, dims_x, dims_y)` returns a Viewpoint with one Facing
-per cell.  The Facing's `model_rot_z_deg = (360°/layouts) * l`
-rotates the model into the layout's orientation — `layouts=8`
-spaces facings at 45° (the same set `HEX_VIEWPOINT` uses for
-vehicles), `layouts=4` lands face-on at each cardinal.  Its
-`model_translation` is `-hex_tile_world_offset(qx=x, ry=y)`,
-the negative of the cell's world centre computed from the hex
-tile lattice (`HEX_KOORD_Q_WORLD` heads SE, `HEX_KOORD_R_WORLD`
-heads S; pinned to `display/hex_proj.h::hex_screen_dx/dy` at
-`ortho_scale = 2R`, `W = 128`).  The standard hex camera looking
-+Y at world origin then renders just that cell's content per
-pass.  No image-space slicing — each cell is its own 128 × 128
-EEVEE render (vs vehicles' Cycles; see "Lighting calibration"
-below).
+per `(layout, height)`.  The Facing's `model_rot_z_deg =
+(360°/layouts) * l` rotates the model into the layout's
+orientation — `layouts=8` spaces facings at 45° (the same set
+`HEX_VIEWPOINT` uses for vehicles), `layouts=4` lands face-on
+at each cardinal.  Each facing renders the whole footprint into
+a canvas sized to the hex screen lattice; per-cell sprites come
+from image-space slicing at `hex_tile_screen_offset(qx, ry)`,
+not per-cell model translation (artist-authored XYZ contract —
+the blend's per-tile anchor placement passes straight through
+to pixels).  EEVEE for buildings (vs vehicles' Cycles; see
+"Lighting calibration" below).
 
 **Z coefficient.**  `hex_proj_shear`'s z-row coefficient is
 `2·sin(60°) = √3` (and `PIXELS_PER_UNIT = W·sin(60°)`), pinned to

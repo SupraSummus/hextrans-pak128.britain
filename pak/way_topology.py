@@ -149,8 +149,8 @@ def for_edges_paths(edges):
 # Slope variants (axis-aligned ramps, half-stubs) reduce to a flat-tile
 # path + a chord-aligned linear z-tilt.  The bake driver derives them
 # from `between_edges_paths` / `stub_paths` + `HEX_OPPOSITE_EDGE` plus
-# `pak.hex_synth.engine_z_per_step(steps)` for the total chord rise —
-# kept out of this module so it stays painter-agnostic.
+# the engine's per-step world-z lift — kept out of this module so it
+# stays painter-agnostic.
 
 
 # ---- Composition helpers --------------------------------------------------
