@@ -942,16 +942,19 @@ so only the rear wall lands in Back.  Remaining gaps:
   extend `TUNNEL_FACING_LABELS` to include the suffixed variants
   and route `bake_tunnel` to render the extra facings.
 
-* **Calibration diff still whole-portal.**  `pak.diff_tunnel` runs
-  through `tunnel_square_viewpoint` (no clip) against upstream's
-  Front cells -- bbox / IoU still measure the unsplit silhouette.
-  Worth keeping for material/lighting calibration but the IoU
-  ceiling (~0.65) is now structural: upstream Front has rails
-  baked in, ours doesn't, and the depth split changes what's in
-  each row.  Concrete next move if a sharper calibration target
-  matters: render the calibration through `tunnel_hex_viewpoint`
-  too and compare row-0 Front against upstream Front with the rail
-  silhouette XOR-masked.
+* **S/E facings carry hillside-roof XOR vs upstream.**  `diff_tunnel`
+  stitches upstream's Back+Front per facing for an apples-to-apples
+  silhouette target, but stone-tunnel ships Back only for N/W; on S/E
+  we still diff our whole-portal silhouette against upstream's
+  Front-only cell, so the rear hillside-roof contributes XOR pixels
+  (worst IoU ~0.72 on those rows, ~0.81 on Back-present rows).
+  Concrete next move: add a Front-only mode to `tunnel_square_viewpoint`
+  (depth-clip at the tile-centre Y plane, mirroring
+  `tunnel_hex_viewpoint`'s Back/Front split) and diff Front-only
+  against upstream Front when the dat lacks Back.  Trigger: porting
+  brick-face-tunnel-portal, whose upstream ships Back on all four
+  cardinals and so exercises the Back+Front-when-both-present path
+  end-to-end.
 
 **Rewrite README.md.**  Current text is upstream's 2009 readme
 preserved verbatim with a disclaimer header — describes the

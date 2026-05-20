@@ -786,12 +786,24 @@ def bridge_square_viewpoint() -> Viewpoint:
     )
 
 
-_UPSTREAM_TUNNEL_CARDINAL = [
-    ("S",  45, ( 10.0, -10.0, 11.6)),
-    ("N", 135, ( 10.0,  10.0, 11.6)),
-    ("E", 225, (-10.0,  10.0, 11.6)),
-    ("W", 315, (-10.0, -10.0, 11.6)),
-]
+# Per-cardinal model rotation for the calibration viewpoint.  Upstream
+# pak128.Britain inherits pak64's **high-edge** tunnel-key convention:
+# the key names the edge the mountain rises against, so `FrontImage[S]`
+# is "mountain south of the portal, mouth points north out of the tile".
+# `tunnel_desc.cc:9-34` documents the engine's opposing low-edge
+# convention (key names the edge the mouth opens through, which
+# `_HEX_TUNNEL_MODEL_ROT_DEG` uses) and the N↔S, E↔W permutation
+# between them.  Calibration adopts upstream's convention so cells
+# diff label-to-label; the production hex bake stays low-edge.
+#
+# Mouth authored along +X in the blend, so Z-rotation = world angle of
+# the OPPOSITE direction's midpoint (S → mouth +Y north → 90°, etc.).
+_SQUARE_TUNNEL_MODEL_ROT_DEG: dict[str, float] = {
+    "S":  90.0,
+    "N": 270.0,
+    "E": 180.0,
+    "W":   0.0,
+}
 
 
 def tunnel_square_viewpoint() -> Viewpoint:
@@ -800,24 +812,24 @@ def tunnel_square_viewpoint() -> Viewpoint:
     bake uses `tunnel_hex_viewpoint()` to land on the engine's 6-edge
     schema (`hex_keys::edge_names`).
 
-    Same camera positions + strip set as `bridge_square_viewpoint`
-    (normal alignment, ortho 12, way-material strip).  Differs only
-    in per-facing labels: upstream's tunnel atlas labels cam_z
-    45/135/225/315 as S/N/E/W (CCW around the model), one position
-    rotated from the bridge `_UPSTREAM_NORMAL_CARDINAL`'s S/W/N/E.
-    Returned facings are in label order so `compose_atlas` lays cells
-    S, N, E, W left-to-right -- matches `diff_tunnel`'s column-by-
-    facing slicing.
+    Single fixed camera (normal alignment, `_UPSTREAM_NORMAL_CARDINAL
+    [0]` = cam_z 45 -- the same dimetric pak128.Britain authored its
+    square assets in) plus per-facing `model_rot_z_deg` from
+    `_SQUARE_TUNNEL_MODEL_ROT_DEG`.  The rotation table uses the
+    **high-edge** convention upstream's tunnel atlas was authored in,
+    not the low-edge convention `tunnel_hex_viewpoint` uses for the
+    production hex bake; see `_SQUARE_TUNNEL_MODEL_ROT_DEG`'s comment.
     """
+    _, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[0]
     facings = [
         Facing(
             label=label,
             camera_location=loc,
             camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
             sun_rotation_euler=sun_rotation_for_camera(cam_z),
-            model_rot_z_deg=0.0,
+            model_rot_z_deg=rot,
         )
-        for label, cam_z, loc in _UPSTREAM_TUNNEL_CARDINAL
+        for label, rot in _SQUARE_TUNNEL_MODEL_ROT_DEG.items()
     ]
     return Viewpoint(
         name="tunnel_square",
