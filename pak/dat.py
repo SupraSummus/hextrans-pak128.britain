@@ -291,8 +291,24 @@ class Way:
     # `mat.diffuse_color` before render — see
     # `docs/bake-way.md` -> "Per-way material recolour".
     blend: str | None = _bake_meta()
+    # Upstream repo to fetch `blend` from: "jp" (jamespetts) or "jh"
+    # (JamesHood; carries the integrated per-ribi viaduct families
+    # that jamespetts doesn't ship -- see CLAUDE.md "Cross-repo
+    # provenance").  Mirrors `Building.blend_source`.
+    blend_source: str = _bake_meta(default="jp")
     upstream_dat: str | None = _bake_meta()
     materials: dict[str, tuple[int, int, int]] | None = _bake_meta()
+    # Install the blend's authored camera instead of the projection
+    # default; JH viaduct blends author SW-looking-NE at
+    # ortho_scale=12 which doesn't match SQUARE_VIEWPOINT['S'].
+    inherit_camera: bool = _bake_meta(default=False)
+    # 1-to-1 cell render: skip chord composition entirely and alias
+    # one render as every cell of the atlas.  For JH full-cell
+    # viaduct blends where geometry already fills the cell;
+    # `full_cell_rotations` is a per-ribi world-Z rotation in
+    # degrees so an EW-authored blend can cover NS via `{"NS": 90}`.
+    full_cell: bool = _bake_meta(default=False)
+    full_cell_rotations: dict[str, float] | None = _bake_meta()
     # Comma-separated mesh names to drop on entry; default Sphere is
     # the upstream sun-direction visualizer.  Per-blend overrides go
     # here when the blend ships extra debug meshes that don't belong

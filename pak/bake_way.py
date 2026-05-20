@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import tempfile
 from pathlib import Path
@@ -42,6 +43,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from pak.fetch_blend import fetch as fetch_blend  # noqa: E402
+from pak.fetch_jh_blend import fetch as fetch_jh_blend  # noqa: E402
 from pak.hex_synth import DEFAULT_W  # noqa: E402
 from pak.render import configure_workbench, exit_edit_mode, strip_scene  # noqa: E402
 from pak.way_proj import PROJECTIONS, Projection  # noqa: E402
@@ -54,6 +56,8 @@ from pak.way_topology import (  # noqa: E402
     path_chord_unit,
 )
 
+_BLEND_FETCHERS = {"jp": fetch_blend, "jh": fetch_jh_blend}
+
 
 def _argv() -> list[str]:
     """Return the script args after `--` (Blender swallows everything before)."""
@@ -65,7 +69,19 @@ def _argv() -> list[str]:
 def _parse(args: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--blend", required=True,
-                   help="blend path within the blends repo, e.g. ways/ns-cssr.blend")
+                   help="blend path within the source repo, e.g. ways/ns-cssr.blend")
+    p.add_argument("--blend-source", choices=("jp", "jh"), default="jp",
+                   help="upstream repo source: 'jp' (jamespetts; the default, "
+                        "rail-grade atoms / piers / signals) or 'jh' "
+                        "(JamesHood; integrated per-ribi viaduct + bridge "
+                        "blend families).")
+    p.add_argument("--inherit-camera", action="store_true",
+                   help="install the blend's authored camera (location + "
+                        "rotation + ortho_scale) instead of the projection's "
+                        "default.  Use for JH per-ribi viaduct blends where "
+                        "the authored camera convention differs from "
+                        "SQUARE_VIEWPOINT['S'] (JH places the cam at SW "
+                        "looking NE; JP at SE looking NW).")
     p.add_argument("--name", required=True,
                    help="output basename (atlas <name>.png)")
     p.add_argument("--out", type=Path, required=True,
@@ -79,6 +95,25 @@ def _parse(args: list[str]) -> argparse.Namespace:
                    help="comma-separated mesh object names to strip "
                         "(default: 'Sphere'). All cameras + lights "
                         "are always stripped.")
+    p.add_argument("--full-cell", action="store_true",
+                   help="treat the blend as a single 1-to-1 full-cell "
+                        "render (no chord composition, no atom tiling, "
+                        "no clip planes, no cap bisect).  Renders the "
+                        "blend once with its templates at world origin "
+                        "and uses that single render for every cell of "
+                        "the atlas.  Use for JH per-ribi viaduct blends "
+                        "where the geometry already fills the cell.  "
+                        "Per-ribi blend dispatch (so each ribi gets its "
+                        "matching JH variant) is a follow-up; this "
+                        "flag just stops the replicate-along-chord bug "
+                        "for the single-blend case.")
+    p.add_argument("--full-cell-rotations", default="",
+                   help="full-cell only: JSON dict mapping ribi label "
+                        "to a world-Z rotation in degrees applied to "
+                        "the templates before render.  Lets one blend "
+                        "(authored EW) cover NS via {\"NS\": 90}.  "
+                        "Cells with the same rotation share a single "
+                        "render; unset cells default to 0.")
     p.add_argument("--only", default="",
                    help="comma-separated ribi labels to bake; the rest "
                         "are zero-filled.  Default: all entries.")
@@ -210,21 +245,35 @@ def _centre_y(atoms, *, y_min: float, y_max: float) -> None:
         obj.data.transform(m)
 
 
-def _install_camera_and_sun(projection: Projection) -> None:
+def _install_camera_and_sun(
+    projection: Projection,
+    *,
+    inherit_camera: tuple[tuple[float, float, float], tuple[float, float, float], float] | None = None,
+) -> None:
     """Add the projection's camera + sun.  For hex this is the engine
     camera looking +Y with ortho_scale = 2R; for square it's
     `SQUARE_VIEWPOINT['S']` verbatim (the upstream `vehicles`-alignment
     'S' facing — see `pak/viewpoints.py` for the cross-pakset
-    convention)."""
+    convention).
+
+    `inherit_camera`: when supplied, use the (location, rotation, ortho_scale)
+    captured from the blend's authored camera instead of the projection's
+    defaults.  The sun stays projection-driven."""
     scene = bpy.context.scene
 
     cam_data = bpy.data.cameras.new("_way_camera")
     cam_data.type = "ORTHO"
-    cam_data.ortho_scale = projection.ortho_scale
+    if inherit_camera is None:
+        cam_data.ortho_scale = projection.ortho_scale
+        location = projection.camera_location
+        rotation = projection.camera_rotation_euler
+    else:
+        location, rotation, ortho_scale = inherit_camera
+        cam_data.ortho_scale = ortho_scale
     cam_obj = bpy.data.objects.new("_way_camera_obj", cam_data)
     scene.collection.objects.link(cam_obj)
-    cam_obj.location = projection.camera_location
-    cam_obj.rotation_euler = projection.camera_rotation_euler
+    cam_obj.location = location
+    cam_obj.rotation_euler = rotation
     scene.camera = cam_obj
 
     sun_data = bpy.data.lights.new("_way_sun", type="SUN")
@@ -232,6 +281,25 @@ def _install_camera_and_sun(projection: Projection) -> None:
     sun_obj = bpy.data.objects.new("_way_sun_obj", sun_data)
     scene.collection.objects.link(sun_obj)
     sun_obj.rotation_euler = projection.sun_rotation_euler
+
+
+def _capture_blend_camera() -> tuple[tuple[float, float, float], tuple[float, float, float], float] | None:
+    """Snapshot the blend's first authored ORTHO camera as
+    `(location, rotation_euler, ortho_scale)` for later use by
+    `_install_camera_and_sun(inherit_camera=...)`.  Called before
+    `_strip_scene` removes it.  Returns None when the blend has no
+    ortho camera."""
+    for obj in bpy.context.scene.objects:
+        if obj.type != "CAMERA":
+            continue
+        if obj.data.type != "ORTHO":
+            continue
+        return (
+            tuple(obj.location),
+            tuple(obj.rotation_euler),
+            float(obj.data.ortho_scale),
+        )
+    return None
 
 
 def _configure_render(*, image_width: int) -> None:
@@ -477,11 +545,68 @@ def _bake_one_cell(templates, *, label: str, edges: tuple[str, ...],
         t.hide_render = False
 
 
+def _bake_chord_composition(
+    templates, projection: Projection, *,
+    name: str, cell_dir: Path, only: set[str], atom_step: float,
+) -> dict[str, Path]:
+    """Per-ribi chord composition: tile atoms along each ribi's
+    `StraightPath`s, bisect at chord caps + outline planes, render."""
+    cell_paths: dict[str, Path] = {}
+    for label, edges in projection.entries:
+        if only and label not in only:
+            continue
+        cell_path = cell_dir / f"{name}_{label}.png"
+        print(f"baking ribi {label} edges={edges} -> {cell_path.name}")
+        _bake_one_cell(templates, label=label, edges=edges,
+                       atom_step=atom_step, projection=projection,
+                       out_path=cell_path)
+        cell_paths[label] = cell_path
+    return cell_paths
+
+
+def _bake_full_cell(
+    templates, projection: Projection, *,
+    name: str, cell_dir: Path, only: set[str], rotations: dict,
+) -> dict[str, Path]:
+    """1-to-1 per-cell render: rotate the templates by `rotations[label]`
+    degrees around world-Z (default 0), render, undo the rotation.
+    Cells sharing a rotation share a single render.
+
+    The projection extrinsic is *not* applied: the JH viaduct blends
+    are authored for dimetric viewing through their own camera, and
+    `--inherit-camera` carries that frame intact.  Layering the hex
+    shear on top would double-project the geometry."""
+    base_by_rot: dict[float, Path] = {}
+    cell_paths: dict[str, Path] = {}
+    for label, _edges in projection.entries:
+        if only and label not in only:
+            continue
+        z_rot = float(rotations.get(label, 0))
+        base = base_by_rot.get(z_rot)
+        if base is None:
+            base = cell_dir / f"{name}_FULL_z{int(z_rot)}.png"
+            print(f"baking full-cell z={z_rot} -> {base.name}")
+            rot_m = mathutils.Matrix.Rotation(math.radians(z_rot), 4, "Z")
+            inverse = rot_m.inverted()
+            for t in templates:
+                t.data.transform(rot_m)
+            _render_to(base)
+            for t in templates:
+                t.data.transform(inverse)
+            base_by_rot[z_rot] = base
+        cell_path = cell_dir / f"{name}_{label}.png"
+        # Copy the bytes (rather than symlink) so the cell-dir works
+        # on filesystems without symlink support.
+        cell_path.write_bytes(base.read_bytes())
+        cell_paths[label] = cell_path
+    return cell_paths
+
+
 def main() -> None:
     args = _parse(_argv())
     projection = PROJECTIONS[args.projection]
 
-    blend_path = fetch_blend(args.blend)
+    blend_path = _BLEND_FETCHERS[args.blend_source](args.blend)
     print(f"loading blend: {blend_path}  projection={projection.name}")
     bpy.ops.wm.open_mainfile(filepath=str(blend_path))
 
@@ -491,6 +616,11 @@ def main() -> None:
     # carrier mesh would otherwise be stripped.
     if args.materials:
         _apply_material_overrides(json.loads(args.materials))
+
+    # 0a. Snapshot the authored camera before strip removes it -- needed
+    # when --inherit-camera asks us to use the blend's authoring frame
+    # instead of the projection default.
+    inherited_camera = _capture_blend_camera() if args.inherit_camera else None
 
     # 1. Strip authored cameras + lights, plus caller-named meshes.
     _strip_scene({n for n in args.strip.split(",") if n})
@@ -510,18 +640,26 @@ def main() -> None:
     # shorter than the chord in both intra-tile and blend coords —
     # upstream's NS cell visibly contains more sleepers than one
     # atom holds).
+    #
+    # Full-cell mode skips the atom-scale conversion: the JH viaduct
+    # blends are authored as one full cell at the blend's own
+    # `ortho_scale=12`, paired with `--inherit-camera` to render at
+    # that same ortho_scale.  Applying the hex 1/12 conversion would
+    # shrink the asset 12x while the inherited camera still views at
+    # ortho=12, leaving cells nearly empty.
     y_min, y_max = _y_extent(templates)
-    if projection.atom_scale is not None:
+    if projection.atom_scale is not None and not args.full_cell:
         _scale_uniform(templates, projection.atom_scale)
         y_min *= projection.atom_scale
         y_max *= projection.atom_scale
     _centre_y(templates, y_min=y_min, y_max=y_max)
     atom_step = y_max - y_min
+    scale_str = "none" if args.full_cell else projection.atom_scale
     print(f"rail Y extent [{y_min:.3f}, {y_max:.3f}] "
-          f"(scale={projection.atom_scale}, atom_step={atom_step:.3f})")
+          f"(scale={scale_str}, atom_step={atom_step:.3f})")
 
     # 4. Camera + sun + render config from the projection.
-    _install_camera_and_sun(projection)
+    _install_camera_and_sun(projection, inherit_camera=inherited_camera)
     _configure_render(image_width=DEFAULT_W)
 
     # 5. Per-ribi composition + render.  Each cell writes one PNG to
@@ -539,17 +677,19 @@ def main() -> None:
         cell_dir = Path(cell_dir_owned.name)
 
     only = {s for s in args.only.split(",") if s}
-    cell_paths: dict[str, Path] = {}
     try:
-        for label, edges in projection.entries:
-            if only and label not in only:
-                continue
-            cell_path = cell_dir / f"{args.name}_{label}.png"
-            print(f"baking ribi {label} edges={edges} -> {cell_path.name}")
-            _bake_one_cell(templates, label=label, edges=edges,
-                           atom_step=atom_step, projection=projection,
-                           out_path=cell_path)
-            cell_paths[label] = cell_path
+        if args.full_cell:
+            rotations = (json.loads(args.full_cell_rotations)
+                         if args.full_cell_rotations else {})
+            cell_paths = _bake_full_cell(
+                templates, projection, name=args.name,
+                cell_dir=cell_dir, only=only, rotations=rotations,
+            )
+        else:
+            cell_paths = _bake_chord_composition(
+                templates, projection, name=args.name,
+                cell_dir=cell_dir, only=only, atom_step=atom_step,
+            )
 
         # 6. Stitch the atlas.
         atlas_path = out_dir / f"{args.name}.png"

@@ -108,7 +108,12 @@ def _run_blender(
     for key, val in args.items():
         if val is None:
             continue
-        cmd.append(f"--{key}={val}")
+        if val is True:
+            # store_true-style flag with no value (e.g. argparse
+            # `action="store_true"` rejects the `--key=value` form).
+            cmd.append(f"--{key}")
+        else:
+            cmd.append(f"--{key}={val}")
     print("$", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
 
@@ -211,29 +216,30 @@ def bake_way(spec: Way, *, basename: str, out_dir: Path) -> Path:
     """Drive `pak/bake_way.py` to render `<out_dir>/<basename>.png`,
     then emit `<out_dir>/<basename>.dat` from `spec`.
 
-    `spec.blend` is the path inside the upstream blends repo (resolved
-    by `bake_way.py` via `fetch_blend.fetch`).  `spec.strip` is a
-    comma-separated list of mesh names to drop on entry — default
-    `Sphere` (the upstream sun-direction visualizer); per-blend
-    overrides go here when a blend ships extra debug meshes that
-    don't belong in the bake (see `CLAUDE.md` -> "Way-bake
-    architecture" -> Naming pitfall).  `spec.materials` (if supplied)
-    recolours the blend's named materials in-place — the rail-grade
-    catalog renders the same blend with per-variant `materials=`
-    dicts on each `ways/<rail>.py` SPEC; this driver serialises the
-    dict to JSON on the `--materials` CLI arg, the Blender
-    subprocess parses it back (tuples come through as lists; the
-    override applier just unpacks three-element sequences).
-    Returns the dat path.
+    `spec.blend` resolves against `spec.blend_source` ("jp" jamespetts
+    or "jh" JamesHood).  `spec.materials` recolours named materials
+    in-place -- the rail-grade catalog renders the same blend with
+    per-variant `materials=` dicts on each `ways/<rail>.py` SPEC, and
+    the viaduct-elevated family shares one blend across brick vs.
+    masonry vs. ... variants.  `spec.full_cell` switches to 1-to-1
+    blend renders (skipping chord composition entirely); see
+    `docs/bake-way.md` -> "Full-cell mode".  Returns the dat path.
     """
     if spec.blend is None:
         raise ValueError(f"{basename}: SPEC missing blend=")
     args: dict[str, object] = {
         "blend": spec.blend,
+        "blend-source": spec.blend_source,
         "name": basename,
         "out": out_dir,
         "strip": spec.strip,
     }
+    if spec.inherit_camera:
+        args["inherit-camera"] = True
+    if spec.full_cell:
+        args["full-cell"] = True
+    if spec.full_cell_rotations:
+        args["full-cell-rotations"] = json.dumps(spec.full_cell_rotations)
     if spec.materials:
         args["materials"] = json.dumps(spec.materials)
     _run_blender(script=_BAKE_WAY_SCRIPT, args=args)
