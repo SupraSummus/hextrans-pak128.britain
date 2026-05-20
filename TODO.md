@@ -908,21 +908,34 @@ through it first (smallest blast radius -- known same engine /
 viewpoint, just different blends).  Soft trigger; the per-asset
 overhead is real but small.
 
-**Tunnel hex-engine schema not yet wired.**  `Tunnel` SPEC carries
-gameplay scalars + the 4-cardinal `FrontImage[F][0]=` refs only;
-`UndergroundImage[ribi]` (per-ribi tunnel interior cells),
-`UndergroundImageUp[slope]` (per-slope variants), season-1 snow
-refs, and the multi-portal `[Wl][El][Nl][Sl]` doubles aren't
-emitted.  Calibration is "whole portal vs upstream Front-half" so
-IoUs cap around 0.65-0.74 by construction.  Concrete next moves
-once a real engine load is feasible: (a) check
-`hextrans/src/simutrans/descriptor/writer/tunnel_writer.cc` to see
-which keys hex actually reads; (b) bake an underground-cell atlas
-analogous to the way bake's ribi atlas; (c) for the visual gap,
-try translating the model down in Blender or switching to vehicles
-alignment to shrink our silhouette closer to upstream Front's
-~5500 px footprint.  Front-only with Back empty is fine for first
-in-engine eyeball -- trains pass behind the portal arch.
+**Hex tunnel: bake pipeline shipped, deferred features.**
+`pak.dat.Tunnel` + `emit_tunnel`, `tunnel_hex_viewpoint`, and
+`ways/rail_tunnel_stone.py` exercise the bake end-to-end (single-row
+6-cell atlas, hex edges).  Dat key tokens are read off
+`tunnel_writer.cc`; per-edge rotation table is visually verified
+(arrow-annotated probe atlases against `frontimage[<edge>]` =
+"mouth faces <edge>" convention).  Remaining gaps:
+
+* **Snow `[1]` not emitted.**  `tunnel_writer.cc` reads
+  `frontimage[<edge>][1]` for snow.  Concrete next move when a snow
+  climate ports: add `blend_winter=` to `Tunnel` like `Building`,
+  bake a second pass, route `emit_tunnel` to emit `[1]` cells.
+
+* **Multi-portal `l/r/m` suffixes not emitted.**  Writer iterates
+  `j < number_portals` over `{"", "l", "r", "m"}` for broad
+  4-portal tunnels.  None of the 19 tunnels in `ways/tunnels.dat`
+  + `ways/tube-tunnel.dat` are 4-portal in upstream's rendered
+  PNGs (all ship single Front cells), so this may not need to
+  land at all.  Concrete next move when a 4-portal asset surfaces:
+  extend `TUNNEL_FACING_LABELS` to include the suffixed variants
+  and route `bake_tunnel` to render the extra facings.
+
+* **Back/Front depth-clip skipped.**  Whole-portal silhouette
+  emits as Front; Back is empty.  Trains pass behind the entire
+  portal arch rather than between Back/Front planes (loses the
+  upstream effect where lower masonry paints over the train).
+  Same depth-clip mechanism as "Hex bridge: bake pipeline
+  shipped" -- lands when bridges do.
 
 **Rewrite README.md.**  Current text is upstream's 2009 readme
 preserved verbatim with a disclaimer header — describes the

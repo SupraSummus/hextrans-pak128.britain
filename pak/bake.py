@@ -357,24 +357,23 @@ def bake_bridge_main(spec: Bridge, file: str) -> Path:
 
 
 def bake_tunnel(spec: Tunnel, *, basename: str, out_dir: Path) -> Path:
-    """Fetch the portal blend, render 4 cardinal facings through
-    `tunnel_square_viewpoint()`, compose to a single-row 4-cell atlas,
+    """Fetch the portal blend, render 6 hex-edge facings through
+    `tunnel_hex_viewpoint()`, compose to a single-row 6-cell atlas,
     emit the dat.
 
-    Per the port decision (TODO.md -> "Tunnel portal Back/Front
-    authoring is non-standard"), the whole portal is emitted as
-    `FrontImage[F][0]=` for each facing; `BackImage[F][0]` is left
-    empty so the engine paints the portal silhouette over the train.
+    Whole-portal silhouette is emitted as `frontimage[<edge>][0]=` for
+    each facing; `backimage[<edge>][0]` is left empty so the engine
+    paints the portal silhouette over the train.
 
     Returns the dat path.
     """
     from pak.compose import compose_atlas
-    from pak.viewpoints import tunnel_square_viewpoint
+    from pak.viewpoints import tunnel_hex_viewpoint
 
     if spec.blend is None:
         raise ValueError(f"Tunnel SPEC {spec.name!r} missing blend=")
     blend_path = fetch_blend_by_source(spec.blend, spec.blend_source)
-    vp = tunnel_square_viewpoint()
+    vp = tunnel_hex_viewpoint()
     run_render(blend=blend_path, viewpoint=vp, name=basename, out_dir=out_dir)
     compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=basename)
 

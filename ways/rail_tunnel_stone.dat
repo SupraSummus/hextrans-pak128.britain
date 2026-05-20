@@ -12,8 +12,10 @@ cost=2200000
 maintenance=3000
 icon=./rail_tunnel_stone.0.0
 cursor=./rail_tunnel_stone.0.0
-FrontImage[S][0]=./rail_tunnel_stone.0.0
-FrontImage[N][0]=./rail_tunnel_stone.0.1
-FrontImage[E][0]=./rail_tunnel_stone.0.2
-FrontImage[W][0]=./rail_tunnel_stone.0.3
+frontimage[n][0]=./rail_tunnel_stone.0.0
+frontimage[ne][0]=./rail_tunnel_stone.0.1
+frontimage[se][0]=./rail_tunnel_stone.0.2
+frontimage[s][0]=./rail_tunnel_stone.0.3
+frontimage[sw][0]=./rail_tunnel_stone.0.4
+frontimage[nw][0]=./rail_tunnel_stone.0.5
 ----------

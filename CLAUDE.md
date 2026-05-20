@@ -991,16 +991,18 @@ EEVEE backend.  See [`docs/bake-tree.md`](docs/bake-tree.md).
 ## Tunnel-bake architecture
 
 Tunnels (`Obj=tunnel`) port via a `Tunnel` SPEC +
-`bake_tunnel_main(SPEC, __file__)` — 4 cardinal portal facings
-rendered through `tunnel_square_viewpoint()` (normal alignment,
-ortho 12, way-material strip) into a single-row 4-cell atlas.
-Per-facing labels are S/N/E/W at cam_z 45/135/225/315 — one position
-rotated from the bridge convention.  `emit_tunnel` ships
-`FrontImage[F][0]=` only; Back is intentionally empty so the portal
-silhouette paints over the train as it enters the tile.
-`UndergroundImage[ribi]` / `UndergroundImageUp[slope]` / season-1
-snow / multi-portal `[Wl][Nl][El][Sl]` doubles are deferred — see
-TODO.md → "Tunnel hex-engine schema not yet wired".
+`bake_tunnel_main(SPEC, __file__)` — 6 hex-edge portal facings
+rendered through `tunnel_hex_viewpoint()` into a single-row 6-cell
+atlas.  Facing labels are `n, ne, se, s, sw, nw` matching
+`hex_keys::edge_names` in the engine writer; `emit_tunnel` ships
+lowercase `frontimage[<edge>][0]=` only.  Per-edge model rotation
+follows the `frontimage[<edge>]` = "mouth faces direction <edge>"
+convention (the direction a train exits the tunnel) -- rotation
+table is just `θ(e) = world_angle_of(e)`, mirror of bridge
+`start`'s cycle.  Calibration via `tunnel_square_viewpoint` +
+`diff_tunnel` against upstream's 4-cardinal PNG; IoUs cap ~0.74 by
+construction (whole-portal silhouette vs upstream Front-half) so
+`FAIL_IOU=0.50`.
 
 ## CI
 

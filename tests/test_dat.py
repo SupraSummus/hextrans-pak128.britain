@@ -418,10 +418,21 @@ class TestEmitTunnel(unittest.TestCase):
     def test_emits_front_only_no_back(self):
         text = self._emit(Tunnel(name="A", waytype="track"))
         for col, facing in enumerate(TUNNEL_FACING_LABELS):
-            self.assertIn(f"FrontImage[{facing}][0]=./x.0.{col}\n", text)
-        # No BackImage refs — Back is intentionally empty (the engine
+            self.assertIn(f"frontimage[{facing}][0]=./x.0.{col}\n", text)
+        # No backimage refs — Back is intentionally empty (the engine
         # paints the whole portal over the train).
-        self.assertNotIn("BackImage", text)
+        self.assertNotIn("backimage", text)
+
+    def test_emits_axle_load_and_way_xref(self):
+        # Both are hex-schema fields read by `tunnel_writer.cc`:
+        # `axle_load` gates which trains can use the tunnel, `way=`
+        # cross-references a Way obj built under the tunnel cell.
+        text = self._emit(Tunnel(
+            name="X", waytype="track",
+            axle_load=22, way="severn-tunnel-track",
+        ))
+        self.assertIn("axle_load=22\n", text)
+        self.assertIn("way=severn-tunnel-track\n", text)
 
     def test_emits_set_scalars_in_field_order(self):
         text = self._emit(Tunnel(

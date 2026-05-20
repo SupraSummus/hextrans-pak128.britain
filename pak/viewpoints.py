@@ -810,7 +810,9 @@ _UPSTREAM_TUNNEL_CARDINAL = [
 
 def tunnel_square_viewpoint() -> Viewpoint:
     """4-cardinal Viewpoint for JH tunnel portal blends (e.g.
-    `ways/stone-tunnel.blend`).
+    `ways/stone-tunnel.blend`).  Calibration-only -- the production
+    bake uses `tunnel_hex_viewpoint()` to land on the engine's 6-edge
+    schema (`hex_keys::edge_names`).
 
     Same camera positions + strip set as `bridge_square_viewpoint`
     (normal alignment, ortho 12, way-material strip).  Differs only
@@ -818,8 +820,8 @@ def tunnel_square_viewpoint() -> Viewpoint:
     45/135/225/315 as S/N/E/W (CCW around the model), one position
     rotated from the bridge `_UPSTREAM_NORMAL_CARDINAL`'s S/W/N/E.
     Returned facings are in label order so `compose_atlas` lays cells
-    S, N, E, W left-to-right -- matches `emit_tunnel`'s column index
-    convention.
+    S, N, E, W left-to-right -- matches `diff_tunnel`'s column-by-
+    facing slicing.
     """
     facings = [
         Facing(
@@ -839,6 +841,72 @@ def tunnel_square_viewpoint() -> Viewpoint:
         fit_matrix=_identity_matrix,
         extrinsic=None,
         facings=facings,
+        strip_meshes=("Sphere", "Plane.005", "Plane.007"),
+        strip_material_substrings=(
+            "Rail", "Chair", "Wood", "Ballast", "Tarmac",
+        ),
+    )
+
+
+# Per-hex-edge model rotation for tunnel portals.  The convention
+# (visually confirmed against arrow-annotated probe atlases) is
+#
+#     frontimage[<edge>] = portal whose mouth faces direction <edge>
+#
+# i.e. the direction a train would exit the tunnel.  Mouth in the JH
+# stone-tunnel blend is authored along +X, so the Z rotation needed
+# to aim it at edge `e` is the world angle of `e`'s midpoint:
+#
+#     theta(n) = 90, theta(ne) = 30, theta(se) = 330,
+#     theta(s) = 270, theta(sw) = 210, theta(nw) = 150
+#
+# This is the mirror of the bridge `start` cycle (which steps +60deg
+# CW around the world); the bridge convention rotates the model so
+# its abutment OPENS INWARD (toward tile centre) at the named edge,
+# 180deg from where the tunnel's mouth points.  Tunnels don't share
+# that table by accident -- the geometric meaning is different.
+_HEX_TUNNEL_MODEL_ROT_DEG: dict[str, float] = {
+    "n":   90.0,
+    "ne":  30.0,
+    "se": 330.0,
+    "s":  270.0,
+    "sw": 210.0,
+    "nw": 150.0,
+}
+
+
+def tunnel_hex_viewpoint() -> Viewpoint:
+    """Hex Viewpoint for a JH tunnel portal blend (`ways/stone-tunnel.
+    blend` and friends).  Renders 6 facings, one per hex edge in
+    `TUNNEL_FACING_LABELS` order, so the bake produces a single-row
+    6-cell atlas keyable as `frontimage[<edge>][0]=<basename>.0.<col>`.
+
+    Camera / sun / projection match the bridge piece viewpoints; the
+    per-edge model rotation differs (see `_HEX_TUNNEL_MODEL_ROT_DEG`
+    above for the "mouth faces <edge>" convention).  Way materials
+    and JH backdrop planes are stripped -- the engine paints the
+    way separately.  EEVEE rasteriser for byte-stable rebake under
+    CI.
+    """
+    from pak.dat import TUNNEL_FACING_LABELS
+    return Viewpoint(
+        name="tunnel_hex",
+        image_width=DEFAULT_W,
+        camera_ortho=_pinned(2.0 * HEX_TILE_RADIUS),
+        sun_energy=_authored_sun(_BI_TO_EEVEE_SUN_SCALE),
+        fit_matrix=_hex_fit(),
+        extrinsic=hex_proj_shear(),
+        facings=[
+            Facing(
+                label=label,
+                camera_location=_HEX_CAM_LOC,
+                camera_rotation_euler=_HEX_CAM_ROT,
+                sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
+                model_rot_z_deg=_HEX_TUNNEL_MODEL_ROT_DEG[label],
+            )
+            for label in TUNNEL_FACING_LABELS
+        ],
+        engine=EEVEE,
         strip_meshes=("Sphere", "Plane.005", "Plane.007"),
         strip_material_substrings=(
             "Rail", "Chair", "Wood", "Ballast", "Tarmac",
