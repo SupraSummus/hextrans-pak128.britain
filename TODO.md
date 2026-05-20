@@ -881,6 +881,22 @@ through it first (smallest blast radius -- known same engine /
 viewpoint, just different blends).  Soft trigger; the per-asset
 overhead is real but small.
 
+**Tunnel hex-engine schema not yet wired.**  `Tunnel` SPEC carries
+gameplay scalars + the 4-cardinal `FrontImage[F][0]=` refs only;
+`UndergroundImage[ribi]` (per-ribi tunnel interior cells),
+`UndergroundImageUp[slope]` (per-slope variants), season-1 snow
+refs, and the multi-portal `[Wl][El][Nl][Sl]` doubles aren't
+emitted.  Calibration is "whole portal vs upstream Front-half" so
+IoUs cap around 0.65-0.74 by construction.  Concrete next moves
+once a real engine load is feasible: (a) check
+`hextrans/src/simutrans/descriptor/writer/tunnel_writer.cc` to see
+which keys hex actually reads; (b) bake an underground-cell atlas
+analogous to the way bake's ribi atlas; (c) for the visual gap,
+try translating the model down in Blender or switching to vehicles
+alignment to shrink our silhouette closer to upstream Front's
+~5500 px footprint.  Front-only with Back empty is fine for first
+in-engine eyeball -- trains pass behind the portal arch.
+
 **Rewrite README.md.**  Current text is upstream's 2009 readme
 preserved verbatim with a disclaimer header — describes the
 vanilla Simutrans pakset, not the hex port.  Concrete next move:

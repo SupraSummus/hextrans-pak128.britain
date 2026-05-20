@@ -800,6 +800,52 @@ def bridge_square_viewpoint() -> Viewpoint:
     )
 
 
+_UPSTREAM_TUNNEL_CARDINAL = [
+    ("S",  45, ( 10.0, -10.0, 11.6)),
+    ("N", 135, ( 10.0,  10.0, 11.6)),
+    ("E", 225, (-10.0,  10.0, 11.6)),
+    ("W", 315, (-10.0, -10.0, 11.6)),
+]
+
+
+def tunnel_square_viewpoint() -> Viewpoint:
+    """4-cardinal Viewpoint for JH tunnel portal blends (e.g.
+    `ways/stone-tunnel.blend`).
+
+    Same camera positions + strip set as `bridge_square_viewpoint`
+    (normal alignment, ortho 12, way-material strip).  Differs only
+    in per-facing labels: upstream's tunnel atlas labels cam_z
+    45/135/225/315 as S/N/E/W (CCW around the model), one position
+    rotated from the bridge `_UPSTREAM_NORMAL_CARDINAL`'s S/W/N/E.
+    Returned facings are in label order so `compose_atlas` lays cells
+    S, N, E, W left-to-right -- matches `emit_tunnel`'s column index
+    convention.
+    """
+    facings = [
+        Facing(
+            label=label,
+            camera_location=loc,
+            camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
+            sun_rotation_euler=sun_rotation_for_camera(cam_z),
+            model_rot_z_deg=0.0,
+        )
+        for label, cam_z, loc in _UPSTREAM_TUNNEL_CARDINAL
+    ]
+    return Viewpoint(
+        name="tunnel_square",
+        image_width=DEFAULT_W,
+        camera_ortho=_authored_ortho,
+        sun_energy=_pinned(_SUN_ENERGY),
+        fit_matrix=_identity_matrix,
+        extrinsic=None,
+        facings=facings,
+        strip_meshes=("Sphere", "Plane.005", "Plane.007"),
+        strip_material_substrings=(
+            "Rail", "Chair", "Wood", "Ballast", "Tarmac",
+        ),
+    )
+
+
 def fence_square_viewpoint() -> Viewpoint:
     """4-cardinal Viewpoint for `grounds/fence.blend` rendered against
     the upstream square cells (`pak/diff_fence.py`).

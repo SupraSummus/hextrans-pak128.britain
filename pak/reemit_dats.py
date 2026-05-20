@@ -26,11 +26,13 @@ from pak.dat import (
     Bridge,
     Building,
     Tree,
+    Tunnel,
     Vehicle,
     Way,
     emit_bridge,
     emit_building,
     emit_trees,
+    emit_tunnel,
     emit_vehicles,
     emit_way,
 )
@@ -55,6 +57,8 @@ def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
         return emit_way(specs[0], out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Bridge):
         return emit_bridge(specs[0], out_dir=out_dir, basename=basename)
+    if len(specs) == 1 and isinstance(specs[0], Tunnel):
+        return emit_tunnel(specs[0], out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Building):
         spec = specs[0]
         return emit_building(

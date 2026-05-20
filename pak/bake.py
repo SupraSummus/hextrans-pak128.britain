@@ -34,11 +34,13 @@ from pak.dat import (
     Building,
     Symmetry,
     Tree,
+    Tunnel,
     Vehicle,
     Way,
     emit_bridge,
     emit_building,
     emit_trees,
+    emit_tunnel,
     emit_vehicles,
     emit_way,
 )
@@ -348,10 +350,43 @@ def bake_bridge_main(spec: Bridge, file: str) -> Path:
     return bake_bridge(spec, basename=path.stem, out_dir=path.parent)
 
 
+def bake_tunnel(spec: Tunnel, *, basename: str, out_dir: Path) -> Path:
+    """Fetch the portal blend, render 4 cardinal facings through
+    `tunnel_square_viewpoint()`, compose to a single-row 4-cell atlas,
+    emit the dat.
+
+    Per the port decision (TODO.md -> "Tunnel portal Back/Front
+    authoring is non-standard"), the whole portal is emitted as
+    `FrontImage[F][0]=` for each facing; `BackImage[F][0]` is left
+    empty so the engine paints the portal silhouette over the train.
+
+    Returns the dat path.
+    """
+    from pak.compose import compose_atlas
+    from pak.viewpoints import tunnel_square_viewpoint
+
+    if spec.blend is None:
+        raise ValueError(f"Tunnel SPEC {spec.name!r} missing blend=")
+    blend_path = fetch_blend_by_source(spec.blend, spec.blend_source)
+    vp = tunnel_square_viewpoint()
+    run_render(blend=blend_path, viewpoint=vp, name=basename, out_dir=out_dir)
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=basename)
+
+    out_dat = emit_tunnel(spec, out_dir=out_dir, basename=basename)
+    _print_wrote(out_dat)
+    return out_dat
+
+
+def bake_tunnel_main(spec: Tunnel, file: str) -> Path:
+    """`bake_tunnel` keyed off the calling script's `__file__`."""
+    path = Path(file).resolve()
+    return bake_tunnel(spec, basename=path.stem, out_dir=path.parent)
+
+
 _BLEND_FETCHERS = {"jp": fetch, "jh": fetch_jh}
 
 
-def _fetch_blend(blend: str, source: str) -> Path:
+def fetch_blend_by_source(blend: str, source: str) -> Path:
     """Resolve `blend` against the upstream repo named by `source`.
     `"jp"` -> jamespetts (`fetch_blend`), `"jh"` -> JamesHood
     (`fetch_jh_blend`).  Building/attraction blends typically live in
@@ -419,7 +454,7 @@ def _render_building_season(
 ) -> Path:
     return bake_building_atlas(
         viewpoint_kind="hex_building",
-        blend_path=_fetch_blend(blend, spec.blend_source),
+        blend_path=fetch_blend_by_source(blend, spec.blend_source),
         name=name, out_dir=out_dir, layouts=layouts,
         dims_x=spec.dims_x, dims_y=spec.dims_y, heights=spec.heights,
         units_per_tile=spec.blend_units_per_tile,

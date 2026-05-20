@@ -124,6 +124,22 @@ def drgb_intersection(rgba_a: np.ndarray, rgba_b: np.ndarray,
     return float(np.abs(a - b).mean())
 
 
+def key_magic_pink_to_alpha(im):
+    """Return a copy of `im` (PIL RGBA Image) with pixels matching
+    `MAGIC_PINK` re-keyed to alpha=0.  Upstream pak cells encode
+    transparency via the magic-pink RGB rather than alpha (every pixel
+    ships with alpha=255), so PIL's alpha-compositing operators
+    overwrite Back wholesale with Front-shaped transparent rectangles
+    unless this conversion runs first."""
+    from PIL import Image
+    a = np.array(im.convert("RGBA"))
+    keyed = ((a[..., 0] == MAGIC_PINK[0])
+             & (a[..., 1] == MAGIC_PINK[1])
+             & (a[..., 2] == MAGIC_PINK[2]))
+    a[..., 3] = np.where(keyed, 0, a[..., 3]).astype(np.uint8)
+    return Image.fromarray(a, "RGBA")
+
+
 def xor_image(mask_a: np.ndarray, mask_b: np.ndarray) -> np.ndarray:
     """Three-colour silhouette XOR visualisation as an (H, W, 4) RGBA
     array.  Red = only-a, blue = only-b, grey = intersection,

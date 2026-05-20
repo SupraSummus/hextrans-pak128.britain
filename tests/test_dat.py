@@ -19,16 +19,19 @@ from pak.dat import (
     HEX_BRIDGE_PIECE_LABELS,
     HEX_BRIDGE_PIECE_ORDER,
     TREE_AGE_COUNT,
+    TUNNEL_FACING_LABELS,
     Bridge,
     Building,
     Symmetry,
     Tree,
+    Tunnel,
     Vehicle,
     Way,
     building_footprint_centroid,
     emit_bridge,
     emit_building,
     emit_trees,
+    emit_tunnel,
     emit_vehicles,
     emit_way,
     iter_building_cells,
@@ -391,6 +394,46 @@ class TestEmitBridge(unittest.TestCase):
 
     def test_icon_and_cursor_overrides_keep_spec_value(self):
         text = self._emit(Bridge(name="A", waytype="track",
+                                 icon="./custom.9.9", cursor="./other.8.8"))
+        self.assertIn("icon=./custom.9.9", text)
+        self.assertIn("cursor=./other.8.8", text)
+
+
+class TestEmitTunnel(unittest.TestCase):
+    def _emit(self, t: Tunnel) -> str:
+        with TemporaryDirectory() as d:
+            emit_tunnel(t, out_dir=Path(d), basename="x")
+            return (Path(d) / "x.dat").read_text()
+
+    def test_minimal_skips_none(self):
+        text = self._emit(Tunnel(name="A", waytype="track"))
+        lines = text.splitlines()
+        self.assertEqual(lines[0], "obj=tunnel")
+        self.assertEqual(lines[1], "name=A")
+        self.assertEqual(lines[2], "waytype=track")
+        # icon/cursor fill in at column 0 when SPEC leaves them None.
+        self.assertIn("icon=./x.0.0", text)
+        self.assertIn("cursor=./x.0.0", text)
+
+    def test_emits_front_only_no_back(self):
+        text = self._emit(Tunnel(name="A", waytype="track"))
+        for col, facing in enumerate(TUNNEL_FACING_LABELS):
+            self.assertIn(f"FrontImage[{facing}][0]=./x.0.{col}\n", text)
+        # No BackImage refs — Back is intentionally empty (the engine
+        # paints the whole portal over the train).
+        self.assertNotIn("BackImage", text)
+
+    def test_emits_set_scalars_in_field_order(self):
+        text = self._emit(Tunnel(
+            name="X", waytype="track",
+            intro_year=1829, topspeed=80, cost=2200000,
+        ))
+        prefixes = [line.split("=")[0] for line in text.splitlines()[:6]]
+        self.assertEqual(prefixes, ["obj", "name", "waytype",
+                                    "intro_year", "topspeed", "cost"])
+
+    def test_icon_and_cursor_overrides_keep_spec_value(self):
+        text = self._emit(Tunnel(name="A", waytype="track",
                                  icon="./custom.9.9", cursor="./other.8.8"))
         self.assertIn("icon=./custom.9.9", text)
         self.assertIn("cursor=./other.8.8", text)
