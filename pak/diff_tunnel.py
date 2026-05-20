@@ -44,11 +44,11 @@ class FacingMetric:
     drgb: float
 
 
-# Calibration floor.  Stone-tunnel worst is currently 0.72 (S/E
-# facings carry an XOR contribution from the hillside roof since
-# upstream ships no Back for them); pinned just below to catch
-# directional drift without flapping on the residual XOR.
-FAIL_IOU: float = 0.65
+# Calibration floor.  Stone-tunnel ranges 0.91-0.96 with the slope
+# slab cutter active (`Viewpoint.holdout_meshes`).  Pinned a bit below
+# the worst to catch directional drift without flapping on the
+# residual XOR.
+FAIL_IOU: float = 0.85
 
 
 def _parse_tunnel_image_entries(dat_path: Path, *, name: str):

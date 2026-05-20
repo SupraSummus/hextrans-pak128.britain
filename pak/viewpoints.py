@@ -843,6 +843,12 @@ def tunnel_square_viewpoint() -> Viewpoint:
         strip_material_substrings=(
             "Rail", "Chair", "Wood", "Ballast", "Tarmac",
         ),
+        # JH tunnel blends carry the in-tile slope polygon as
+        # `Plane.003` with material "Transparent"; `_apply_holdout`
+        # converts it into a half-space slab cutter so the portal
+        # block's walls below the slope land at alpha=0 instead of
+        # contributing XOR against upstream's slope-clipped cells.
+        holdout_meshes=("Plane.003",),
     )
 
 
@@ -928,6 +934,8 @@ def tunnel_hex_viewpoint() -> Viewpoint:
         strip_material_substrings=(
             "Rail", "Chair", "Wood", "Ballast", "Tarmac",
         ),
+        # See `tunnel_square_viewpoint`'s comment on the slope cutter.
+        holdout_meshes=("Plane.003",),
     )
 
 
