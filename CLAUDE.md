@@ -988,6 +988,20 @@ billboard expanded over an `ages × seasons` grid.  Five ages
 plus a `winter-3` fallback for age 4 via `clamp_age_overrides`.
 EEVEE backend.  See [`docs/bake-tree.md`](docs/bake-tree.md).
 
+## Tunnel-bake architecture
+
+Tunnels (`Obj=tunnel`) port via a `Tunnel` SPEC +
+`bake_tunnel_main(SPEC, __file__)` — 4 cardinal portal facings
+rendered through `tunnel_square_viewpoint()` (normal alignment,
+ortho 12, way-material strip) into a single-row 4-cell atlas.
+Per-facing labels are S/N/E/W at cam_z 45/135/225/315 — one position
+rotated from the bridge convention.  `emit_tunnel` ships
+`FrontImage[F][0]=` only; Back is intentionally empty so the portal
+silhouette paints over the train as it enters the tile.
+`UndergroundImage[ribi]` / `UndergroundImageUp[slope]` / season-1
+snow / multi-portal `[Wl][Nl][El][Sl]` doubles are deferred — see
+TODO.md → "Tunnel hex-engine schema not yet wired".
+
 ## CI
 
 Two workflows, matching `hextrans-pak128`'s split:

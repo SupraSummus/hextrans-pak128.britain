@@ -26,9 +26,9 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from pak import REPO_ROOT, diff_buildings, diff_upstream
+from pak import REPO_ROOT, diff_buildings, diff_tunnel, diff_upstream
 from pak.bake_units import specs_of
-from pak.dat import Building
+from pak.dat import Building, Tunnel
 
 _SKIP_DIRS = {"pak", "tests", "out", ".cache", ".git"}
 
@@ -72,6 +72,18 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
         return None
 
     out_dir = REPO_ROOT / "out" / "diff" / script.stem
+    if isinstance(spec, Tunnel):
+        metrics = diff_tunnel.run(
+            blend, upstream_dat, out_dir=out_dir, name=spec.name,
+            blend_source=spec.blend_source,
+        )
+        print(f"wrote {out_dir / 'grid.png'}")
+        print(diff_tunnel.format_table(metrics))
+        worst = min(m.iou for m in metrics)
+        xor_tot = sum(m.xor_px for m in metrics)
+        drgb_mean = sum(m.drgb for m in metrics) / len(metrics)
+        print(f"worst IoU: {worst:.3f}  sum XOR: {xor_tot} px")
+        return worst, xor_tot, diff_tunnel.FAIL_IOU, drgb_mean
     if isinstance(spec, Building):
         multitile = spec.dims_x > 1 or spec.dims_y > 1 or spec.heights > 1
         if multitile:

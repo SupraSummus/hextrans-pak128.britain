@@ -379,6 +379,75 @@ _BRIDGE_FIELDS_SCALAR: tuple[str, ...] = tuple(
 )
 
 
+@dataclass
+class Tunnel:
+    """A `obj=tunnel` definition.  Fields cover the upstream Britain
+    schema's gameplay scalars; per-facing portal Front cell refs are
+    derived from the baked single-row atlas at emit time.
+
+    First-pass shape: render the whole portal at 4 cardinal facings
+    (cam_z 45/135/225/315 -> upstream labels S/N/E/W per the rotation
+    the calibration probe pinned), emit `FrontImage[F][0]=` only --
+    `BackImage[F][0]` is intentionally omitted so the engine treats the
+    Back layer as empty and the entire portal silhouette paints over
+    the train.  Upstream's per-cell Back/Front split (GIMP-authored
+    slices from multiple render facings) isn't a mechanism we
+    reproduce -- see TODO.md -> "Tunnel portal Back/Front authoring is
+    non-standard".
+
+    UndergroundImage / UndergroundImageUp / season-1 snow refs and the
+    `wear_capacity` / extended-only fields are deferred until the hex
+    `tunnel_writer.cc` schema is verified.
+
+    Order of fields = canonical emit order.  Unset scalars are skipped.
+    """
+    # Required
+    name: str
+    waytype: str
+
+    # Identity
+    copyright: str | None = None
+
+    # Lifecycle
+    intro_year: int | None = None
+    intro_month: int | None = None
+    retire_year: int | None = None
+    retire_month: int | None = None
+
+    # Performance / load
+    topspeed: int | None = None
+    max_weight: int | None = None
+
+    # Economics
+    cost: int | None = None
+    maintenance: int | None = None
+
+    # Toolbar / placement -- defaulted to atlas cells at emit time
+    # when unset (mirrors Bridge / Way).
+    icon: str | None = None
+    cursor: str | None = None
+
+    # Bake-pipeline metadata.  `blend_source` defaults to "jh" since
+    # the first ported tunnel (stone-tunnel) lives in JamesHood's
+    # blends repo; jamespetts has the canal-tunnel blends and would
+    # use `blend_source="jp"`.
+    blend: str | None = _bake_meta()
+    blend_source: str = _bake_meta(default="jh")
+    upstream_dat: str | None = _bake_meta()
+
+
+_TUNNEL_FIELDS_SCALAR: tuple[str, ...] = tuple(
+    f.name for f in fields(Tunnel) if not f.metadata.get("bake_meta")
+)
+
+
+# Upstream tunnel facing labels in canonical column order matching
+# the rendered atlas (`tunnel_square_viewpoint` emits cam_z
+# 45/135/225/315 as S/N/E/W per the calibration rotation).  Single
+# source of truth used by both `emit_tunnel` and `diff_tunnel`.
+TUNNEL_FACING_LABELS: tuple[str, ...] = ("S", "N", "E", "W")
+
+
 class Symmetry(IntEnum):
     """Building silhouette symmetry — `Building.symmetry`.
 
@@ -814,6 +883,39 @@ def emit_bridge(bridge: Bridge, *, out_dir: Path, basename: str) -> Path:
             cell = f"./{basename}.{row}.{col}"
             lines.append(f"Back{key}[{label}][0]={cell}")
             lines.append(f"Front{key}[{label}][0]={cell}")
+    lines.append("----------")
+
+    out_path = out_dir / f"{basename}.dat"
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
+def emit_tunnel(tunnel: Tunnel, *, out_dir: Path, basename: str) -> Path:
+    """Write `<out_dir>/<basename>.dat` from a Tunnel.
+
+    Emits every set scalar plus one `FrontImage[<F>][0]=<basename>.0.<col>`
+    per label in `TUNNEL_FACING_LABELS` (S, N, E, W in that column
+    order).  No `BackImage[F][0]` -- Back is intentionally empty so the
+    whole portal renders as a Front overlay over the train.  Snow
+    season (`[1]`), UndergroundImage / UndergroundImageUp, icon /
+    cursor refs default to the existing atlas cells.
+
+    The PNG must live at `<out_dir>/<basename>.png` and match the
+    canonical layout (single row, columns 0..3 = S/N/E/W facings).
+    `pak.bake.bake_tunnel` is the producer.  Returns the dat path.
+    """
+    tunnel = replace(
+        tunnel,
+        cursor=tunnel.cursor or f"./{basename}.0.0",
+        icon=tunnel.icon or f"./{basename}.0.0",
+    )
+    lines: list[str] = ["obj=tunnel"]
+    for fname in _TUNNEL_FIELDS_SCALAR:
+        v = getattr(tunnel, fname)
+        if v is not None:
+            lines.append(f"{fname}={v}")
+    for col, facing in enumerate(TUNNEL_FACING_LABELS):
+        lines.append(f"FrontImage[{facing}][0]=./{basename}.0.{col}")
     lines.append("----------")
 
     out_path = out_dir / f"{basename}.dat"

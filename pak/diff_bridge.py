@@ -55,29 +55,18 @@ def _composite_cell(atlas, row_back: int, row_front: int, col: int):
     """Return RGBA `Image` of the `(row_back, col)` cell with the
     `(row_front, col)` cell alpha-composited on top — the engine's
     back/front draw order for one bridge facing.
-
-    Upstream pak cells encode transparency via MAGIC_PINK RGB rather
-    than alpha (every pixel ships with alpha=255).  Naive
-    `alpha_composite` therefore overwrites Back wholesale with Front;
-    the magic-pink-to-alpha conversion has to happen first.
     """
-    import numpy as np
     from PIL import Image
 
-    from pak.diff import MAGIC_PINK
+    from pak.diff import key_magic_pink_to_alpha
 
     x = col * CELL
-
-    def _key(im):
-        a = np.array(im.convert("RGBA"))
-        keyed = ((a[..., 0] == MAGIC_PINK[0])
-                 & (a[..., 1] == MAGIC_PINK[1])
-                 & (a[..., 2] == MAGIC_PINK[2]))
-        a[..., 3] = np.where(keyed, 0, a[..., 3]).astype(np.uint8)
-        return Image.fromarray(a, "RGBA")
-
-    back = _key(atlas.crop((x, row_back * CELL, x + CELL, row_back * CELL + CELL)))
-    front = _key(atlas.crop((x, row_front * CELL, x + CELL, row_front * CELL + CELL)))
+    back = key_magic_pink_to_alpha(
+        atlas.crop((x, row_back * CELL, x + CELL, row_back * CELL + CELL))
+    )
+    front = key_magic_pink_to_alpha(
+        atlas.crop((x, row_front * CELL, x + CELL, row_front * CELL + CELL))
+    )
     out = Image.new("RGBA", (CELL, CELL), (0, 0, 0, 0))
     out.alpha_composite(back)
     out.alpha_composite(front)
