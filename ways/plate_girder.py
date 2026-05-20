@@ -1,10 +1,10 @@
 """Plate-girder rail bridge (1890-1949).
 
-JH `ways/plate_girder/{straight,end,slope}.blend` map to the
-image / start / ramp pieces respectively.  Only the variant-2
-(steeper-slope) abutment has a JH source; variant 0, snow / season
-1 and depth-clipped Back/Front cells are pak-wide bridge TODOs
-(see TODO.md -> "Hex bridge cell coverage").
+JH `ways/plate_girder/{straight,end,slope,pillar}.blend` map to the
+image / start / ramp / pillar pieces respectively.  Only the
+variant-2 (steeper / taller) abutment + pillar set has a JH source;
+variant 0, snow / season 1 and depth-clipped Back/Front cells are
+pak-wide bridge TODOs (see TODO.md -> "Hex bridge cell coverage").
 """
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ SPEC = Bridge(
     blend_image="ways/plate_girder/straight.blend",
     blend_start="ways/plate_girder/end.blend",
     blend_ramp="ways/plate_girder/slope.blend",
+    blend_pillar="ways/plate_girder/pillar.blend",
     upstream_dat="ways/plate-girder.dat",
 )
 

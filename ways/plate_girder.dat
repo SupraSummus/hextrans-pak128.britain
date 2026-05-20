@@ -46,4 +46,10 @@ BackRamp[sw][0]=./plate_girder.2.4
 FrontRamp[sw][0]=./plate_girder.2.4
 BackRamp[nw][0]=./plate_girder.2.5
 FrontRamp[nw][0]=./plate_girder.2.5
+BackPillar[n_s][0]=./plate_girder.3.0
+FrontPillar[n_s][0]=./plate_girder.3.0
+BackPillar[ne_sw][0]=./plate_girder.3.1
+FrontPillar[ne_sw][0]=./plate_girder.3.1
+BackPillar[nw_se][0]=./plate_girder.3.2
+FrontPillar[nw_se][0]=./plate_girder.3.2
 ----------

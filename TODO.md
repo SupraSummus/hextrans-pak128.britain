@@ -500,10 +500,10 @@ tested — same axis-multiplication pattern.
 **Hex bridge: bake pipeline shipped, in-engine schema unverified.**
 `pak.dat.Bridge` + `emit_bridge`, `pak.bake.bake_bridge_main`, the
 per-piece `bridge_hex_viewpoint`, and `ways/plate_girder.py`
-exercise the bake side end-to-end (3-row × 6-col atlas: image axes
-/ start dirs / ramp dirs).  What's *not* validated: the emitted
-dat actually loading in-engine.  Three gaps visible in the current
-output:
+exercise the bake side end-to-end (4-row × 6-col atlas: image axes
+/ start dirs / ramp dirs / pillar axes).  What's *not* validated:
+the emitted dat actually loading in-engine.  Three gaps visible in
+the current output:
 
 * **Hex bridge schema is a guess.**  Dat key tokens
   (`BackImage[n_s]`, `BackStart[ne]`, …) and the 3-axis / 6-dir
@@ -540,26 +540,38 @@ output:
   0 entry below) and emit `*2` keys.  Snow follows the building
   pattern (recolour materials for winter).
 
+  `pak.diff_bridge_overview`'s `CASES` table covers image / start /
+  ramp only; add `("Pillar v0", "pillar", "pillar", 0)` (and a
+  matching cell-mapping in `diff_bridge._cells_for_asset` for the
+  pillar columns) once an `asset="pillar"` mode lands in the
+  per-case diff -- the visual loop is otherwise blind to pillar
+  drift.
+
 PlateGirderConcrete (the 1949+ successor in the same upstream dat
 file) is unported -- separate visual family, no JH blend source
 under `ways/plate_girder/`; lands when a `concrete.{blend}` set
 appears or someone authors one.
 
-**Plate-girder variant 0 (`BackImage` / `Start` / `Ramp` without
-trailing `2`) lacks a JH source.**  JH's `end.blend` and
-`slope.blend` ship the steeper-slope abutment that geometrically
-matches upstream's variant 2 cells (`BackImage2` / `Start2` /
-`Ramp2`); per-facing IoU 0.66-0.91 vs 0.52-0.65 against variant 0.
-The variant 0 cells in upstream show a gentler-slope abutment
-(visually obvious in `pak.diff_bridge_overview`'s output grid).
-`straight-end.blend` (a shared blob across the four viaduct families
-in JH) was the obvious candidate but IoU 0.48-0.51 against Start v0
-and 0.30 against Ramp v0 — not it.  Concrete next move when v0
-fidelity matters: probe two-blend compositions (load `straight.blend`
-+ `end.blend` into one scene with `end` positioned at the abutment
-end and re-render through `bridge_square`) and check whether the
-gentler-slope silhouette emerges; if not, an authored blend the JH
-repo doesn't carry is the only path.
+**Plate-girder variant 0 (`BackImage` / `Start` / `Ramp` / `Pillar`
+without trailing `2`) lacks a JH source.**  JH's `end.blend`,
+`slope.blend` and `pillar.blend` ship the steeper / taller geometry
+that matches upstream's variant 2 cells (`BackImage2` / `Start2` /
+`Ramp2` / `Pillar2`); per-facing IoU 0.66-0.91 vs 0.52-0.65 against
+variant 0 for abutments (pillars haven't been diffed -- see the
+`diff_bridge_overview` follow-up under "Variant 2 + season 1
+cells").  The variant 0 cells in upstream show the gentler / shorter
+geometry (visually obvious in `pak.diff_bridge_overview`'s output
+grid for abutments; the upstream pillar `v1` cells are visibly half
+the height of `v2`).  `straight-end.blend` (a shared blob across
+the four viaduct families in JH) was the obvious abutment candidate
+but IoU 0.48-0.51 against Start v0 and 0.30 against Ramp v0 — not
+it.  Concrete next move when v0 fidelity matters: probe two-blend
+compositions (load `straight.blend` + `end.blend` into one scene
+with `end` positioned at the abutment end and re-render through
+`bridge_square`) and check whether the gentler-slope silhouette
+emerges; if not, an authored blend the JH repo doesn't carry is
+the only path.  The pattern -- JH ships only the "tall / steep /
+v2" half of every upstream piece pair -- holds across the family.
 
 **N/E facing asymmetry on plate-girder end/slope.**  S/W facings
 land at IoU 0.81-0.91 against variant 2 Start/Ramp cells while N/E

@@ -93,6 +93,21 @@ is the pre-fork ancestor and **not used**: vanilla-schema dats,
 engine's `descriptor/writer/*_writer.cc` is the authoritative
 key list, so the dat diff isn't worth an SVN fetcher.
 
+That said, vanilla is still the cleaner reference when Extended
+has *deprecated* a key that vanilla and hex both still honour.
+The 2022 `pier_system` migration (PJMack, simutrans-extended PR
+#528, landed 2022-04-15) replaced per-bridge `backPillar*=` art
+with a universal `Obj=pier` + `Obj=deck` ground; a 2022-02-13 pak
+commit `#`-prefixed those keys in ~10 bridge dats ahead of the
+engine PR.  Vanilla and hex `bridge_writer.cc` both still read
+`backPillar[<axis>][<season>]` and the same row of the upstream
+sprite atlas holds real pillar art (`plate-girder.4.{2,3,4,5}` and
+peers).  Treat the upstream `#backPillar*=` lines as
+Extended-deprecation noise and un-`#` them; vanilla SourceForge
+SVN is the cleaner ground truth for "which cells should ship".
+Similar Extended-only deprecations are worth checking against
+vanilla SVN before assuming "the cell isn't shipped".
+
 ## Engine facts (look up, don't fit)
 
 Hex projection, camera, sun direction, sheet layout, slope
