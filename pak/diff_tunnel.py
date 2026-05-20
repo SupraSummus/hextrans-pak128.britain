@@ -1,10 +1,18 @@
 """Calibration diff for tunnel portals against the upstream pak atlas.
 
 Mirrors `diff_bridge.run()` but tailored to upstream's tunnel cell
-layout (`ways/<stem>.png`, 4x2 atlas: row 0 = Front[S,N,E,W] per dat
-col order, row 1 = Back[W,N], cursor, icon).  We only compare against
-Front cells -- our hex bake emits the whole portal as Front with Back
-empty, so the apples-to-apples target is upstream Front.
+layout (`ways/<stem>.png`, atlas with row 0 = Front[<F>] and row 1 =
+Back[<F>] per dat col order, plus cursor/icon).  Our square render
+emits the whole portal as a single silhouette per facing; upstream
+ships the same portal split across Back (rear interior) and Front
+(arch / outer face) cells that the engine draws at the same screen
+position around the train sprite.  The apples-to-apples target is
+therefore the **stitched** Back+Front silhouette, built by alpha-
+compositing Back under Front per facing -- conceptually the same
+move as `diff_buildings._stitch_upstream_layout` (parse upstream's
+image refs from the dat, slice the atlas, paste back onto a canvas
+at engine screen positions), specialised to the tunnel case where
+both layers land on the same 128x128 cell.
 
 This harness renders through `tunnel_square_viewpoint()` (4 cardinals,
 square dimetric -- matches upstream's authoring) rather than the
@@ -22,19 +30,11 @@ from pathlib import Path
 CELL = 128
 
 # Square-cardinal facing labels for the calibration render -- match
-# `tunnel_square_viewpoint()`'s facing order (cam_z 45/135/225/315 =
-# S/N/E/W per upstream's tunnel convention).  Production bake uses
-# `pak.dat.TUNNEL_FACING_LABELS` (6 hex edges); the two sets are
-# independent.
+# `tunnel_square_viewpoint()`'s facing order (mouth-points-<F>
+# convention shared with `_HEX_TUNNEL_MODEL_ROT_DEG`).  Production
+# bake uses `pak.dat.TUNNEL_FACING_LABELS` (6 hex edges); the two
+# sets are independent label-spaces over the same convention.
 SQUARE_FACING_LABELS: tuple[str, ...] = ("S", "N", "E", "W")
-
-# Upstream `ways/rail-tunnel-stone.png` Front-cell columns by facing.
-# Row 0; column order matches the dat's `FrontImage[<F>][0]=...0.<col>`
-# lines.  Same shape across the stone-tunnel family (canal-tunnel,
-# road-tunnel-stone, etc. share the convention; brick-faced and
-# multi-portal tunnels add extra cells that aren't modelled here yet).
-UPSTREAM_FRONT_COL = {"S": 0, "N": 1, "E": 2, "W": 3}
-
 
 @dataclass(frozen=True)
 class FacingMetric:
@@ -44,21 +44,75 @@ class FacingMetric:
     drgb: float
 
 
-# Calibration floor.  Tunnels are at "whole-portal vs upstream-Front-
-# half" so the IoU is fundamentally limited (upstream Front is a
-# sub-region of the full silhouette).  Pin the floor below current
-# numbers (~0.65) so the check passes on the first commit and drops
-# only if our render drifts substantially.  Tighten when alignment
-# is closer to upstream's.
-FAIL_IOU: float = 0.50
+# Calibration floor.  Stone-tunnel worst is currently 0.72 (S/E
+# facings carry an XOR contribution from the hillside roof since
+# upstream ships no Back for them); pinned just below to catch
+# directional drift without flapping on the residual XOR.
+FAIL_IOU: float = 0.65
 
 
-def _upstream_front_cell(atlas, facing: str):
-    from pak.diff import key_magic_pink_to_alpha
-    col = UPSTREAM_FRONT_COL[facing]
-    return key_magic_pink_to_alpha(
-        atlas.crop((col * CELL, 0, col * CELL + CELL, CELL))
+def _parse_tunnel_image_entries(dat_path: Path, *, name: str):
+    """Parse a tunnel dat's `frontimage[<F>][0]=<basename>.<row>.<col>`
+    and `backimage[<F>][0]=<basename>.<row>.<col>` entries for the
+    `season=0` slot.  Returns `{<F>: {"front": (row, col),
+    "back": (row, col) | None}}` keyed by uppercase facing label.
+
+    Sparse Back is honoured: upstream `tunnels.dat`'s stone variant
+    only ships Back for W and N, so other facings stitch against Front
+    alone.  Multi-object dats are filtered by `name=` (matches the
+    object's `Name=` case-insensitively)."""
+    import re
+
+    from pak.dat import parse
+
+    objects = parse(dat_path)
+    if not objects:
+        raise SystemExit(f"empty dat: {dat_path}")
+    wanted = name.lower()
+    match = next(
+        (o for o in objects
+         if any(k.lower() == "name" and v.strip().lower() == wanted
+                for k, v in o)),
+        None,
     )
+    if match is None:
+        raise SystemExit(f"no obj named {name!r} in {dat_path}")
+    key_re = re.compile(r"^(front|back)image\[([^\]]+)\]\[0\]$",
+                        re.IGNORECASE)
+    ref_re = re.compile(r"\.(\d+)\.(\d+)\s*$")
+    by_facing: dict[str, dict[str, tuple[int, int] | None]] = {}
+    for k, v in match:
+        m = key_re.match(k)
+        n = ref_re.search(v.strip()) if m else None
+        if m is None or n is None:
+            continue
+        layer = m.group(1).lower()
+        facing = m.group(2)  # raw case preserves `SQUARE_FACING_LABELS` lookup
+        rc = (int(n.group(1)), int(n.group(2)))
+        by_facing.setdefault(facing, {"front": None, "back": None})[layer] = rc
+    return by_facing
+
+
+def _stitch_upstream_cell(atlas, front_rc: tuple[int, int],
+                          back_rc: tuple[int, int] | None):
+    """Alpha-composite upstream Back under Front at the shared 128² cell.
+    Back-less facings (e.g. stone tunnel's E/S) collapse to Front alone."""
+    from PIL import Image
+
+    from pak.diff import key_magic_pink_to_alpha
+
+    def _crop(rc: tuple[int, int]):
+        row, col = rc
+        return key_magic_pink_to_alpha(
+            atlas.crop((col * CELL, row * CELL,
+                        col * CELL + CELL, row * CELL + CELL))
+        )
+
+    front = _crop(front_rc)
+    if back_rc is None:
+        return front
+    back = _crop(back_rc)
+    return Image.alpha_composite(back, front)
 
 
 def _ours_cell(rendered_atlas_path: Path, facing: str):
@@ -104,17 +158,27 @@ def run(blend: str, upstream_dat: str, *, out_dir: Path, name: str,
 
     upstream_png = fetch_pak(f"{image_stem(upstream_dat, name=name)}.png")
     atlas = Image.open(upstream_png).convert("RGBA")
+    entries = _parse_tunnel_image_entries(fetch_pak(upstream_dat), name=name)
 
     cells: list[GridCell] = []
     metrics: list[FacingMetric] = []
     for facing in SQUARE_FACING_LABELS:
+        layers = entries.get(facing)
+        if layers is None or layers.get("front") is None:
+            raise SystemExit(
+                f"{upstream_dat}: no FrontImage[{facing}][0] for {name!r}"
+            )
         ours = np.asarray(_ours_cell(rendered, facing))
-        up = np.asarray(_upstream_front_cell(atlas, facing))
+        up = np.asarray(_stitch_upstream_cell(
+            atlas, layers["front"], layers.get("back"),
+        ))
         m, om, um = cell_metric(ours, up, alpha_threshold=0,
                                 magic_rgb=MAGIC_PINK)
         metrics.append(FacingMetric(facing=facing, iou=m.iou,
                                     xor_px=m.xor_px, drgb=m.drgb))
-        cells.append(GridCell(ours, up, om, um, f"Front[{facing}]"))
+        label = (f"Back+Front[{facing}]" if layers.get("back")
+                 else f"Front[{facing}]")
+        cells.append(GridCell(ours, up, om, um, label))
     compose_grid(cells, out_path=out_dir / "grid.png",
                  strip_magic_rgb=MAGIC_PINK)
     return metrics
