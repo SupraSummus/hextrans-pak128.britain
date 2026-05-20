@@ -399,16 +399,9 @@ _BRIDGE_FIELDS_SCALAR: tuple[str, ...] = tuple(
 class Tunnel:
     """A `obj=tunnel` definition.  Fields cover the hex-engine schema
     (`descriptor/writer/tunnel_writer.cc`) plus a few extended scalars
-    the engine silently ignores.  Per-facing portal cell refs are
-    derived from the baked single-row atlas at emit time.
-
-    Render shape: 6 hex-edge facings (one per tile entry edge) matching
-    `hex_keys::edge_names`, emit `frontimage[<edge>][0]=` only --
-    `backimage[<edge>][0]` is intentionally omitted so the engine treats
-    the Back layer as empty and the entire portal silhouette paints
-    over the train.  Upstream's per-cell Back/Front split (GIMP-
-    authored slices from multiple render facings) isn't a mechanism we
-    reproduce.
+    the engine silently ignores.  Per-facing image refs are derived from
+    the baked atlas at emit time; see `tunnel_hex_viewpoint` for the
+    Front/Back split and atlas layout.
 
     Snow season `[1]` refs and the multi-portal `<edge>{l,r,m}` suffix
     variants (4-portal broad tunnels) aren't emitted yet -- see TODO.md
@@ -913,19 +906,10 @@ def emit_bridge(bridge: Bridge, *, out_dir: Path, basename: str) -> Path:
 
 
 def emit_tunnel(tunnel: Tunnel, *, out_dir: Path, basename: str) -> Path:
-    """Write `<out_dir>/<basename>.dat` from a Tunnel.
-
-    Emits every set scalar plus one `frontimage[<edge>][0]=<basename>.
-    0.<col>` per label in `TUNNEL_FACING_LABELS` (the 6 hex edges in
-    `hex_keys::edge_names` order, col 0 = n through col 5 = nw).  No
-    `backimage[<edge>][0]` -- Back is intentionally empty so the whole
-    portal renders as a Front overlay over the train.  Snow season
-    `[1]` refs default to the existing atlas cells.
-
-    The PNG must live at `<out_dir>/<basename>.png` and match the
-    canonical layout (single row, 6 cells, columns in hex edge order).
-    `pak.bake.bake_tunnel` is the producer.  Returns the dat path.
-    """
+    """Write `<out_dir>/<basename>.dat` from a Tunnel.  Emits every set
+    scalar plus `frontimage[<edge>][0]=…0.<col>` + `backimage[<edge>]
+    [0]=…1.<col>` for each label in `TUNNEL_FACING_LABELS`.  Producer:
+    `pak.bake.bake_tunnel`; atlas layout: `tunnel_hex_viewpoint`."""
     tunnel = replace(
         tunnel,
         cursor=tunnel.cursor or f"./{basename}.0.0",
@@ -938,6 +922,7 @@ def emit_tunnel(tunnel: Tunnel, *, out_dir: Path, basename: str) -> Path:
             lines.append(f"{fname}={v}")
     for col, facing in enumerate(TUNNEL_FACING_LABELS):
         lines.append(f"frontimage[{facing}][0]=./{basename}.0.{col}")
+        lines.append(f"backimage[{facing}][0]=./{basename}.1.{col}")
     lines.append("----------")
 
     out_path = out_dir / f"{basename}.dat"

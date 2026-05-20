@@ -415,13 +415,11 @@ class TestEmitTunnel(unittest.TestCase):
         self.assertIn("icon=./x.0.0", text)
         self.assertIn("cursor=./x.0.0", text)
 
-    def test_emits_front_only_no_back(self):
+    def test_emits_front_and_back_per_edge(self):
         text = self._emit(Tunnel(name="A", waytype="track"))
         for col, facing in enumerate(TUNNEL_FACING_LABELS):
             self.assertIn(f"frontimage[{facing}][0]=./x.0.{col}\n", text)
-        # No backimage refs — Back is intentionally empty (the engine
-        # paints the whole portal over the train).
-        self.assertNotIn("backimage", text)
+            self.assertIn(f"backimage[{facing}][0]=./x.1.{col}\n", text)
 
     def test_emits_axle_load_and_way_xref(self):
         # Both are hex-schema fields read by `tunnel_writer.cc`:

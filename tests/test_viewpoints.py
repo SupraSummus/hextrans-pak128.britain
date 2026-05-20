@@ -29,6 +29,8 @@ from pak.viewpoints import (
     sun_rotation_for_camera,
     tree_hex_viewpoint,
     tree_square_viewpoint,
+    tunnel_hex_viewpoint,
+    tunnel_square_viewpoint,
 )
 
 
@@ -396,6 +398,8 @@ class TestViewpointPickleRoundTrip(unittest.TestCase):
             tree_hex_viewpoint(ages=4, seasons=1),
             tree_square_viewpoint(ages=4, seasons=1),
             fence_square_viewpoint(),
+            tunnel_hex_viewpoint(),
+            tunnel_square_viewpoint(),
         ]:
             self._assert_round_trip(vp)
 
