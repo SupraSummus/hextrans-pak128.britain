@@ -34,7 +34,9 @@ from pak.dat import (
     emit_tunnel,
     emit_vehicles,
     emit_way,
+    find_object,
     iter_building_cells,
+    iter_image_refs,
     layouts_default,
     parse,
     port_bridge,
@@ -87,6 +89,105 @@ class TestParse(unittest.TestCase):
             p.write_text("obj=vehicle\nspeed=12 # knots\nname=x\t# tab\n")
             (obj,) = parse(p)
         self.assertEqual(dict(obj), {"obj": "vehicle", "speed": "12", "name": "x"})
+
+
+class TestFindObject(unittest.TestCase):
+    def _parsed(self, text: str):
+        with TemporaryDirectory() as d:
+            p = Path(d) / "x.dat"
+            p.write_text(text)
+            return parse(p)
+
+    def test_returns_first_when_name_none(self):
+        objs = self._parsed(SAMPLE_MULTI_OBJ)
+        self.assertEqual(dict(find_object(objs))["name"], "Foo")
+
+    def test_matches_name_case_insensitively(self):
+        objs = self._parsed(SAMPLE_MULTI_OBJ)
+        self.assertEqual(dict(find_object(objs, "bar"))["name"], "Bar")
+
+    def test_raises_on_missing_name(self):
+        objs = self._parsed(SAMPLE_MULTI_OBJ)
+        with self.assertRaisesRegex(SystemExit, "no obj named 'baz'"):
+            find_object(objs, "baz")
+
+    def test_raises_on_empty(self):
+        with self.assertRaisesRegex(SystemExit, "empty dat"):
+            find_object([])
+
+
+class TestIterImageRefs(unittest.TestCase):
+    def test_six_bracket_backimage(self):
+        obj = [
+            ("obj", "building"),
+            ("BackImage[0][0][0][0][0][0]", "foo.3.5"),
+            ("BackImage[1][2][3][4][5][6]", "foo.7.9"),
+            ("FrontImage[0][0][0][0][0][0]", "foo.1.1"),
+        ]
+        refs = list(iter_image_refs(obj, family="backimage"))
+        self.assertEqual(len(refs), 2)
+        self.assertEqual(refs[0].indices, ("0", "0", "0", "0", "0", "0"))
+        self.assertEqual((refs[0].row, refs[0].col), (3, 5))
+        self.assertEqual(refs[1].indices, ("1", "2", "3", "4", "5", "6"))
+        self.assertEqual((refs[1].row, refs[1].col), (7, 9))
+
+    def test_family_filter_distinguishes_front_back(self):
+        obj = [
+            ("backimage[S][0]", "x.0.0"),
+            ("frontimage[S][0]", "x.1.0"),
+        ]
+        backs = list(iter_image_refs(obj, family="backimage"))
+        fronts = list(iter_image_refs(obj, family="frontimage"))
+        self.assertEqual([r.row for r in backs], [0])
+        self.assertEqual([r.row for r in fronts], [1])
+
+    def test_no_filter_yields_all_families(self):
+        obj = [
+            ("Image[0]", "g.0.0"),
+            ("EmptyImage[S]", "v_S.0.0"),
+            ("FreightImage[0][S]", "f.0.0"),
+            ("HasDriverImage[S]", "d.0.0"),
+            ("livery_image[0][S]", "L.0.0"),
+            ("name", "skipped"),
+        ]
+        families = [r.family for r in iter_image_refs(obj)]
+        self.assertEqual(
+            families,
+            ["image", "emptyimage", "freightimage",
+             "hasdriverimage", "livery_image"],
+        )
+
+    def test_preserves_index_case(self):
+        # Tunnel needs raw-case facing labels (e.g. "S", "NW") to
+        # round-trip into SQUARE_FACING_LABELS lookups.
+        obj = [("FrontImage[NW][0]", "x.2.3")]
+        (ref,) = iter_image_refs(obj, family="frontimage")
+        self.assertEqual(ref.indices, ("NW", "0"))
+
+    def test_offset_tail_preserved_in_basename(self):
+        # Vehicle refs carry a per-image offset (`,dx,dy`); the
+        # basename strip drops the row/col + offset, leaving the
+        # `<stem>_<facing>` ready for `upstream._strip_ref`.
+        obj = [("EmptyImage[E]", "./trains/foo_E.0.0,-33,14")]
+        (ref,) = iter_image_refs(obj)
+        self.assertEqual(ref.basename, "./trains/foo_E")
+        self.assertEqual((ref.row, ref.col), (0, 0))
+
+    def test_placeholder_yields_none_coords(self):
+        # `backimage[…]=-` is upstream's "no image at this slot";
+        # iter_image_refs surfaces it as a ref with None coords so
+        # callers can skip it without re-parsing.
+        obj = [("BackImage[0][0][0][0][0][0]", "-")]
+        (ref,) = iter_image_refs(obj, family="backimage")
+        self.assertIsNone(ref.row)
+        self.assertIsNone(ref.col)
+        self.assertIsNone(ref.basename)
+
+    def test_multi_dot_basename_keeps_dots(self):
+        obj = [("Image[0][0]", "images/fence-3.0.0")]
+        (ref,) = iter_image_refs(obj, family="image")
+        self.assertEqual(ref.basename, "images/fence-3")
+        self.assertEqual((ref.row, ref.col), (0, 0))
 
 
 class TestVehicleConstruction(unittest.TestCase):

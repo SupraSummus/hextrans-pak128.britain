@@ -55,41 +55,27 @@ def _parse_tunnel_image_entries(dat_path: Path, *, name: str):
     """Parse a tunnel dat's `frontimage[<F>][0]=<basename>.<row>.<col>`
     and `backimage[<F>][0]=<basename>.<row>.<col>` entries for the
     `season=0` slot.  Returns `{<F>: {"front": (row, col),
-    "back": (row, col) | None}}` keyed by uppercase facing label.
+    "back": (row, col) | None}}` keyed by raw-case facing label
+    (matches `SQUARE_FACING_LABELS` lookup).
 
     Sparse Back is honoured: upstream `tunnels.dat`'s stone variant
     only ships Back for W and N, so other facings stitch against Front
     alone.  Multi-object dats are filtered by `name=` (matches the
     object's `Name=` case-insensitively)."""
-    import re
+    from pak.dat import find_object, iter_image_refs, parse
 
-    from pak.dat import parse
-
-    objects = parse(dat_path)
-    if not objects:
-        raise SystemExit(f"empty dat: {dat_path}")
-    wanted = name.lower()
-    match = next(
-        (o for o in objects
-         if any(k.lower() == "name" and v.strip().lower() == wanted
-                for k, v in o)),
-        None,
-    )
-    if match is None:
-        raise SystemExit(f"no obj named {name!r} in {dat_path}")
-    key_re = re.compile(r"^(front|back)image\[([^\]]+)\]\[0\]$",
-                        re.IGNORECASE)
-    ref_re = re.compile(r"\.(\d+)\.(\d+)\s*$")
+    obj = find_object(parse(dat_path), name, source=dat_path)
     by_facing: dict[str, dict[str, tuple[int, int] | None]] = {}
-    for k, v in match:
-        m = key_re.match(k)
-        n = ref_re.search(v.strip()) if m else None
-        if m is None or n is None:
+    for ref in iter_image_refs(obj):
+        if ref.family not in ("frontimage", "backimage"):
             continue
-        layer = m.group(1).lower()
-        facing = m.group(2)  # raw case preserves `SQUARE_FACING_LABELS` lookup
-        rc = (int(n.group(1)), int(n.group(2)))
-        by_facing.setdefault(facing, {"front": None, "back": None})[layer] = rc
+        if ref.row is None or len(ref.indices) != 2 or ref.indices[1] != "0":
+            continue
+        facing = ref.indices[0]
+        layer = "front" if ref.family == "frontimage" else "back"
+        by_facing.setdefault(facing, {"front": None, "back": None})[layer] = (
+            ref.row, ref.col
+        )
     return by_facing
 
 

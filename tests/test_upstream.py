@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile
 
-from pak.upstream import _first_image_ref, _strip_ref
+from pak.upstream import _first_image_basename, _resolve_stem
 
 
 def _write_dat(body: str) -> Path:
@@ -22,7 +22,7 @@ def _write_dat(body: str) -> Path:
     return Path(fp.name)
 
 
-class TestFirstImageRef(unittest.TestCase):
+class TestFirstImageBasename(unittest.TestCase):
     def test_vehicle_emptyimage(self):
         dat = _write_dat(
             "obj=vehicle\nname=test\n"
@@ -31,8 +31,23 @@ class TestFirstImageRef(unittest.TestCase):
             "----------\n"
         )
         self.assertEqual(
-            _first_image_ref(dat, name=None),
-            "./carriages/foo_E.0.0",
+            _first_image_basename(dat, name=None),
+            "./carriages/foo_E",
+        )
+
+    def test_vehicle_offset_tail_stripped(self):
+        # Upstream often appends a per-image x,y screen offset:
+        # `./images/dogger_E.0.0,-33,14`.  `iter_image_refs` already
+        # peels the offset + atlas tail into `basename`, so
+        # `_first_image_basename` doesn't see the comma tail.
+        dat = _write_dat(
+            "obj=vehicle\nname=test\n"
+            "EmptyImage[E][0]=./images/dogger_E.0.0,-33,14\n"
+            "----------\n"
+        )
+        self.assertEqual(
+            _first_image_basename(dat, name=None),
+            "./images/dogger_E",
         )
 
     def test_building_backimage(self):
@@ -42,20 +57,8 @@ class TestFirstImageRef(unittest.TestCase):
             "----------\n"
         )
         self.assertEqual(
-            _first_image_ref(dat, name=None),
-            "images/com/bar.0.0",
-        )
-
-    def test_tree_image(self):
-        dat = _write_dat(
-            "obj=tree\nname=test\n"
-            "image[0][0]=./oak.0.0\n"
-            "image[1][0]=./oak.0.1\n"
-            "----------\n"
-        )
-        self.assertEqual(
-            _first_image_ref(dat, name=None),
-            "./oak.0.0",
+            _first_image_basename(dat, name=None),
+            "images/com/bar",
         )
 
     def test_filters_by_name(self):
@@ -68,13 +71,11 @@ class TestFirstImageRef(unittest.TestCase):
             "----------\n"
         )
         self.assertEqual(
-            _first_image_ref(dat, name="BETA"),
-            "images/beta.0.0",
+            _first_image_basename(dat, name="BETA"), "images/beta",
         )
         # Name match is case-insensitive.
         self.assertEqual(
-            _first_image_ref(dat, name="alpha"),
-            "images/alpha.0.0",
+            _first_image_basename(dat, name="alpha"), "images/alpha",
         )
 
     def test_missing_name_raises(self):
@@ -84,46 +85,36 @@ class TestFirstImageRef(unittest.TestCase):
             "----------\n"
         )
         with self.assertRaisesRegex(SystemExit, "no obj named 'GAMMA'"):
-            _first_image_ref(dat, name="GAMMA")
+            _first_image_basename(dat, name="GAMMA")
 
     def test_skips_non_image_keys(self):
-        # `name=` happens to share a `=` shape with image refs but
-        # the regex anchors on bracketed `…image[…]` keys, so name=
-        # / Level= / class_proportion[N]= shouldn't match.
+        # `name=`, `Level=`, `class_proportion[N]=` aren't image-family
+        # keys so the iterator skips them; the BackImage ref wins.
         dat = _write_dat(
             "obj=building\nName=X\nLevel=5\n"
             "class_proportion[0]=10\n"
             "BackImage[0][0][0][0][0][0]=images/x.0.0\n"
             "----------\n"
         )
-        self.assertEqual(_first_image_ref(dat, name=None), "images/x.0.0")
+        self.assertEqual(_first_image_basename(dat, name=None), "images/x")
 
 
-class TestStripRef(unittest.TestCase):
-    def test_vehicle_facing_and_rowcol(self):
+class TestResolveStem(unittest.TestCase):
+    def test_vehicle_facing(self):
         self.assertEqual(
-            _strip_ref("./carriages/foo_E.0.0", PurePosixPath("trains")),
+            _resolve_stem("./carriages/foo_E", PurePosixPath("trains")),
             "trains/carriages/foo",
         )
 
-    def test_vehicle_with_offset_tail(self):
-        # Upstream often appends a per-image x,y screen offset:
-        # `./images/dogger_E.0.0,-33,14` — the comma tail must come
-        # off before the suffix strips can match.
+    def test_building_no_facing(self):
         self.assertEqual(
-            _strip_ref("./images/dogger_E.0.0,-33,14", PurePosixPath("boats")),
-            "boats/images/dogger",
-        )
-
-    def test_building_atlas_no_facing(self):
-        self.assertEqual(
-            _strip_ref("images/com/bar.0.0", PurePosixPath("citybuildings")),
+            _resolve_stem("images/com/bar", PurePosixPath("citybuildings")),
             "citybuildings/images/com/bar",
         )
 
     def test_tree_bare_stem(self):
         self.assertEqual(
-            _strip_ref("./oak.0.0", PurePosixPath("trees")),
+            _resolve_stem("./oak", PurePosixPath("trees")),
             "trees/oak",
         )
 
