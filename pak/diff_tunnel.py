@@ -3,14 +3,15 @@
 Mirrors `diff_bridge.run()` but tailored to upstream's tunnel cell
 layout (`ways/<stem>.png`, 4x2 atlas: row 0 = Front[S,N,E,W] per dat
 col order, row 1 = Back[W,N], cursor, icon).  We only compare against
-Front cells -- per the port decision (TODO.md -> "Tunnel portal
-Back/Front authoring is non-standard"), our hex bake emits the whole
-portal as Front, with Back empty, so the apples-to-apples target is
-upstream Front.
+Front cells -- our hex bake emits the whole portal as Front with Back
+empty, so the apples-to-apples target is upstream Front.
 
-Render side: `pak.bake.bake_tunnel` produces a single-row 4-cell atlas
-with columns in S/N/E/W order matching `TUNNEL_FACING_LABELS` (the
-upstream label rotation pinned by the calibration probe).
+This harness renders through `tunnel_square_viewpoint()` (4 cardinals,
+square dimetric -- matches upstream's authoring) rather than the
+production `tunnel_hex_viewpoint()`: hex would render 6 facings that
+don't have upstream counterparts.  Calibration here pins lighting /
+strip-set / camera fidelity against the upstream PNG; the hex bake
+then reuses the same blend through the hex projection.
 """
 from __future__ import annotations
 
@@ -18,9 +19,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from pak.dat import TUNNEL_FACING_LABELS
-
 CELL = 128
+
+# Square-cardinal facing labels for the calibration render -- match
+# `tunnel_square_viewpoint()`'s facing order (cam_z 45/135/225/315 =
+# S/N/E/W per upstream's tunnel convention).  Production bake uses
+# `pak.dat.TUNNEL_FACING_LABELS` (6 hex edges); the two sets are
+# independent.
+SQUARE_FACING_LABELS: tuple[str, ...] = ("S", "N", "E", "W")
 
 # Upstream `ways/rail-tunnel-stone.png` Front-cell columns by facing.
 # Row 0; column order matches the dat's `FrontImage[<F>][0]=...0.<col>`
@@ -56,10 +62,10 @@ def _upstream_front_cell(atlas, facing: str):
 
 
 def _ours_cell(rendered_atlas_path: Path, facing: str):
-    """Slice our `<basename>.png` (single-row 4-cell atlas, columns
-    S/N/E/W per `TUNNEL_FACING_LABELS`) at the given facing."""
+    """Slice the calibration render atlas (single-row 4-cell, columns
+    S/N/E/W per `SQUARE_FACING_LABELS`) at the given facing."""
     from PIL import Image
-    col = TUNNEL_FACING_LABELS.index(facing)
+    col = SQUARE_FACING_LABELS.index(facing)
     atlas = Image.open(rendered_atlas_path).convert("RGBA")
     return atlas.crop((col * CELL, 0, col * CELL + CELL, CELL))
 
@@ -101,7 +107,7 @@ def run(blend: str, upstream_dat: str, *, out_dir: Path, name: str,
 
     cells: list[GridCell] = []
     metrics: list[FacingMetric] = []
-    for facing in TUNNEL_FACING_LABELS:
+    for facing in SQUARE_FACING_LABELS:
         ours = np.asarray(_ours_cell(rendered, facing))
         up = np.asarray(_upstream_front_cell(atlas, facing))
         m, om, um = cell_metric(ours, up, alpha_threshold=0,

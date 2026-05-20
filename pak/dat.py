@@ -397,23 +397,22 @@ _BRIDGE_FIELDS_SCALAR: tuple[str, ...] = tuple(
 
 @dataclass
 class Tunnel:
-    """A `obj=tunnel` definition.  Fields cover the upstream Britain
-    schema's gameplay scalars; per-facing portal Front cell refs are
+    """A `obj=tunnel` definition.  Fields cover the hex-engine schema
+    (`descriptor/writer/tunnel_writer.cc`) plus a few extended scalars
+    the engine silently ignores.  Per-facing portal cell refs are
     derived from the baked single-row atlas at emit time.
 
-    First-pass shape: render the whole portal at 4 cardinal facings
-    (cam_z 45/135/225/315 -> upstream labels S/N/E/W per the rotation
-    the calibration probe pinned), emit `FrontImage[F][0]=` only --
-    `BackImage[F][0]` is intentionally omitted so the engine treats the
-    Back layer as empty and the entire portal silhouette paints over
-    the train.  Upstream's per-cell Back/Front split (GIMP-authored
-    slices from multiple render facings) isn't a mechanism we
-    reproduce -- see TODO.md -> "Tunnel portal Back/Front authoring is
-    non-standard".
+    Render shape: 6 hex-edge facings (one per tile entry edge) matching
+    `hex_keys::edge_names`, emit `frontimage[<edge>][0]=` only --
+    `backimage[<edge>][0]` is intentionally omitted so the engine treats
+    the Back layer as empty and the entire portal silhouette paints
+    over the train.  Upstream's per-cell Back/Front split (GIMP-
+    authored slices from multiple render facings) isn't a mechanism we
+    reproduce.
 
-    UndergroundImage / UndergroundImageUp / season-1 snow refs and the
-    `wear_capacity` / extended-only fields are deferred until the hex
-    `tunnel_writer.cc` schema is verified.
+    Snow season `[1]` refs and the multi-portal `<edge>{l,r,m}` suffix
+    variants (4-portal broad tunnels) aren't emitted yet -- see TODO.md
+    "Tunnel snow + multi-portal variants".
 
     Order of fields = canonical emit order.  Unset scalars are skipped.
     """
@@ -430,13 +429,21 @@ class Tunnel:
     retire_year: int | None = None
     retire_month: int | None = None
 
-    # Performance / load
+    # Performance / load.  `axle_load` is read by `tunnel_writer.cc`;
+    # `max_weight` is Extended-only and silently ignored by hex --
+    # kept for round-trip fidelity (mirrors Vehicle's convention).
     topspeed: int | None = None
     max_weight: int | None = None
+    axle_load: int | None = None
 
     # Economics
     cost: int | None = None
     maintenance: int | None = None
+
+    # Optional xref to a way object (engine builds it under the tunnel
+    # cell on placement); upstream's `severn-tunnel-track` was wired
+    # this way.  Empty / None = no embedded way.
+    way: str | None = None
 
     # Toolbar / placement -- defaulted to atlas cells at emit time
     # when unset (mirrors Bridge / Way).
@@ -457,11 +464,10 @@ _TUNNEL_FIELDS_SCALAR: tuple[str, ...] = tuple(
 )
 
 
-# Upstream tunnel facing labels in canonical column order matching
-# the rendered atlas (`tunnel_square_viewpoint` emits cam_z
-# 45/135/225/315 as S/N/E/W per the calibration rotation).  Single
-# source of truth used by both `emit_tunnel` and `diff_tunnel`.
-TUNNEL_FACING_LABELS: tuple[str, ...] = ("S", "N", "E", "W")
+# Hex tunnel facing labels in canonical atlas column order, matching
+# `hex_keys::edge_names` in the engine writer.  Order is cw-from-N
+# (same as bridge `start` / `ramp`), so col 0 = n, ..., col 5 = nw.
+TUNNEL_FACING_LABELS: tuple[str, ...] = ("n", "ne", "se", "s", "sw", "nw")
 
 
 class Symmetry(IntEnum):
@@ -909,15 +915,15 @@ def emit_bridge(bridge: Bridge, *, out_dir: Path, basename: str) -> Path:
 def emit_tunnel(tunnel: Tunnel, *, out_dir: Path, basename: str) -> Path:
     """Write `<out_dir>/<basename>.dat` from a Tunnel.
 
-    Emits every set scalar plus one `FrontImage[<F>][0]=<basename>.0.<col>`
-    per label in `TUNNEL_FACING_LABELS` (S, N, E, W in that column
-    order).  No `BackImage[F][0]` -- Back is intentionally empty so the
-    whole portal renders as a Front overlay over the train.  Snow
-    season (`[1]`), UndergroundImage / UndergroundImageUp, icon /
-    cursor refs default to the existing atlas cells.
+    Emits every set scalar plus one `frontimage[<edge>][0]=<basename>.
+    0.<col>` per label in `TUNNEL_FACING_LABELS` (the 6 hex edges in
+    `hex_keys::edge_names` order, col 0 = n through col 5 = nw).  No
+    `backimage[<edge>][0]` -- Back is intentionally empty so the whole
+    portal renders as a Front overlay over the train.  Snow season
+    `[1]` refs default to the existing atlas cells.
 
     The PNG must live at `<out_dir>/<basename>.png` and match the
-    canonical layout (single row, columns 0..3 = S/N/E/W facings).
+    canonical layout (single row, 6 cells, columns in hex edge order).
     `pak.bake.bake_tunnel` is the producer.  Returns the dat path.
     """
     tunnel = replace(
@@ -931,7 +937,7 @@ def emit_tunnel(tunnel: Tunnel, *, out_dir: Path, basename: str) -> Path:
         if v is not None:
             lines.append(f"{fname}={v}")
     for col, facing in enumerate(TUNNEL_FACING_LABELS):
-        lines.append(f"FrontImage[{facing}][0]=./{basename}.0.{col}")
+        lines.append(f"frontimage[{facing}][0]=./{basename}.0.{col}")
     lines.append("----------")
 
     out_path = out_dir / f"{basename}.dat"
