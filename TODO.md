@@ -522,11 +522,14 @@ output:
   same atlas cell as Back, so the bridge silhouette is fully
   opaque -- a vehicle traversing the deck vanishes behind the
   bridge image instead of passing between Back and Front planes.
-  Concrete next move: split each piece render into Back / Front
-  passes (compositor Z-mask or per-render clip plane
-  perpendicular to camera Y at the cell midline), grow the atlas
-  to 6 rows (Back/Front × 3 pieces), have `emit_bridge` key Front
-  at row+1.
+  Concrete next move: port the tunnel approach (per-facing camera
+  `clip_start` / `clip_end` at the tile-centre Y plane, doubling
+  the facing count) to `bridge_hex_viewpoint`, grow the atlas to
+  6 rows (Back/Front × 3 pieces), have `emit_bridge` key Front
+  at row + len(piece_labels).  Plane position is more delicate
+  than for tunnels: bridge piece extends along the span axis past
+  the tile so the cut may want to be per-piece (`image` vs `start`
+  vs `ramp`) rather than a single shared depth.
 
 * **Variant 2 + season 1 cells.**  Upstream emits four families
   (variant 1 / variant 2 × season 0 / season 1; variant
@@ -910,11 +913,20 @@ overhead is real but small.
 
 **Hex tunnel: bake pipeline shipped, deferred features.**
 `pak.dat.Tunnel` + `emit_tunnel`, `tunnel_hex_viewpoint`, and
-`ways/rail_tunnel_stone.py` exercise the bake end-to-end (single-row
-6-cell atlas, hex edges).  Dat key tokens are read off
-`tunnel_writer.cc`; per-edge rotation table is visually verified
-(arrow-annotated probe atlases against `frontimage[<edge>]` =
-"mouth faces <edge>" convention).  Remaining gaps:
+`ways/rail_tunnel_stone.py` exercise the bake end-to-end (2-row
+6-col atlas: row 0 = Front, row 1 = Back, hex edges).  Dat key
+tokens are read off `tunnel_writer.cc`; per-edge rotation table is
+visually verified (arrow-annotated probe atlases against
+`frontimage[<edge>]` = "mouth faces <edge>" convention).  Back /
+Front split is a camera depth clip at the tile-centre Y plane in
+`tunnel_hex_viewpoint`; geometrically honest but the Back row picks
+up the portal roof past Y=0 in addition to the rear wall, which
+upstream Britain doesn't (upstream Back = just the floor sliver
+under the arch with rails baked in).  Concrete next move if the
+extra roof in Back becomes visually objectionable in-engine: add a
+per-blend roof-material mask to `tunnel_hex_viewpoint`'s strip set
+for the Back pass only, or move the clip plane closer to the camera
+so only the rear wall lands in Back.  Remaining gaps:
 
 * **Snow `[1]` not emitted.**  `tunnel_writer.cc` reads
   `frontimage[<edge>][1]` for snow.  Concrete next move when a snow
@@ -930,12 +942,16 @@ overhead is real but small.
   extend `TUNNEL_FACING_LABELS` to include the suffixed variants
   and route `bake_tunnel` to render the extra facings.
 
-* **Back/Front depth-clip skipped.**  Whole-portal silhouette
-  emits as Front; Back is empty.  Trains pass behind the entire
-  portal arch rather than between Back/Front planes (loses the
-  upstream effect where lower masonry paints over the train).
-  Same depth-clip mechanism as "Hex bridge: bake pipeline
-  shipped" -- lands when bridges do.
+* **Calibration diff still whole-portal.**  `pak.diff_tunnel` runs
+  through `tunnel_square_viewpoint` (no clip) against upstream's
+  Front cells -- bbox / IoU still measure the unsplit silhouette.
+  Worth keeping for material/lighting calibration but the IoU
+  ceiling (~0.65) is now structural: upstream Front has rails
+  baked in, ours doesn't, and the depth split changes what's in
+  each row.  Concrete next move if a sharper calibration target
+  matters: render the calibration through `tunnel_hex_viewpoint`
+  too and compare row-0 Front against upstream Front with the rail
+  silhouette XOR-masked.
 
 **Rewrite README.md.**  Current text is upstream's 2009 readme
 preserved verbatim with a disclaimer header — describes the

@@ -92,6 +92,11 @@ class Facing:
     model_translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
     model_scale: float = 1.0
     slices: list[Slice] | None = None
+    # Per-facing camera clip overrides; `None` keeps Blender's defaults.
+    # Used by `tunnel_hex_viewpoint` to split each portal into Back / Front
+    # passes at the tile-centre Y plane.
+    clip_start: float | None = None
+    clip_end: float | None = None
 
 
 def _configure_cycles(scn) -> None:
@@ -894,9 +899,15 @@ def render_facings(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     out_dir.mkdir(parents=True, exist_ok=True)
 
     scn = bpy.context.scene
+    cam_clip_start_default = cam.data.clip_start
+    cam_clip_end_default = cam.data.clip_end
     for facing in viewpoint.facings:
         cam.location = facing.camera_location
         cam.rotation_euler = facing.camera_rotation_euler
+        cam.data.clip_start = (facing.clip_start if facing.clip_start is not None
+                               else cam_clip_start_default)
+        cam.data.clip_end = (facing.clip_end if facing.clip_end is not None
+                             else cam_clip_end_default)
         sun.rotation_euler = facing.sun_rotation_euler
         M_scale = mathutils.Matrix.Diagonal((
             facing.model_scale, facing.model_scale, facing.model_scale, 1.0,

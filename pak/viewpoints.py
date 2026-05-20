@@ -875,20 +875,48 @@ _HEX_TUNNEL_MODEL_ROT_DEG: dict[str, float] = {
 }
 
 
+# Camera-to-tile-centre distance along the view axis.  `_HEX_CAM_LOC =
+# (0, -10, 0.5)` looks along +Y; `hex_proj_shear()` preserves Y, so the
+# model's tile-centre lands at world Y=0, distance 10 from the camera.
+_HEX_TUNNEL_CENTRE_DEPTH: float = 10.0
+
+# (layer label, clip_start, clip_end) — Front renders geometry between
+# the camera and the tile-centre plane (occludes train); Back renders
+# what's past it (drawn under train).  Front-first so it lands in atlas
+# row 0; `emit_tunnel` keys `frontimage[…][0]=…0.<col>` / `backimage[…]
+# [0]=…1.<col>` accordingly.
+_HEX_TUNNEL_LAYERS: tuple[tuple[str, float | None, float | None], ...] = (
+    ("front", None, _HEX_TUNNEL_CENTRE_DEPTH),
+    ("back", _HEX_TUNNEL_CENTRE_DEPTH, None),
+)
+
+
 def tunnel_hex_viewpoint() -> Viewpoint:
     """Hex Viewpoint for a JH tunnel portal blend (`ways/stone-tunnel.
-    blend` and friends).  Renders 6 facings, one per hex edge in
-    `TUNNEL_FACING_LABELS` order, so the bake produces a single-row
-    6-cell atlas keyable as `frontimage[<edge>][0]=<basename>.0.<col>`.
+    blend` and friends).  Renders 12 facings -- Front + Back per hex
+    edge -- via a camera depth clip at the tile-centre Y plane; compose
+    lays them into a 2-row 6-col atlas (row 0 = Front, row 1 = Back).
 
-    Camera / sun / projection match the bridge piece viewpoints; the
-    per-edge model rotation differs (see `_HEX_TUNNEL_MODEL_ROT_DEG`
-    above for the "mouth faces <edge>" convention).  Way materials
-    and JH backdrop planes are stripped -- the engine paints the
-    way separately.  EEVEE rasteriser for byte-stable rebake under
-    CI.
+    Engine draw order is Back, then ground (rails), then train, then
+    Front, so portal arch / crenellations occlude the train while the
+    rear interior renders behind it.  Way materials are stripped -- the
+    engine paints rails separately -- so upstream-Back-vs-ours-Back IoU
+    is not directly comparable (upstream bakes rails into Back).
     """
     from pak.dat import TUNNEL_FACING_LABELS
+    facings = [
+        Facing(
+            label=f"{edge}_{layer}",
+            camera_location=_HEX_CAM_LOC,
+            camera_rotation_euler=_HEX_CAM_ROT,
+            sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
+            model_rot_z_deg=_HEX_TUNNEL_MODEL_ROT_DEG[edge],
+            clip_start=clip_start,
+            clip_end=clip_end,
+        )
+        for layer, clip_start, clip_end in _HEX_TUNNEL_LAYERS
+        for edge in TUNNEL_FACING_LABELS
+    ]
     return Viewpoint(
         name="tunnel_hex",
         image_width=DEFAULT_W,
@@ -896,16 +924,7 @@ def tunnel_hex_viewpoint() -> Viewpoint:
         sun_energy=_authored_sun(_BI_TO_EEVEE_SUN_SCALE),
         fit_matrix=_hex_fit(),
         extrinsic=hex_proj_shear(),
-        facings=[
-            Facing(
-                label=label,
-                camera_location=_HEX_CAM_LOC,
-                camera_rotation_euler=_HEX_CAM_ROT,
-                sun_rotation_euler=_HEX_BUILDING_SUN_ROT,
-                model_rot_z_deg=_HEX_TUNNEL_MODEL_ROT_DEG[label],
-            )
-            for label in TUNNEL_FACING_LABELS
-        ],
+        facings=facings,
         engine=EEVEE,
         strip_meshes=("Sphere", "Plane.005", "Plane.007"),
         strip_material_substrings=(

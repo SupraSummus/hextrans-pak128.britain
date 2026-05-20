@@ -357,17 +357,10 @@ def bake_bridge_main(spec: Bridge, file: str) -> Path:
 
 
 def bake_tunnel(spec: Tunnel, *, basename: str, out_dir: Path) -> Path:
-    """Fetch the portal blend, render 6 hex-edge facings through
-    `tunnel_hex_viewpoint()`, compose to a single-row 6-cell atlas,
-    emit the dat.
-
-    Whole-portal silhouette is emitted as `frontimage[<edge>][0]=` for
-    each facing; `backimage[<edge>][0]` is left empty so the engine
-    paints the portal silhouette over the train.
-
-    Returns the dat path.
-    """
+    """Fetch the portal blend, render through `tunnel_hex_viewpoint()`,
+    compose the atlas, emit the dat.  Returns the dat path."""
     from pak.compose import compose_atlas
+    from pak.dat import TUNNEL_FACING_LABELS
     from pak.viewpoints import tunnel_hex_viewpoint
 
     if spec.blend is None:
@@ -375,7 +368,8 @@ def bake_tunnel(spec: Tunnel, *, basename: str, out_dir: Path) -> Path:
     blend_path = fetch_blend_by_source(spec.blend, spec.blend_source)
     vp = tunnel_hex_viewpoint()
     run_render(blend=blend_path, viewpoint=vp, name=basename, out_dir=out_dir)
-    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=basename)
+    compose_atlas(vp, render_dir=out_dir, out_dir=out_dir, name=basename,
+                  cols_per_row=len(TUNNEL_FACING_LABELS))
 
     out_dat = emit_tunnel(spec, out_dir=out_dir, basename=basename)
     _print_wrote(out_dat)
