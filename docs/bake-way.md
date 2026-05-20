@@ -152,13 +152,33 @@ No `CrossSection` class and no numpy rasterizer: the blend is the
 cross-section, and the blend-as-atom pipeline subsumes the
 parametric painter the pak128 sibling carries.
 
-No square-pak calibration loop for ways yet, but the infrastructure
-ships: `pak/way_proj.py::Projection` provides `--projection square`
-mode in `bake_way.py` (tile geometry, ribi vocabulary, camera, sun,
-ortho_scale, extrinsic, atlas layout swapped out together).  The
-`pak/diff_way.py` harness is the open consumer; see TODO.md → "Way
-square-projection diff harness".  Until it lands, hex is validated
-by eye + by adjacency tests.
+**Full-cell mode** (`Way.full_cell = True`) is the parallel path
+for blends authored as 1-to-1 full cells rather than short atoms.
+JH's `ways/<family>/{straight,DIAGONAL,3-way,4-way,pillar,end,
+slope}.blend` families ship the entire elevated viaduct cell
+(deck + arches + ballast + rails) as a single mesh group sized
+to fill the cell -- the chord-composition pipeline would
+replicate the asset for popcount>2 junctions (two crossing
+decks for NSEW), so full-cell mode skips composition entirely
+and aliases one render as every cell.  `full_cell_rotations`
+maps ribi label to world-Z rotation in degrees so an EW-authored
+blend can also cover NS via `{"NS": 90}`; the bake driver
+groups cells by rotation and only re-renders when the rotation
+changes.  Per-ribi blend dispatch (different blend per ribi
+label) is the open follow-up; see TODO.md.
+
+`Way.blend_source` ("jp" jamespetts, "jh" JamesHood) selects the
+fetcher.  JH carries the elevated-viaduct families jamespetts
+doesn't ship; `Way.inherit_camera = True` installs the blend's
+authored camera (SW-looking-NE, ortho_scale=12) instead of
+SQUARE_VIEWPOINT['S'].
+
+`pak/diff_way.py` runs a per-ribi silhouette IoU + dRGB diff via
+`--projection square --cell-dir`, parses upstream's
+`image[<ribi>][0]=...row.col,...` refs to slice the upstream
+atlas into per-ribi cells, and emits a `grid.png` (ours /
+upstream / silhouette-XOR).  `pak/check.py` dispatches Way SPECs
+through it.
 
 Topology duplication between `way_topology.py` (hex) and
 `way_proj.py` (square path helpers — `_square_between_edges`,

@@ -647,37 +647,28 @@ any < 0.90 IoU regressions surfaced (likely 1-pixel rasterisation
 offsets at corner ramps, or palette-multiplier scale mismatches that
 the harness reports as `ratio ≠ 1.0`).
 
-**Way square-projection diff harness.**  Mirror of
-`pak/diff_grounds.py` for ways: per-ribi pixel diff (silhouette IoU
-+ intersection-restricted mean abs(RGB-delta)) of our square bake
-against upstream pak128.Britain's authored cells.  The
-**infrastructure** is in place — `pak/bake_way.py --projection
-square` walks the 15 square ribis through the same composition
-pipeline hex uses (clone → place on chord → bisect at caps +
-4 tile-outline planes → render), driven by `pak.way_proj.
-SQUARE_PROJECTION` (`SQUARE_VIEWPOINT["S"]` camera + ortho_scale=24
-+ NSEW edges at world ±12 + canonical NSEW-ordered ribi labels).
-The **diff** itself doesn't exist yet.  Concrete next move: add
-`pak/diff_way.py` that drives the bake with `--projection square
---cell-dir <tmp>`, reads upstream's atlas via `fetch_pak`
-(`ways/images/concrete_sleeper_steel_rail.png` for cssr; cell
-layout 6 cols × 5 rows of 128-px cells, per-ribi `Image[NS] = .1.0`
-mapping in the upstream `.dat`), per-cell shifts our render's bbox
-onto the upstream's bbox to absorb the alignment offset (upstream
-uses "vehicles"-alignment camera positions calibrated for
-ground-clearance, not centred on origin), and reports per-ribi
-IoU + colour delta.  Failure modes the diff is expected to surface:
-`SQUARE_TILE_HALF = 12.0` is currently a guess; the alignment
-shift is currently un-modelled; the V-bend approximation of
-upstream's 90°-curve corner cells will read poorly until corners
-are special-cased (or the topology layer learns about arcs).  The
-diff is the right tool to drive each of those calibrations.
+**Way square-projection diff calibrations.**  `pak/diff_way.py`
+lands the harness: drives `pak/bake_way.py --projection square
+--cell-dir <out>`, parses per-ribi `(row, col)` from upstream's
+`image[<ribi>][0]=...row.col,...` refs, slices the upstream atlas
+into 128px cells, reports silhouette IoU + dRGB and emits a
+`grid.png`.  Hooked into `pak/check.py` via the Way SPEC branch.
+What it doesn't yet do, and the calibrations it should drive: (a)
+per-cell bbox shift to absorb upstream's vehicles-alignment offset
+(currently every cell carries a constant translation our square
+bake doesn't model, so IoU on the well-formed cssr port lands lower
+than the contour deserves); (b) corner-cell special-case so the
+V-bend doesn't read as drift on `NE` / `SE` / `NW` / `SW`; (c)
+SQUARE_TILE_HALF = 12.0 sanity-check against a calibrated asset's
+bboxes (currently a guess).  Concrete next move: run the harness
+against `ways/cssr.py` (add `upstream_dat=` to its SPEC), and use
+the per-ribi residuals to pin (a) and (c).
 
-Once the diff lands and forces a real second consumer of the
-`Projection` accessors, the topology-duplication consolidation
-called out in `docs/bake-way.md` becomes the
-natural follow-up: collapse `_square_*` helpers in `pak/way_proj.py`
-back into `pak/way_topology.py` parametrised on a `tile`-geom arg.
+Once the diff forces a real second consumer of the `Projection`
+accessors, the topology-duplication consolidation called out in
+`docs/bake-way.md` becomes the natural follow-up: collapse
+`_square_*` helpers in `pak/way_proj.py` back into
+`pak/way_topology.py` parametrised on a `tile`-geom arg.
 
 **Tile-chord flush across adjacent hex tiles.**  `bake_way.py`
 assumes the atom + cap-bisect geometry gives flush rail joins at
@@ -746,6 +737,42 @@ the first-era rail look matters in-game: either author a
 `ways/waggonway.blend` (single wooden rail, no ballast) and a
 `ways/plateway.blend` (wooden with iron plate on top), or render
 them parametrically without a blend.  Soft trigger.
+
+**Elevated viaduct per-ribi blend dispatch.**  `ways/
+brick_viaduct_elevated.py` and `ways/masonry_viaduct_elevated.py`
+land via `full_cell=True` rendering of JH's `ways/brick_viaduct/
+straight.blend`: one render per unique Z-rotation (`NS`→90°,
+default 0° for EW and the rest) aliased to every ribi of the
+atlas.  NS/EW silhouette IoU against the upstream PNGs lands at
+0.92-0.95; diagonals + junctions still mismatch because every
+cell currently uses the EW render (or its 90° rotation).
+Concrete next move: per-ribi blend dispatch -- map each ribi to
+its matching JH variant (`straight.blend` for opposite-edge
+pairs, `DIAGONAL.blend` for adjacent, `3-way.blend` for
+popcount=3, `4-way.blend` for NSEW, `end.blend` for popcount=1,
+`pillar.blend` for the no-neighbour cell, `slope.blend` for
+slope variants).  Extend `full_cell_rotations` into a
+`full_cell_blends: dict[ribi_label, (blend_path, z_rot)]` so the
+bake driver loads + renders the right blend per ribi.  This is
+also what the hex bake needs once 6-direction ribis come into
+scope -- the same mapping table generalises.
+
+**Elevated ways with no canonical blend.**  Upstream's
+`concrete-viaduct-elevated-*`, `iron-girder-elevated`, and
+`wood-trestle-elevated` PNGs were imported from Simutrans-
+Standard vanilla in 2013 (upstream-pak commit `07a11335`: "ADD:
+Missing elevated rail bridges from Standard") -- no source blend
+exists in either upstream repo.  jamespetts' `piers/*` family is
+pier-only blends meant to compose with a deck that doesn't ship;
+JH's `concrete_viaduct/pillar.blend` is the only distinct
+elevated arch blend but depicts brick (used by the brick +
+masonry ports above).  JH's `streel-truss/pillar.blend` is a
+byte-identical placeholder dup of `plate_girder/pillar.blend`;
+`brick_viaduct/pillar.blend` and `masonry-viaduct/pillar.blend`
+are byte-identical placeholders too.  Concrete next move when
+those families are wanted: author fresh blends, or accept a
+recolour of `brick_viaduct/straight.blend` as a placeholder.
+Soft trigger.
 
 **Bake hex icon + cursor sprites for ways.**  Option (a) is in
 today (`emit_way` stubs `cursor=./<basename>.0.0` and

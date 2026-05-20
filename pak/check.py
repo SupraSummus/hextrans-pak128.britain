@@ -26,9 +26,9 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from pak import REPO_ROOT, diff_buildings, diff_tunnel, diff_upstream
+from pak import REPO_ROOT, diff_buildings, diff_tunnel, diff_upstream, diff_way
 from pak.bake_units import specs_of
-from pak.dat import Building, Tunnel
+from pak.dat import Building, Tunnel, Way
 
 _SKIP_DIRS = {"pak", "tests", "out", ".cache", ".git"}
 
@@ -172,6 +172,16 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             worst_overall = min(worst_overall, worst)
             drgb_overall = max(drgb_overall, drgb_mean)
         return worst_overall, None, diff_buildings.FAIL_IOU, drgb_overall
+
+    if isinstance(spec, Way):
+        metrics = diff_way.run(spec, out_dir=out_dir)
+        print(f"wrote {out_dir / 'grid.png'}")
+        print(diff_way.format_table(metrics))
+        worst = min((m.iou for m in metrics), default=1.0)
+        xor_tot = sum(m.xor_px for m in metrics)
+        drgb_mean = (sum(m.drgb for m in metrics) / len(metrics)) if metrics else 0.0
+        print(f"worst IoU: {worst:.3f}  sum XOR: {xor_tot} px")
+        return worst, xor_tot, diff_way.FAIL_IOU, drgb_mean
 
     metrics = diff_upstream.run(blend, upstream_dat, views=views, out_dir=out_dir,
                                 name=spec.name)
