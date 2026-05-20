@@ -479,6 +479,65 @@ def sq_tile_pixel_mask(
     return keep.astype(np.float32)
 
 
+def hex_tile_pixel_mask(
+    my_offset: tuple[int, int],
+    other_offsets: list[tuple[int, int]] = (),
+    image_width: int = DEFAULT_W,
+):
+    """Per-cell pixel-ownership mask for the hex lattice.
+
+    Hex analogue of `sq_tile_pixel_mask`.  The `hex_proj_shear` extrinsic
+    compresses world y by `1/√3`, so world Euclidean distance² between
+    two screen-px offsets `(Δx, Δy)` equals `(Δx² + 3·Δy²) / (W/2R)²`
+    (1 world unit in y carries √3 more pixel weight than 1 world unit
+    in x).  Voronoi under this metric partitions screen space exactly
+    along the projected hex tile edges -- footprint neighbours adjacent
+    in the hex lattice (`HEX_KOORD_*_WORLD`) cut cleanly along their
+    shared projected edge with no overlap.
+
+    Intersected with the projected hex cell-shape: regular hex with
+    corners at `(±W/2, 0)` and `(±W/4, ∓W/4)` relative to the ground
+    anchor at `(W/2, 3W/4)`, which is the right shape for an isolated
+    tile (no footprint neighbours).  Clips above the ground anchor at
+    `dy = -W/4`, so silhouettes extending above the tile footprint get
+    cut by the cell-shape rather than carried into the slice.  The
+    `+1` slack absorbs the slope-±1 AA edge ring.
+
+    `my_offset`: this tile's slice centre offset (`cx_px, cy_px`).
+    `other_offsets`: every other footprint tile's slice centre.
+    """
+    import numpy as np
+    half = image_width // 2
+    quarter = image_width // 4
+    full = image_width
+    ys, xs = np.indices((full, full))
+    dx_cell = xs - half
+    anchor_y = 3 * full // 4
+    dy_cell = ys - anchor_y
+    # World-Euclidean distance² scaled by (W/(2R))² is `dx² + 3·dy²`;
+    # equivalent for closest-tile comparison.
+    my_dist = dx_cell * dx_cell + 3 * dy_cell * dy_cell
+    keep = np.ones((full, full), dtype=bool)
+    mx, my = my_offset
+    for ox, oy in other_offsets:
+        rel_x, rel_y = ox - mx, oy - my
+        rdx = dx_cell - rel_x
+        rdy = dy_cell - rel_y
+        other_dist = rdx * rdx + 3 * rdy * rdy
+        # Closer-to-viewer wins ties: `rel_y > 0` means other is below
+        # us in screen, so we LOSE ties when rel_y > 0.
+        keep &= (my_dist < other_dist) | (
+            (my_dist == other_dist) & (rel_y < 0)
+        )
+    # Projected hex cell-shape clip.  `|dy| ≤ W/4 AND |dx| + |dy| ≤
+    # W/2` -- the six edges meet the corners (W/2, 0), (±W/4, ±W/4),
+    # (-W/2, 0) at equality on each constraint.
+    abs_x = np.abs(dx_cell)
+    abs_y = np.abs(dy_cell)
+    keep &= (abs_y <= quarter + 1) & (abs_x + abs_y <= half + 1)
+    return keep.astype(np.float32)
+
+
 def _building_slices(
     layout: int, height: int, dims_x: int, dims_y: int,
     screen_offset,
@@ -952,14 +1011,14 @@ def building_hex_viewpoint(
     # within a single season — each (h) becomes one atlas row, with
     # layouts spanning columns left-to-right (each layout block is a
     # `dims_x*dims_y`-wide footprint).  See `emit_building`'s col
-    # formula `l * dims_x*dims_y + y * w + x`.  Per-tile pixel-ownership
-    # mask for the hex lattice is unfinished -- see TODO.md.
+    # formula `l * dims_x*dims_y + y * w + x`.
     for h in range(heights):
         for l in range(layouts):
             facings.append(Facing(
                 label=f"L{l}_H{h}",
                 slices=_building_slices(
                     l, h, dims_x, dims_y, hex_tile_screen_offset,
+                    pixel_mask=hex_tile_pixel_mask,
                 ),
                 camera_location=_HEX_CAM_LOC,
                 camera_rotation_euler=_HEX_CAM_ROT,
