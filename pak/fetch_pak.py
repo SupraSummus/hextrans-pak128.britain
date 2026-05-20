@@ -12,7 +12,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from pak._fetch import Source, fetch as _fetch, load_lock
+from pak._fetch import Source, fetch as _fetch
 
 SOURCE = Source(
     repo="jamespetts/simutrans-pak128.britain",
@@ -23,10 +23,6 @@ SOURCE = Source(
 
 def fetch(path: str, sha: str | None = None) -> Path:
     return _fetch(SOURCE, path, sha)
-
-
-def pinned_sha() -> str:
-    return load_lock(SOURCE)[0]
 
 
 def main(argv: list[str]) -> int:

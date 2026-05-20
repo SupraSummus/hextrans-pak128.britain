@@ -67,17 +67,6 @@ HEX_SHEAR_Z_COEF = math.sin(math.radians(60.0))
 PIXELS_PER_UNIT = HEX_SHEAR_Z_COEF * DEFAULT_W / 2.0
 
 
-def engine_z_per_step(height_step: int = 1, w: int = DEFAULT_W) -> float:
-    """World-z value whose hex projection lifts the screen by `height_step`
-    engine height steps.  A bespoke render that wants its sloped sprite
-    to align with the engine's ground rendering tilts world-z by this
-    amount across one height-step's worth of slope.  Engine callers
-    pass `z * TILE_HEIGHT_STEP` into `hex_height_raster_scale_y` (see
-    `display/viewport.cc`); we mirror that here — a height_step of 1
-    is `HEIGHT_STEP` raster units, ~16 px lift at W=128.
-    """
-    return hex_height_raster_scale_y(height_step * HEIGHT_STEP, w) / PIXELS_PER_UNIT
-
 # Upstream Britain blends are authored against a fixed ortho camera
 # with this scale rendering to 128x128 px (per the pak128.Britain
 # contributing-graphics thread).  See `INTRA_TILE_PER_BLEND_UNIT`
@@ -187,22 +176,7 @@ CORNER_COUNT = 6
 NS, NE_SW, NW_SE = 0, 1, 2
 
 
-# Depth-clip plane normals (Front-side, in world coords).  See engine
-# spec in `display/hex_proj.h` ("Depth-clip plane spec").
-
 _SQRT3 = math.sqrt(3.0)
-
-HEX_DEPTH_CLIP_NORMAL = {
-    NS:    ( 1.0,           0.0          ),
-    NE_SW: ( 0.5,          -_SQRT3 / 2.0 ),
-    NW_SE: (-0.5,          -_SQRT3 / 2.0 ),
-}
-
-
-def front_back_split(world_x, world_y, axis: int):
-    """True for the Front layer, False for Back.  Vectorises over numpy."""
-    nx, ny = HEX_DEPTH_CLIP_NORMAL[axis]
-    return nx * np.asarray(world_x) + ny * np.asarray(world_y) > 0.0
 
 
 # Raw slope_t per-corner weights.  `slope = sum(ch[i] * CORNER_WEIGHTS[i])`.
@@ -391,29 +365,6 @@ def axis_h_way(slope: int, axis: int):
     if abs(a0 - b0) <= 2:
         return a0, b0
     return None
-
-
-def axis_edge_midpoints(axis: int):
-    """`(mp1, mp2)` for the touched-edge midpoints (world XY)."""
-    (a0_i, a1_i), (b0_i, b1_i) = AXIS_EDGE_CORNERS[axis]
-    mp1 = ((HEX_CORNER_XY[a0_i][0] + HEX_CORNER_XY[a1_i][0]) / 2.0,
-           (HEX_CORNER_XY[a0_i][1] + HEX_CORNER_XY[a1_i][1]) / 2.0)
-    mp2 = ((HEX_CORNER_XY[b0_i][0] + HEX_CORNER_XY[b1_i][0]) / 2.0,
-           (HEX_CORNER_XY[b0_i][1] + HEX_CORNER_XY[b1_i][1]) / 2.0)
-    return mp1, mp2
-
-
-def axis_unit_vector(axis: int):
-    mp1, mp2 = axis_edge_midpoints(axis)
-    dx, dy = mp2[0] - mp1[0], mp2[1] - mp1[1]
-    n = math.sqrt(dx * dx + dy * dy)
-    return (dx / n, dy / n)
-
-
-def axis_perp_vector(axis: int):
-    """Unit perpendicular (90° CCW from the axis direction)."""
-    ux, uy = axis_unit_vector(axis)
-    return (-uy, ux)
 
 
 # ---- Slope validity -------------------------------------------------------
@@ -626,12 +577,6 @@ def find_min_partition(slope: int, geom=None) -> list[list[int]]:
                 break
 
     return best if best is not None else [list(range(geom.corner_count))]
-
-
-def trivial_partition(geom=None) -> list[list[int]]:
-    if geom is None:
-        geom = HexGeom()
-    return [list(range(geom.corner_count))]
 
 
 # ---- Polygon fill (independent re-implementation of synth_overlay.cc) -----

@@ -16,15 +16,12 @@ Two viewpoints ship as constants:
 Plus one viewpoint factory:
 
 - `building_hex_viewpoint(layouts, dims_x, dims_y)` returns a hex
-  Viewpoint with one Facing per `(layout, y, x)` cell of a multi-
-  tile building's footprint.  The cell's koord-(x,y) offset from
-  the building origin is converted to a world translation via the
-  hex tile lattice (see `HEX_KOORD_Q_WORLD` / `_R_WORLD` below) and
-  baked into the Facing's `model_translation`, so the standard hex
-  camera renders each cell with that tile at world origin.  Layout
-  rotation is `90° * l` CCW; this is a guess at the engine's layout-
-  to-screen-rotation convention and the first real bake will pin
-  the sign.
+  Viewpoint with one Facing per `(layout, height)` rotation variant.
+  Each Facing renders the whole footprint into a canvas sized to the
+  hex screen lattice (`hex_tile_screen_offset`) and carries a
+  `slices` list naming the per-cell sprite to crop from that canvas;
+  per-cell `model_translation` is not used (artist-authored XYZ
+  contract).
 
 All three feed the same `render_facings()` pipeline; the only
 difference is which `Viewpoint` instance gets passed in.
@@ -379,17 +376,6 @@ HEX_KOORD_R_WORLD: tuple[float, float] = (0.0,
 # camera; the engine then paints each level at its proper screen
 # offset.
 HEX_HEIGHT_LEVEL_WORLD_Z: float = 2.0 * HEX_TILE_RADIUS / HEX_SHEAR_Z_COEF
-
-
-def hex_tile_world_offset(qx: int, ry: int) -> tuple[float, float]:
-    """World (x, y) of tile (qx, ry) relative to the koord origin.
-
-    The lattice basis is `HEX_KOORD_Q_WORLD` (koord +x) and
-    `HEX_KOORD_R_WORLD` (koord +y).  Bake side passes the negative
-    of this as the per-cell `model_translation` so each rendered
-    tile centres on world origin under the standard hex camera."""
-    return (qx * HEX_KOORD_Q_WORLD[0] + ry * HEX_KOORD_R_WORLD[0],
-            qx * HEX_KOORD_Q_WORLD[1] + ry * HEX_KOORD_R_WORLD[1])
 
 
 def hex_tile_screen_offset(qx: int, ry: int) -> tuple[float, float]:

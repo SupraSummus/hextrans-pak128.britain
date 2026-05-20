@@ -151,7 +151,8 @@ The **silent-failure landmines** to pin for the blend pipeline:
    renders without complaint at the wrong on-screen size.
    Back-solve from a known anchor — corners at radius
    `HEX_TILE_RADIUS` from `hextrans-pak128/tools/threed/way.py`,
-   deck heights via `…/render.py::engine_z_per_step`.
+   deck heights from the engine's per-step world-z lift
+   (`hex_height_raster_scale_y` over `PIXELS_PER_UNIT`).
 2. **Sun direction.**  The upstream
    `render_SimutransRender_pak128Britain-65.py` rotates the sun
    with the camera (correct for square 8-view).  Hex pins one
