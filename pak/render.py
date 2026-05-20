@@ -218,6 +218,13 @@ class Viewpoint:
     # JH duplicates suffix-vary the same logical material across
     # twins (`Rail.000`/`.001`/`.002`/`.003`, `Ballast`/`Ballast.001`).
     strip_material_substrings: tuple[str, ...] = ()
+    # Mesh objects that get replaced with a half-space slab cutter
+    # (Holdout-shaded) at render time, fitted to the original verts'
+    # best-fit Z=aX+bY+c plane and extruded down in world Z.  Used by
+    # the tunnel viewpoints to turn `Plane.003` (the in-tile slope
+    # polygon, authored as "Transparent" in upstream JH tunnel blends)
+    # into an alpha cutter for the half-space below the slope.
+    holdout_meshes: tuple[str, ...] = ()
     # Blender render resolution.  None falls back to a square
     # `image_width × image_width` canvas (the original behaviour).  Used
     # by image-space slicing (multi-tile building hex viewpoint) to
@@ -666,6 +673,66 @@ def strip_scene(
     return authored
 
 
+def _apply_holdout(bpy, names: tuple[str, ...] | set[str]) -> None:
+    """Replace each named mesh's geometry with a 200x200 quad fitted to
+    the original verts' best-fit `Z = aX + bY + c` plane, extrude it
+    straight down in world Z by 100 units, and Holdout-shade the
+    result -- a deep slab that alpha-zeroes the half-space below the
+    original plane.  Replacing the geometry (rather than reusing it as
+    an in-place cutter) handles the JH tunnel topology where Plane.003
+    is two disconnected strips with a mouth-sized gap in the middle,
+    not an annulus; the gap would otherwise leak.  No-op for names
+    absent from the scene."""
+    if not names:
+        return
+    import bmesh
+    import mathutils
+    wanted = set(names)
+    holdout = bpy.data.materials.new("_holdout")
+    holdout.use_nodes = True
+    nt = holdout.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    ho_n = nt.nodes.new("ShaderNodeHoldout")
+    nt.links.new(ho_n.outputs[0], out.inputs[0])
+    for obj in bpy.context.scene.objects:
+        if obj.type != "MESH" or obj.name not in wanted:
+            continue
+        # Bake the object's world transform into the mesh data so the
+        # bmesh ops below work in world coords directly.  Safe because
+        # the object isn't parented or animated -- it's a static slope
+        # polygon.
+        obj.data.transform(obj.matrix_world)
+        obj.matrix_world = mathutils.Matrix.Identity(4)
+        a, b, c = _fit_plane_z(obj.data.vertices)
+        bm = bmesh.new()
+        size = 100.0
+        corners = [(-size, -size), (size, -size), (size, size), (-size, size)]
+        top = [bm.verts.new((x, y, a*x + b*y + c)) for x, y in corners]
+        bm.faces.new(top)
+        result = bmesh.ops.extrude_face_region(bm, geom=list(bm.faces))
+        for elem in result["geom"]:
+            if isinstance(elem, bmesh.types.BMVert):
+                elem.co.z -= 100.0
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.materials.clear()
+        obj.data.materials.append(holdout)
+
+
+def _fit_plane_z(verts) -> tuple[float, float, float]:
+    """Least-squares fit `Z = a*X + b*Y + c` to the given mesh verts'
+    world-space coordinates.  Returns `(a, b, c)`.  The fit is exact
+    when the input verts are coplanar (which Plane.003 in JH tunnel
+    blends is)."""
+    import numpy as np
+    pts = np.array([(v.co.x, v.co.y, v.co.z) for v in verts])
+    A = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(pts))])
+    coeffs, *_ = np.linalg.lstsq(A, pts[:, 2], rcond=None)
+    return float(coeffs[0]), float(coeffs[1]), float(coeffs[2])
+
+
 def _install_camera_and_sun(bpy, viewpoint: Viewpoint,
                             authored: BlendAuthored):
     """Create one camera and one SUN light, configured per the
@@ -880,6 +947,7 @@ def render_facings(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
 
     authored = strip_scene(bpy, viewpoint.strip_meshes,
                            viewpoint.strip_material_substrings)
+    _apply_holdout(bpy, viewpoint.holdout_meshes)
     if viewpoint.engine.rebind_textures:
         _reload_external_textures(bpy)
     cam, sun = _install_camera_and_sun(bpy, viewpoint, authored)

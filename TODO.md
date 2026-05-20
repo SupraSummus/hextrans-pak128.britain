@@ -919,14 +919,16 @@ tokens are read off `tunnel_writer.cc`; per-edge rotation table is
 visually verified (arrow-annotated probe atlases against
 `frontimage[<edge>]` = "mouth faces <edge>" convention).  Back /
 Front split is a camera depth clip at the tile-centre Y plane in
-`tunnel_hex_viewpoint`; geometrically honest but the Back row picks
-up the portal roof past Y=0 in addition to the rear wall, which
-upstream Britain doesn't (upstream Back = just the floor sliver
-under the arch with rails baked in).  Concrete next move if the
-extra roof in Back becomes visually objectionable in-engine: add a
-per-blend roof-material mask to `tunnel_hex_viewpoint`'s strip set
-for the Back pass only, or move the clip plane closer to the camera
-so only the rear wall lands in Back.  Remaining gaps:
+`tunnel_hex_viewpoint`; layered on top is a slope-slab Holdout
+cutter (`Viewpoint.holdout_meshes`) that alpha-zeroes everything
+below the in-tile slope plane.  The cutter is applied uniformly
+to every facing, which means the production Back layer loses the
+rear interior wall the slope buried -- the engine relies on Back
+for the "train inside tunnel" backdrop, so in-game the train will
+sit in front of an empty cell.  Concrete next move when that
+turns out visually objectionable: skip the holdout swap for Back
+facings (per-facing flag on `Facing`, or a separate viewpoint
+field listing facing labels exempt from holdout).  Remaining gaps:
 
 * **Snow `[1]` not emitted.**  `tunnel_writer.cc` reads
   `frontimage[<edge>][1]` for snow.  Concrete next move when a snow
@@ -941,20 +943,6 @@ so only the rear wall lands in Back.  Remaining gaps:
   land at all.  Concrete next move when a 4-portal asset surfaces:
   extend `TUNNEL_FACING_LABELS` to include the suffixed variants
   and route `bake_tunnel` to render the extra facings.
-
-* **S/E facings carry hillside-roof XOR vs upstream.**  `diff_tunnel`
-  stitches upstream's Back+Front per facing for an apples-to-apples
-  silhouette target, but stone-tunnel ships Back only for N/W; on S/E
-  we still diff our whole-portal silhouette against upstream's
-  Front-only cell, so the rear hillside-roof contributes XOR pixels
-  (worst IoU ~0.72 on those rows, ~0.81 on Back-present rows).
-  Concrete next move: add a Front-only mode to `tunnel_square_viewpoint`
-  (depth-clip at the tile-centre Y plane, mirroring
-  `tunnel_hex_viewpoint`'s Back/Front split) and diff Front-only
-  against upstream Front when the dat lacks Back.  Trigger: porting
-  brick-face-tunnel-portal, whose upstream ships Back on all four
-  cardinals and so exercises the Back+Front-when-both-present path
-  end-to-end.
 
 **Rewrite README.md.**  Current text is upstream's 2009 readme
 preserved verbatim with a disclaimer header — describes the
