@@ -1,0 +1,98 @@
+"""br-153."""
+
+from __future__ import annotations
+
+from pak.bake import bake_main
+from pak.dat import Vehicle
+
+_BLEND = 'trains/Railcars/br-153-abellio.blend'
+_UPSTREAM_DAT = 'trains/br-153.dat'
+
+SPECS = [
+    Vehicle(
+        name='br-153',
+        waytype='track',
+        copyright='Kieron/Rollmaterial',
+        freight='Passagiere',
+        engine_type='diesel',
+        intro_year=1991,
+        intro_month=3,
+        retire_year=1999,
+        retire_month=2,
+        speed=120,
+        length=13,
+        weight=41,
+        axles=4,
+        power=212,
+        gear=50,
+        tractive_effort=48,
+        brake_force=44,
+        rolling_resistance=13,
+        payload=72,
+        min_loading_time=15,
+        max_loading_time=65,
+        overcrowded_capacity=29,
+        cost=1296000,
+        runningcost=64,
+        fixed_cost=6675,
+        upgrade_price=0,
+        increase_maintenance_after_years=23,
+        bidirectional=1,
+        can_lead_from_rear=1,
+        smoke='Diesel-light',
+        sound='spompeytransportvideo-class-150.wav',
+        constraint_prev=['br-150-rear', 'br-153', 'br-153-trolley', 'br-158-rear', 'br-156-rear', 'br-142-rear', 'br-141-1-rear', 'br-142-1-rear', 'br-144-0-rear', 'br-144-1-rear', 'BR-170Rear', 'br-159-rear', 'none'],
+        constraint_next=['br-150-front', 'br-153', 'br-158-front', 'br-156-front', 'br-153-trolley', 'br-156-front-trolley', 'br-142-front', 'br-141-1-front', 'br-142-1-front', 'br-144-0-front', 'br-144-1-front', 'BR-170Front', 'br-159-front', 'none'],
+        payload_by_class=[0, 72],
+        comfort_by_class=[0, 92],
+        liverytype=['Regional-Railways-Standard', 'One', 'Anglia-original', 'NXEA', 'Abellio-Greater-Anglia'],
+        upgrade=['br-153-trolley'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+    Vehicle(
+        name='br-153-trolley',
+        waytype='track',
+        copyright='Kieron/Rollmaterial',
+        freight='Passagiere',
+        engine_type='diesel',
+        intro_year=1991,
+        intro_month=3,
+        retire_year=1999,
+        retire_month=2,
+        speed=120,
+        length=13,
+        weight=41,
+        axles=4,
+        power=212,
+        gear=50,
+        tractive_effort=48,
+        brake_force=44,
+        rolling_resistance=13,
+        payload=72,
+        min_loading_time=20,
+        max_loading_time=65,
+        overcrowded_capacity=25,
+        catering_level=1,
+        cost=1299000,
+        runningcost=64,
+        fixed_cost=18677,
+        upgrade_price=1500,
+        increase_maintenance_after_years=23,
+        bidirectional=1,
+        can_lead_from_rear=1,
+        smoke='Diesel-light',
+        constraint_prev=['br-150-rear', 'br-153', 'br-153-trolley', 'br-158-rear', 'br-156-rear', 'br-142-rear', 'br-141-1-rear', 'br-142-1-rear', 'br-144-0-rear', 'br-144-1-rear', 'BR-170Rear', 'br-159-rear', 'none'],
+        constraint_next=['br-150-front', 'br-153', 'br-158-front', 'br-156-front', 'br-153-trolley', 'br-156-front-trolley', 'br-142-front', 'br-141-1-front', 'br-142-1-front', 'br-144-0-front', 'br-144-1-front', 'BR-170Front', 'br-159-front', 'none'],
+        payload_by_class=[0, 72],
+        comfort_by_class=[0, 92],
+        liverytype=['Regional-Railways-Standard', 'One', 'Anglia-original', 'NXEA', 'Abellio-Greater-Anglia'],
+        upgrade=['br-153'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+]
+
+
+if __name__ == "__main__":
+    bake_main(SPECS, __file__)
