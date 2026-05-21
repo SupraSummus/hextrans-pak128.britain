@@ -1299,3 +1299,11 @@ extended-only feature.  Don't:
 
 If a body is getting long, prefer splitting the commit or moving
 the context here.
+
+**Author identity comes from `git log`, not the system prompt.**
+Hosted-session environments often inject a label like `jan
+<jan@techlabee.ai>` into the harness's user info, but the
+authoritative author for this repo is whatever `git log
+--format='%an <%ae>' | sort -u` shows.  Use that.  Don't trust
+the surrounding metadata; look it up before any `--author=` /
+`-c user.name=` operation.

@@ -451,6 +451,24 @@ slice centring (replace `max(dims)/2` with the per-L centroid via
 `hex_tile_screen_offset(centroid_x, centroid_y)`).  Either side
 calling into the same SPEC-level helper avoids future drift.
 
+**Open: building blends without a SUN lamp.**  Six citybuilding
+blends ship without a SUN object (`1750-warehouse`,
+`1750-town-house`, `1880-sm-factory{,-b}`, `60-5f-tower-block`,
+`1980-warehouse`), so `building_hex_viewpoint`'s
+`_authored_sun(_BI_TO_EEVEE_SUN_SCALE)` raises `SystemExit
+("Viewpoint expected authored sun_energy; blend has no SUN
+light")` and the bake never starts.  At least 9 unported `Obj=
+building` candidates with clean blend matches are blocked on
+this, including all four IND_JH_1750 warehouse variants.
+Concrete next move: have `building_hex_viewpoint` accept an
+optional `default_sun_energy` and pin
+`_BI_TO_EEVEE_SUN_SCALE * 0.028` when the blend has none, so
+the BI-substitute lighting still reads sensibly.  Either that or
+a per-asset `lighting=Lighting(sun_energy_scale=...)` override
+the resolver actually honours when authored is missing (current
+`_sun_energy_lighting_resolver` falls back to the inner resolver
+which raises again).
+
 **Open: 4-layout rotation formula is signalbox-pinned, not proven.**
 The `model_rot_z = (2·step·l) % 360` formula in
 `building_square_viewpoint` was chosen on visual evidence from
@@ -478,8 +496,15 @@ the per-season divergence from upstream.
 **Open: heights coverage.**  The slicing canvas computes vertical
 headroom from hex koord offsets alone; `heights>1` will need
 extra vertical room in the canvas plus per-height slice rows.
-Untested end-to-end -- first multi-height port (no asset yet
-needs it) will surface what's missing.
+The citybuildings batch hit this on seven `COM_*_1970_*` ports
+sharing `70-office.blend` — upstream's dat carries
+`BackImage[...][1][...]` (heights=2) but the diff harness blew
+up looking for our `H1` sprite slice (`out/diff/.../70-office_
+L0_Y0_X0_H1.png`).  Concrete next move: extend the slicing
+canvas's vertical extent by `heights * HEX_HEIGHT_LEVEL_WORLD_Z`
+in screen px, add `(h, y, x)` rows to `Facing.slices`, and have
+the renderer's per-height z shift line each storey up into a
+visible window.
 
 **Building schema gaps.**  `pak.dat.Building` covers attractions,
 monuments, city buildings (res/com/ind), townhalls, HQs, stops,
@@ -993,6 +1018,19 @@ band.  Worth tightening once a vision-supervised first pass over
 the band tells us which loose matches are "right blend wrong
 livery" (keep + recolour) vs "wrong asset entirely" (skip and
 write a TODO).
+
+**Skin-variant matcher trap.**  Upstream sometimes ships two
+`Obj=building` blocks with identical gameplay but `-b` /
+`-2` skin variants pointed at PNG-only art that has no blend
+backing (e.g. `30-detatched-house-2f-b` vs `30-detatched-house-
+2f.blend`).  A `strip-letter` / `strip-num` matcher that falls
+back to the non-suffix blend will happily ship two byte-
+identical atlases under different `Name=`s, degrading upstream's
+designed visual diversity into a doubled spawn rate of the same
+sprite.  Concrete next move when expanding the citybuildings
+matcher: reject a candidate when the image stem ends in `-[a-
+z0-9]` and the matched blend stem doesn't.  IoU can't catch this
+(the silhouette matches by construction).
 
 **Distinct-blend multi-object dats** (loco + tender, EMU sets).
 The autoport SPECS pattern handles shared-blend multi-object
