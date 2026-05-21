@@ -17,6 +17,10 @@ from types import ModuleType
 from typing import Any
 
 from pak import REPO_ROOT
+from pak._fetch import load_lock
+from pak.dat import Bridge, Building
+from pak.fetch_blend import SOURCE as JP_SOURCE
+from pak.fetch_jh_blend import SOURCE as JH_SOURCE
 
 _SKIP_DIRS = {"pak", "tests", "grounds", "pak1file", "simutranslator",
               ".cache", "build", "__pycache__"}
@@ -68,6 +72,42 @@ def unported(category: str | None = None) -> list[Path]:
     return candidates
 
 
+def _spec_blends(spec: Any) -> list[tuple[str, str]]:
+    """`(source, path)` pairs one SPEC's blend fields declare."""
+    if isinstance(spec, Bridge):
+        return [("jh", p) for p in (spec.blend_image, spec.blend_start,
+                                    spec.blend_ramp, spec.blend_pillar)
+                if p is not None]
+    source = getattr(spec, "blend_source", "jp")
+    out = [(source, spec.blend)] if spec.blend is not None else []
+    if isinstance(spec, Building) and spec.blend_winter is not None:
+        out.append((source, spec.blend_winter))
+    return out
+
+
+def referenced_blends() -> set[tuple[str, str]]:
+    """`(source, blend)` pairs every ported SPEC declares."""
+    return {ref for script in discover()
+            for spec in specs_of(import_script(script))
+            for ref in _spec_blends(spec)}
+
+
+def unused_blends() -> list[tuple[str, str]]:
+    """Lock-file `.blend` entries no ported SPEC references.
+
+    Either stale (script removed without trimming the lock) or
+    in-flight (blend fetched ahead of its SPEC).  Locks also carry
+    texture / script paths whose consumers are runtime (e.g.
+    `pak.render._reload_external_textures`) and can't be statically
+    derived — those are filtered out here, not reported as unused.
+    """
+    locked: set[tuple[str, str]] = set()
+    for tag, src in (("jp", JP_SOURCE), ("jh", JH_SOURCE)):
+        _, files = load_lock(src)
+        locked.update((tag, p) for p in files if p.endswith(".blend"))
+    return sorted(locked - referenced_blends())
+
+
 def _main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     g = ap.add_mutually_exclusive_group()
@@ -75,19 +115,23 @@ def _main(argv: list[str]) -> int:
                    help="list ported bake scripts (default)")
     g.add_argument("--unported", action="store_true",
                    help="list upstream dats with no sibling bake script")
+    g.add_argument("--unused-blends", action="store_true",
+                   help="list lock-file blends no ported SPEC references")
     ap.add_argument("category", nargs="?",
                     help="restrict to one top-level dir (e.g. 'trains')")
     args = ap.parse_args(argv)
+    if args.unused_blends:
+        for source, path in unused_blends():
+            if args.category and not path.lower().startswith(args.category.lower() + "/"):
+                continue
+            print(f"{source}:{path}")
+        return 0
     paths = unported(args.category) if args.unported else discover()
     if args.category and not args.unported:
         paths = [p for p in paths if p.relative_to(REPO_ROOT).parts[0] == args.category]
     for p in paths:
         print(p.relative_to(REPO_ROOT))
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(_main(sys.argv[1:]))
 
 
 def import_script(script: Path) -> ModuleType:
@@ -108,3 +152,7 @@ def specs_of(mod: ModuleType) -> list[Any]:
         return list(specs)
     spec = getattr(mod, "SPEC", None)
     return [spec] if spec is not None else []
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv[1:]))
