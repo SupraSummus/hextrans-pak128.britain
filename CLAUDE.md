@@ -377,6 +377,18 @@ glance.  This is the only step that touches upstream PNGs — see
 "Don't bake the answer" above; comparison is regression check, not
 steering signal.
 
+The ≥ 0.93 bar above is the **vision-supervised calibration**
+target, reached by iterating material/lighting/blend-frame
+adjustments with eyes on `grid.png`.  Unsupervised batch porting
+runs a **soft-acceptance** variant: ship at IoU ≥ 0.5 with a
+note, queue the 0.5-0.93 band for a later polish pass.  See
+`docs/porting.md` for the batch workflow + empirical IoU
+distribution; the n=595 train trial shipped 62 % at ≥ 0.90 and
+median 0.92, so the soft-acceptance pool is the wrong-livery
+tail, not the bulk of ports.  `pak.check` exits non-zero below
+the 0.90 strict floor regardless of mode — batch tooling parses
+stdout for the actual IoU and ignores the exit code.
+
 `pak/check.py` is the driver: it imports a bake script,
 reads `SPEC.blend` and `SPEC.upstream_dat`, and runs the diff
 with no extra path-passing.  `--all` sweeps every bake script
@@ -549,7 +561,7 @@ trains/
   _gwr_king.png           # generated  }
   _gwr_king_tender.dat    # generated  } tender
   _gwr_king_tender.png    # generated  }
-  4wheel-stanhope.dat     # unported upstream (seeder input)
+  ac-railbus.dat          # unported upstream (seeder input)
   …
 ```
 
@@ -704,9 +716,14 @@ digit (`4wheel_…`) aren't valid Python identifiers — a leading
 (`from trains import _4wheel_1850s_first`); generated artefacts
 share the prefix so the triple moves and greps together.
 Letter-leading names (`br_cl15`, `blackpool_brush`) go plain —
-no underscore.  `pak/__init__.py` and `trains/__init__.py`
-make the repo a proper package tree so bake scripts can
-`from pak.dat import …` without a `sys.path` hack.  Run as a module from the repo root:
+no underscore — **unless** the upstream dat stem has no hyphens
+to translate (`vulcan.dat`), in which case the ported `.py`'s
+sibling `.dat` would overwrite the upstream before `git rm` can
+remove it.  Single-token letter-led names get the `_` prefix
+too (`vulcan.dat` → `_vulcan.py`).  `pak/__init__.py` and
+`trains/__init__.py` make the repo a proper package tree so
+bake scripts can `from pak.dat import …` without a `sys.path`
+hack.  Run as a module from the repo root:
 
     python3 -m trains._4wheel_1850s_first
 

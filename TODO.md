@@ -30,8 +30,9 @@ Other Makefile `DIRS*` lines stay commented out as scope
 statement; per-dir, the `ported_dats` filter feeds only the
 `.dat` files with a sibling `.png` to makeobj, so re-enabling a
 dir doesn't drag in its unported upstream `.dat` files (e.g.
-`trains/` has 866 unported dats against 4 ported, and the build
-ignores the 866 without touching them).  Concrete next move when
+`trains/` currently has ~290 unported dats against ~570 ported
+bake-unit triples, and the build ignores the 290 without touching
+them).  Concrete next move when
 a new category's first asset is ported: uncomment its
 `DIRS128 += <dir>` (and matching `TR_DIRS += <dir>`) line, push,
 watch CI go green.
@@ -970,3 +971,58 @@ After the spine: expand by asset family (rail vehicles, road
 vehicles, buildings, industries).  Per-family progress is
 recorded by deleting that family's entry from this file when it's
 done, not by adding "completed" notes.
+
+**Polish pass on shipped-but-uncalibrated trains.**  ~300 ports
+in the trains/ catalog landed at IoU 0.5-0.93 — silhouette
+matches upstream but the picked livery/material is the wrong
+variant.  Pattern: the `pak.blend_index` matcher resolves a
+generic dat (`gwr-3100.dat`) to a livery-specific blend
+(`gwr-3100-modified-black.blend`) because that's the only
+matching blend upstream ships, but the dat's image refs are for
+a different livery (`gwr-3100`, no `-modified`).  Bake silhouette
+is right, colour is wrong.  Concrete next move: walk
+`pak.check --all` output (vehicles), bucket by 0.5-0.7, 0.7-0.85,
+0.85-0.93, and for each cluster pick the right blend variant /
+add a `materials=` recolour.  Vision-supervised; not autoportable.
+
+**Loose-matcher false positives.**  When `pak.blend_index`
+relaxes to first-2-tokens-of-dat as prefix match (the technique
+that recovered 50 orphan trains), 30 % land below 0.5 IoU and
+get skipped; another 30 % land in the 0.5-0.7 colour-mismatch
+band.  Worth tightening once a vision-supervised first pass over
+the band tells us which loose matches are "right blend wrong
+livery" (keep + recolour) vs "wrong asset entirely" (skip and
+write a TODO).
+
+**Distinct-blend multi-object dats** (loco + tender, EMU sets).
+The autoport SPECS pattern handles shared-blend multi-object
+(all objects render from one blend) but not the loco + tender
+case where the loco uses `gwr-king.blend` and the tender uses
+`gwr-king-tender.blend`.  Concrete next move: extend
+`pak.bake.bake_main` to accept a list of SPECS where each
+declares its own `blend=` and `basename=`, call `bake_vehicle`
+once per output.  Worked example skeleton in `gwr-king`.
+
+**Upstream stub dats** — ~25 dats hit "no image refs" or
+HTTP 404 on the upstream PNG fetch.  These are upstream-state
+issues (dats authored without art, or art removed without dat
+cleanup).  Not portable from our side.  Concrete next move:
+maintain a skip-list (or just leave the dats unported) and
+revisit if upstream fills the art back in.
+
+**Nested tile-size dirs** (`boats/boats192/`, `boats/boats224/`,
+`boats/boats256/`, `air/air192/`, `air/air256/`).  These are
+higher-resolution sprite variants for zoom-in display.  The hex
+bake only produces 128 px tile renders, so `diff_upstream` fails
+with a shape-mismatch when comparing against the high-res
+upstream PNG.  Concrete next move: either skip these categories
+(hex engine may not need high-res variants at all — check
+`SupraSummus/hextrans` engine) or extend the bake pipeline to
+emit per-zoom-level atlases.
+
+**Multi-resolution support.**  Related to the previous: upstream
+Britain ships at 128/192/224/256 px tile sizes (the `boatsNNN/`
+and `airNNN/` subdirs).  Hex engine plans?  Concrete next move:
+look at `hextrans/src/simutrans/display/` for zoom-level
+configuration and decide whether to mirror the upstream
+multi-res convention or stay 128-only.
