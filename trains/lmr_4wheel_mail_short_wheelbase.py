@@ -1,0 +1,118 @@
+"""lmr-4wheel-mail-short-wheelbase."""
+
+from __future__ import annotations
+
+from pak.bake import bake_main
+from pak.dat import Vehicle
+
+# These actually mainly conveyed passengers, at higher comfort and cost
+# than the ordinary first class, with an additional mail locker for the
+# actual mail. It is difficult to make this work for rail vehicles in Simutrans,
+# however.
+_BLEND = 'trains/Carriages/4wheel-mail-short-wheelbase.blend'
+_UPSTREAM_DAT = 'trains/lmr-4wheel-mail-short-wheelbase.dat'
+
+SPECS = [
+    Vehicle(
+        name='LMR-4Wheel-mail-short-wheelbase',
+        waytype='track',
+        copyright='James/jamespetts',
+        freight='Passagiere',
+        intro_year=1829,
+        intro_month=8,
+        retire_year=1834,
+        retire_month=7,
+        speed=75,
+        length=3,
+        weight=2.7,
+        axles=2,
+        brake_force=0,
+        rolling_resistance=20,
+        payload=12,
+        min_loading_time=35,
+        max_loading_time=120,
+        overcrowded_capacity=0,
+        catering_level=0,
+        cost=144000,
+        runningcost=0,
+        fixed_cost=60,
+        bidirectional=1,
+        can_lead_from_rear=0,
+        constraint_next=['railway-mail-locker'],
+        payload_by_class=[0, 0, 0, 0, 12],
+        comfort_by_class=[0, 0, 0, 0, 55],
+        liverytype=['LMR-Standard'],
+        upgrade=['LMR-4Wheel-mail-short-wheelbase'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+    Vehicle(
+        name='LMR-4Wheel-mail-short-wheelbase-Guard-front',
+        waytype='track',
+        copyright='James/jamespetts',
+        freight='Passagiere',
+        intro_year=1829,
+        intro_month=8,
+        retire_year=1834,
+        retire_month=7,
+        speed=75,
+        length=3,
+        weight=2.7,
+        axles=2,
+        brake_force=1,
+        rolling_resistance=20,
+        payload=12,
+        min_loading_time=35,
+        max_loading_time=120,
+        overcrowded_capacity=0,
+        cost=150000,
+        runningcost=0,
+        fixed_cost=4863,
+        bidirectional=1,
+        can_lead_from_rear=0,
+        constraint_next=['railway-mail-locker'],
+        payload_by_class=[0, 0, 0, 0, 12],
+        comfort_by_class=[0, 0, 0, 0, 55],
+        liverytype=['LMR-Standard'],
+        upgrade=['LMR-4Wheel-Mail-Guard-front'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+    Vehicle(
+        name='LMR-4Wheel-mail-short-wheelbase-Guard-rear',
+        waytype='track',
+        copyright='James/jamespetts',
+        freight='Passagiere',
+        intro_year=1829,
+        intro_month=8,
+        retire_year=1834,
+        retire_month=7,
+        speed=75,
+        length=3,
+        weight=2.7,
+        axles=2,
+        brake_force=1,
+        rolling_resistance=20,
+        payload=12,
+        min_loading_time=35,
+        max_loading_time=120,
+        overcrowded_capacity=0,
+        catering_level=0,
+        cost=150000,
+        runningcost=0,
+        fixed_cost=4863,
+        bidirectional=1,
+        can_lead_from_rear=0,
+        constraint_next=['railway-mail-locker-rear'],
+        payload_by_class=[0, 0, 0, 0, 12],
+        comfort_by_class=[0, 0, 0, 0, 55],
+        liverytype=['LMR-Standard'],
+        upgrade=['LMR-4Wheel-Mail-Guard-rear'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+]
+
+
+if __name__ == "__main__":
+    bake_main(SPECS, __file__)

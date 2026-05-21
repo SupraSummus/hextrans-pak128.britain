@@ -1,0 +1,106 @@
+"""lms-garratt."""
+
+from __future__ import annotations
+
+from pak.bake import bake_main
+from pak.dat import Vehicle
+
+# https://en.wikipedia.org/wiki/LMS_Garratt
+_BLEND = 'trains/Locomotives/lms-garratt-middle-br.blend'
+_UPSTREAM_DAT = 'trains/lms-garratt.dat'
+
+SPECS = [
+    Vehicle(
+        name='LMS-Garratt-Front',
+        waytype='track',
+        copyright='James',
+        freight='None',
+        engine_type='steam',
+        intro_year=1927,
+        intro_month=4,
+        retire_year=1937,
+        retire_month=9,
+        speed=80,
+        length=4,
+        weight=50,
+        axle_load=19,
+        power=617,
+        tractive_effort=203,
+        way_wear_factor=118125,
+        payload=0,
+        cost=12672000,
+        runningcost=351,
+        fixed_cost=66400,
+        increase_maintenance_after_years=14,
+        years_before_maintenance_max_reached=13,
+        bidirectional=1,
+        sound='konakaboom-black-five.wav',
+        constraint_next=['LMS-Garratt-Middle'],
+        liverytype=['LMS-Standard', 'BR-Early'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+    Vehicle(
+        name='LMS-Garratt-Middle',
+        waytype='track',
+        copyright='James',
+        freight='None',
+        engine_type='steam',
+        intro_year=1927,
+        intro_month=4,
+        retire_year=1937,
+        retire_month=9,
+        speed=80,
+        length=7,
+        weight=51,
+        axle_load=0,
+        power=0,
+        tractive_effort=0,
+        way_wear_factor=0,
+        payload=0,
+        cost=0,
+        runningcost=0,
+        fixed_cost=0,
+        increase_maintenance_after_years=14,
+        years_before_maintenance_max_reached=13,
+        bidirectional=1,
+        smoke='Steam',
+        constraint_prev=['LMS-Garratt-Front'],
+        constraint_next=['LMS-Garratt-Rear'],
+        liverytype=['LMS-Standard', 'BR-Early'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+    Vehicle(
+        name='LMS-Garratt-Rear',
+        waytype='track',
+        copyright='James',
+        freight='None',
+        engine_type='steam',
+        intro_year=1927,
+        intro_month=4,
+        retire_year=1937,
+        retire_month=9,
+        speed=80,
+        length=4,
+        weight=50,
+        axle_load=19,
+        power=0,
+        way_wear_factor=118125,
+        payload=0,
+        cost=0,
+        runningcost=0,
+        fixed_cost=0,
+        increase_maintenance_after_years=14,
+        years_before_maintenance_max_reached=13,
+        bidirectional=1,
+        constraint_prev=['LMS-Garratt-Middle'],
+        liverytype=['LMS-Standard', 'BR-Early'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+]
+
+
+if __name__ == "__main__":
+    bake_main(SPECS, __file__)

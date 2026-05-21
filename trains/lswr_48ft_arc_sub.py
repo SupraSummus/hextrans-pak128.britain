@@ -1,0 +1,108 @@
+"""lswr-48ft-arc-sub."""
+
+from __future__ import annotations
+
+from pak.bake import bake_main
+from pak.dat import Vehicle
+
+# Non-lavatory compartment carriages with arc roofs
+_BLEND = 'trains/Carriages/lswr-48ft-arc-malachite.blend'
+_UPSTREAM_DAT = 'trains/lswr-48ft-arc-sub.dat'
+
+SPECS = [
+    Vehicle(
+        name='lswr-48ft-arc-sub-brake-front',
+        waytype='track',
+        copyright='JamesPetts',
+        freight='Passagiere',
+        intro_year=1884,
+        intro_month=9,
+        retire_year=1896,
+        retire_month=10,
+        speed=160,
+        length=8,
+        weight=19.6,
+        axles=4,
+        payload=60,
+        min_loading_time=10,
+        max_loading_time=30,
+        overcrowded_capacity=30,
+        cost=700000,
+        runningcost=0,
+        fixed_cost=5633,
+        bidirectional=1,
+        can_lead_from_rear=0,
+        constraint_next=['4-wheel-1870s-fitted', '4-wheel-1870s-brake-fitted', '4-wheel-1870s-mail-fitted', '4-wheel-1870s-tpo-fitted', '4-wheel-sub-1870s-fitted', '4-wheel-sub-1870s-brake-rear-fitted', '4-wheel-1870s-fast-freight-fitted', '4-wheel-1870s-milk-fitted', 'lswr-56ft-sub', 'lswr-56ft-sub-brake-rear', 'lswr-56ft-lav-brake-rear', 'lswr-56ft-lav', 'lswr-48ft-sub-brake-rear', 'lswr-48ft-sub', 'lswr-48ft-lav', 'lswr-48ft-arc-parcels-brake', 'lswr-48ft-arc-fruit-brake', 'lswr-44ft-full-brake', 'lswr-44ft-full-brake-elliptical', 'lswr-48ft-fruit-brake', 'lswr-48ft-parcels-brake', 'lswr-48ft-arc-sub-brake-rear', 'lswr-48ft-arc-sub', 'lswr-48ft-arc-lav-brake', 'lswr-48ft-arc-lav', 'lswr-30ft-full-brake-6-wheel-elliptical', 'lswr-30ft-fruit-brake-6-wheel-elliptical', 'lswr-6-wheel-28ft-brake-rear', 'lswr-6-wheel-28ft', 'lswr-6-wheel-30ft-lantern-roof-brake', 'lswr-6-wheel-30ft-brake-rear', 'lswr-6-wheel-30ft', 'lswr-6-wheel-30ft-lav', 'lswr-6-wheel-30ft-full-brake', 'lswr-6-wheel-30ft-fruit-brake', 'lswr-6-wheel-30ft-parcels-van', 'lswr-6-wheel-30ft-fruit-van', 'lswr-6-wheel-28ft-composite', 'lswr-56ft-lav-composite-1st-3rd', 'lswr-56ft-sub-tricomposite', 'lswr-42ft-brake-third-rear', 'lswr-42ft-third', 'lswr-42ft-first', 'lswr-42ft-tricomposite', 'lswr-6-wheel-30ft-second', 'lswr-6-wheel-29ft-6-first', 'lswr-48ft-arc-lav-composite', 'lswr-48ft-lav-tricomposite', 'lswr-48ft-lav-composite', 'none'],
+        payload_by_class=[0, 60, 0, 0],
+        comfort_by_class=[0, 77, 78, 84],
+        liverytype=['LSWR-pea-green', 'LSWR-sage', 'SR-Olive-Green', 'SR-Malachite-Green'],
+        upgrade=['lswr-48ft-arc-augmentation-trailer-front', 'lswr-48ft-arc-augmentation-trailer-rear'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+    Vehicle(
+        name='lswr-48ft-arc-sub-brake-rear',
+        waytype='track',
+        copyright='JamesPetts',
+        freight='Passagiere',
+        intro_year=1884,
+        intro_month=9,
+        retire_year=1896,
+        retire_month=10,
+        speed=160,
+        length=8,
+        weight=19.6,
+        axles=4,
+        payload=60,
+        min_loading_time=10,
+        max_loading_time=30,
+        overcrowded_capacity=30,
+        cost=700000,
+        runningcost=0,
+        fixed_cost=5633,
+        bidirectional=1,
+        can_lead_from_rear=0,
+        constraint_prev=['4-wheel-1870s-fitted', '4-wheel-1870s-brake-fitted', '4-wheel-1870s-mail-fitted', '4-wheel-1870s-tpo-fitted', '4-wheel-sub-1870s-fitted', '4-wheel-sub-1870s-brake-front-fitted', '4-wheel-1870s-fast-freight-fitted', '4-wheel-1870s-milk-fitted', 'lswr-56ft-sub', 'lswr-56ft-sub-brake-front', 'lswr-56ft-lav-brake-front', 'lswr-56ft-lav', 'lswr-48ft-sub-brake-front', 'lswr-48ft-sub', 'lswr-48ft-lav', 'lswr-48ft-arc-parcels-brake', 'lswr-48ft-arc-fruit-brake', 'lswr-44ft-full-brake', 'lswr-44ft-full-brake-elliptical', 'lswr-48ft-fruit-brake', 'lswr-48ft-parcels-brake', 'lswr-48ft-arc-sub-brake-front', 'lswr-48ft-arc-sub', 'lswr-48ft-arc-lav-brake', 'lswr-48ft-arc-lav', 'lswr-30ft-full-brake-6-wheel-elliptical', 'lswr-30ft-fruit-brake-6-wheel-elliptical', 'lswr-6-wheel-28ft-brake-front', 'lswr-6-wheel-28ft', 'lswr-6-wheel-30ft-lantern-roof-brake', 'lswr-6-wheel-30ft-brake-front', 'lswr-6-wheel-30ft', 'lswr-6-wheel-30ft-lav', 'lswr-6-wheel-30ft-full-brake', 'lswr-6-wheel-30ft-fruit-brake', 'lswr-6-wheel-30ft-parcels-van', 'lswr-6-wheel-30ft-fruit-van', 'lswr-6-wheel-28ft-composite', 'lswr-56ft-lav-composite-1st-3rd', 'lswr-56ft-sub-tricomposite', 'lswr-42ft-brake-third-front', 'lswr-42ft-third', 'lswr-42ft-first', 'lswr-42ft-tricomposite', 'lswr-6-wheel-30ft-second', 'lswr-6-wheel-29ft-6-first', 'lswr-48ft-arc-lav-composite', 'lswr-48ft-lav-tricomposite', 'lswr-48ft-lav-composite'],
+        payload_by_class=[0, 0, 0, 60],
+        comfort_by_class=[0, 77, 78, 84],
+        liverytype=['LSWR-pea-green', 'LSWR-sage', 'SR-Olive-Green', 'SR-Malachite-Green'],
+        upgrade=['lswr-48ft-arc-augmentation-trailer-front', 'lswr-48ft-arc-augmentation-trailer-rear'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+    Vehicle(
+        name='lswr-48ft-arc-sub',
+        waytype='track',
+        copyright='JamesPetts',
+        freight='Passagiere',
+        intro_year=1884,
+        intro_month=9,
+        retire_year=1896,
+        retire_month=10,
+        speed=160,
+        length=8,
+        weight=20.0,
+        axles=4,
+        payload=80,
+        min_loading_time=10,
+        max_loading_time=30,
+        overcrowded_capacity=40,
+        cost=709000,
+        runningcost=0,
+        fixed_cost=844,
+        bidirectional=1,
+        can_lead_from_rear=0,
+        constraint_prev=['4-wheel-1870s-fitted', '4-wheel-1870s-brake-fitted', '4-wheel-1870s-mail-fitted', '4-wheel-1870s-tpo-fitted', '4-wheel-sub-1870s-fitted', '4-wheel-sub-1870s-brake-front-fitted', '4-wheel-1870s-fast-freight-fitted', '4-wheel-1870s-milk-fitted', 'lswr-56ft-sub', 'lswr-56ft-sub-brake-front', 'lswr-56ft-lav-brake-front', 'lswr-56ft-lav', 'lswr-48ft-sub-brake-front', 'lswr-48ft-sub', 'lswr-48ft-lav', 'lswr-48ft-arc-parcels-brake', 'lswr-48ft-arc-fruit-brake', 'lswr-44ft-full-brake', 'lswr-44ft-full-brake-elliptical', 'lswr-48ft-fruit-brake', 'lswr-48ft-parcels-brake', 'lswr-48ft-arc-sub-brake-front', 'lswr-48ft-arc-sub', 'lswr-48ft-arc-lav-brake', 'lswr-48ft-arc-lav', 'lswr-30ft-full-brake-6-wheel-elliptical', 'lswr-30ft-fruit-brake-6-wheel-elliptical', 'lswr-6-wheel-28ft-brake-front', 'lswr-6-wheel-28ft', 'lswr-6-wheel-30ft-lantern-roof-brake', 'lswr-6-wheel-30ft-brake-front', 'lswr-6-wheel-30ft', 'lswr-6-wheel-30ft-lav', 'lswr-6-wheel-30ft-full-brake', 'lswr-6-wheel-30ft-fruit-brake', 'lswr-6-wheel-30ft-parcels-van', 'lswr-6-wheel-30ft-fruit-van', 'lswr-6-wheel-28ft-composite', 'lswr-56ft-lav-composite-1st-3rd', 'lswr-56ft-sub-tricomposite', 'lswr-42ft-brake-third-front', 'lswr-42ft-third', 'lswr-42ft-first', 'lswr-42ft-tricomposite', 'lswr-6-wheel-30ft-second', 'lswr-6-wheel-29ft-6-first', 'lswr-48ft-arc-lav-composite', 'lswr-48ft-lav-tricomposite', 'lswr-48ft-lav-composite'],
+        constraint_next=['4-wheel-1870s-fitted', '4-wheel-1870s-brake-fitted', '4-wheel-1870s-mail-fitted', '4-wheel-1870s-tpo-fitted', '4-wheel-sub-1870s-fitted', '4-wheel-sub-1870s-brake-rear-fitted', '4-wheel-1870s-fast-freight-fitted', '4-wheel-1870s-milk-fitted', 'lswr-56ft-sub', 'lswr-56ft-sub-brake-rear', 'lswr-56ft-lav-brake-rear', 'lswr-56ft-lav', 'lswr-48ft-sub-brake-rear', 'lswr-48ft-sub', 'lswr-48ft-lav', 'lswr-48ft-arc-parcels-brake', 'lswr-48ft-arc-fruit-brake', 'lswr-44ft-full-brake', 'lswr-44ft-full-brake-elliptical', 'lswr-48ft-fruit-brake', 'lswr-48ft-parcels-brake', 'lswr-48ft-arc-sub-brake-rear', 'lswr-48ft-arc-sub', 'lswr-48ft-arc-lav-brake', 'lswr-48ft-arc-lav', 'lswr-30ft-full-brake-6-wheel-elliptical', 'lswr-30ft-fruit-brake-6-wheel-elliptical', 'lswr-6-wheel-28ft-brake-rear', 'lswr-6-wheel-28ft', 'lswr-6-wheel-30ft-lantern-roof-brake', 'lswr-6-wheel-30ft-brake-rear', 'lswr-6-wheel-30ft', 'lswr-6-wheel-30ft-lav', 'lswr-6-wheel-30ft-full-brake', 'lswr-6-wheel-30ft-fruit-brake', 'lswr-6-wheel-30ft-parcels-van', 'lswr-6-wheel-30ft-fruit-van', 'lswr-6-wheel-28ft-composite', 'lswr-56ft-lav-composite-1st-3rd', 'lswr-56ft-sub-tricomposite', 'lswr-42ft-brake-third-rear', 'lswr-42ft-third', 'lswr-42ft-first', 'lswr-42ft-tricomposite', 'lswr-6-wheel-30ft-second', 'lswr-6-wheel-29ft-6-first', 'lswr-48ft-arc-lav-composite', 'lswr-48ft-lav-tricomposite', 'lswr-48ft-lav-composite'],
+        payload_by_class=[0, 0, 0, 80],
+        comfort_by_class=[0, 77, 78, 84],
+        liverytype=['LSWR-pea-green', 'LSWR-sage', 'SR-Olive-Green', 'SR-Malachite-Green'],
+        upgrade=['lswr-48ft-arc-augmentation-trailer-front', 'lswr-48ft-arc-augmentation-trailer-rear'],
+        blend=_BLEND,
+        upstream_dat=_UPSTREAM_DAT,
+    ),
+]
+
+
+if __name__ == "__main__":
+    bake_main(SPECS, __file__)
