@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache
-          key: fetch-cache-${{ hashFiles('*.lock') }}
+          key: fetch-cache-${{ github.run_id }}
           restore-keys: |
             fetch-cache-
       - name: Re-run parametric ground bakers
