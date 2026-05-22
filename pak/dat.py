@@ -34,8 +34,9 @@ shape parsed in `descriptor/writer/building_writer.cc`; each
 layout's per-tile cells land on one atlas row, with
 `size.x*size.y` cells per row (y/x bounds swap on odd layouts
 per the engine's `h = (l&1) ? size.x : size.y` rule).  Factories
-(`Obj=factory`, with input/output goods + productivity) carry a
-fatter schema and are not modelled by `Building` yet.
+(`Obj=factory`, with input/output goods + productivity) subclass
+Building via `Factory`; the visual schema is shared and the dat
+emitter swaps the obj header.
 """
 
 from __future__ import annotations
@@ -498,8 +499,7 @@ class Building:
 
     Order of fields = canonical emit order.  Unset scalars (`None`) and
     empty lists are skipped on emit.  Factory-only keys (InputGood,
-    OutputGood, Productivity, …) are not modelled here; a future
-    `Factory` dataclass covers `Obj=factory`.
+    OutputGood, Productivity, …) live on the `Factory` subclass.
     """
     # Required
     name: str
@@ -627,6 +627,95 @@ class Building:
 
 
 @dataclass
+class Factory(Building):
+    """An `Obj=factory` definition.
+
+    Engine `factory_writer.cc` delegates to `building_writer.cc` for
+    name / copyright / lifecycle / footprint / `backimage[…]` (every
+    visual field a building carries), then layers the factory-only
+    schema on top: siting, productivity, supply graph (input/output
+    goods), smoke, sound, electricity / passenger / mail boost knobs,
+    and the expand parameters.  We mirror that split: Factory subclasses
+    Building so the visual side is shared verbatim and the bake
+    pipeline (`building_hex_viewpoint`, atlas layout) carries through
+    unchanged; only the dat emitter swaps `obj=building` for
+    `Obj=factory` and walks the extra scalars + indexed lists.
+
+    Farm fields (`fields[N]`, `has_snow[N]`, `production_per_field[N]`,
+    `storage_capacity[N]`, `spawn_weight[N]` + `probability_to_spawn`,
+    `min_fields`, `max_fields`, `start_fields`) are not modelled —
+    only farm-class industries need them and none have ported yet.
+    Extend when the first farm-type factory lands.
+    """
+
+    # Override Building's required `type` with a "fac" default so
+    # Factory callers don't repeat the boilerplate.  The engine sets
+    # type internally (`factory_writer.cc:222`); chemist.dat doesn't
+    # carry it and `emit_factories` filters it out either way.
+    type: str = "fac"
+
+    # Siting / placement (factory_desc::site_t).
+    location: str | None = None
+    # Extended-only supply-radius caps; hex engine ignores both.
+    max_distance_to_consumer: int | None = None
+    max_distance_to_supplier: int | None = None
+
+    # Core gameplay
+    productivity: int | None = None
+    range: int | None = None
+    distributionweight: int | None = None
+    mapcolor: int | None = None
+    pax_level: int | None = None
+
+    # Electricity / passenger / mail
+    # `electricity_amount` is upstream's alias for `electricity_demand`
+    # (factory_writer.cc:191-192 reads the latter, falling back to the
+    # former); we carry both for upstream-roundtrip fidelity.
+    electricity_amount: int | None = None
+    electricity_demand: int | None = None
+    electricity_boost: int | None = None
+    electricity_producer: int | None = None
+    passenger_boost: int | None = None
+    passenger_demand: int | None = None
+    mail_boost: int | None = None
+
+    # Expansion
+    expand_probability: int | None = None
+    expand_minimum: int | None = None
+    expand_range: int | None = None
+    expand_times: int | None = None
+
+    # Smoke (`factory_smoke_writer_t`).  `smoketile` / `smokeoffset`
+    # carry `"x,y"` tuples verbatim; the engine reads them via
+    # `obj.get_koord` so the comma form survives a roundtrip.
+    smoke: str | None = None
+    smoketile: str | None = None
+    smokeoffset: str | None = None
+    smokeuplift: int | None = None
+    smokelifetime: int | None = None
+    # Extended-only; hex `factory_writer.cc:109` reads `smokespeed`
+    # into a local that's immediately discarded ("was obj.get_int…").
+    smokespeed: int | None = None
+
+    # Sound
+    sound: str | None = None
+    sound_interval: int | None = None
+
+    # Per-good supply graph.  Each list emits as
+    # `inputgood[N]=name`, `inputcapacity[N]=cap`, `inputfactor[N]=pct`,
+    # `inputsupplier[N]=count`, indexed in lockstep — the writer reads
+    # the i-th of each set together.  Outputs mirror the shape minus
+    # `supplier`.
+    inputgood: list[str] = field(default_factory=list)
+    inputcapacity: list[int] = field(default_factory=list)
+    inputfactor: list[int] = field(default_factory=list)
+    inputsupplier: list[int] = field(default_factory=list)
+    outputgood: list[str] = field(default_factory=list)
+    outputcapacity: list[int] = field(default_factory=list)
+    outputfactor: list[int] = field(default_factory=list)
+
+
+@dataclass
 class Tree:
     """A `obj=tree` definition (`descriptor/writer/tree_writer.cc`).
 
@@ -705,6 +794,22 @@ _BUILDING_FIELDS_SCALAR: tuple[str, ...] = tuple(
 _BUILDING_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
     (f.name, f.metadata.get("dat_key", f.name))
     for f in fields(Building)
+    if f.default_factory is not MISSING and not f.metadata.get("bake_meta")
+)
+# Factory inherits Building, so `fields(Factory)` walks parent fields
+# first then the factory-specific additions — matching the dat emit
+# order (visual / lifecycle scalars come first, then factory keys).
+# `type` is filtered at emit time (engine sets it itself; chemist.dat
+# doesn't carry it).
+_FACTORY_FIELDS_SCALAR: tuple[str, ...] = tuple(
+    f.name for f in fields(Factory)
+    if f.default_factory is MISSING
+    and f.name not in ("dims_x", "dims_y", "heights", "seasons", "type")
+    and not f.metadata.get("bake_meta")
+)
+_FACTORY_FIELDS_LIST: tuple[tuple[str, str], ...] = tuple(
+    (f.name, f.metadata.get("dat_key", f.name))
+    for f in fields(Factory)
     if f.default_factory is not MISSING and not f.metadata.get("bake_meta")
 )
 
@@ -1091,18 +1196,42 @@ def emit_building(b: Building, *, out_dir: Path, basename: str,
     revisit when a bake script needs them (occlusion-correct
     foreground, animated effects).  Returns the dat path.
     """
-    lines: list[str] = ["obj=building"]
-    for name in _BUILDING_FIELDS_SCALAR:
+    if layouts is None:
+        layouts = layouts_default(b.dims_x, b.dims_y)
+    lines = _building_like_block(
+        b, basename, layouts=layouts,
+        header="obj=building",
+        scalars_tuple=_BUILDING_FIELDS_SCALAR,
+        lists_tuple=_BUILDING_FIELDS_LIST,
+    )
+    lines.append("----------")
+    out_path = out_dir / f"{basename}.dat"
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
+
+
+def _building_like_block(
+    b: Building, basename: str, *, layouts: int, header: str,
+    scalars_tuple: tuple[str, ...],
+    lists_tuple: tuple[tuple[str, str], ...],
+) -> list[str]:
+    """One `obj=building` / `Obj=factory` block.
+
+    Shared by `emit_building` and `emit_factories`: the body is the
+    same (scalars, `dims=`, indexed lists, then `backimage[…]` cells
+    walked through `iter_building_cells`); the obj header and which
+    field tuples to walk differ.  Callers stitch terminators between
+    blocks.
+    """
+    lines: list[str] = [header]
+    for name in scalars_tuple:
         v = getattr(b, name)
         if v is not None:
             lines.append(f"{name}={v}")
-    if layouts is None:
-        layouts = layouts_default(b.dims_x, b.dims_y)
     lines.append(f"dims={b.dims_x},{b.dims_y},{layouts}")
-    for attr, dat_key in _BUILDING_FIELDS_LIST:
+    for attr, dat_key in lists_tuple:
         for i, v in enumerate(getattr(b, attr)):
             lines.append(f"{dat_key}[{i}]={v}")
-
     footprint = b.dims_x * b.dims_y
     for s, l, y, x, h in iter_building_cells(b, layouts=layouts):
         w = b.dims_y if l & 1 else b.dims_x
@@ -1114,8 +1243,50 @@ def emit_building(b: Building, *, out_dir: Path, basename: str,
             f"[{s}]"
             f"=./{basename}.{row}.{col}"
         )
-    lines.append("----------")
+    return lines
 
+
+def emit_factories(factories: list[Factory], *, out_dir: Path, basename: str,
+                   layouts: int | None = None) -> Path:
+    """Write `<out_dir>/<basename>.dat` from one or more Factories.
+
+    Each Factory becomes an `Obj=factory` block separated by a row of
+    dashes; every block's `backimage[…]` refs point at the same shared
+    atlas `./<basename>.<row>.<col>`.  Multi-Factory calls (e.g.
+    upstream's `chemist.dat` packing `Chemist1860 + Chemist1955` as
+    upgrade-chained eras sharing one visual) emit one combined dat;
+    when an era introduces a distinct visual (e.g. `Chemist1975`
+    points at `1950shops.*` cells), give it its own bake unit.
+
+    All factories in the list must share `dims_x` / `dims_y` /
+    `heights` / `seasons` (the atlas shape is one); the emitter
+    asserts this rather than silently picking the first.  `layouts`
+    falls back to `layouts_default(dims_x, dims_y)` for code paths
+    that don't go through the bake driver (the driver derives it
+    from `Symmetry` and threads through).  Returns the dat path.
+    """
+    if not factories:
+        raise ValueError("emit_factories requires at least one Factory")
+    shape = (factories[0].dims_x, factories[0].dims_y,
+             factories[0].heights, factories[0].seasons)
+    for f in factories[1:]:
+        if (f.dims_x, f.dims_y, f.heights, f.seasons) != shape:
+            raise ValueError(
+                f"emit_factories: shape mismatch — factories in one dat must "
+                f"share dims/heights/seasons; got {shape} and "
+                f"{(f.dims_x, f.dims_y, f.heights, f.seasons)}"
+            )
+    if layouts is None:
+        layouts = layouts_default(factories[0].dims_x, factories[0].dims_y)
+    lines: list[str] = []
+    for f in factories:
+        lines.extend(_building_like_block(
+            f, basename, layouts=layouts,
+            header="Obj=factory",
+            scalars_tuple=_FACTORY_FIELDS_SCALAR,
+            lists_tuple=_FACTORY_FIELDS_LIST,
+        ))
+        lines.append("----------")
     out_path = out_dir / f"{basename}.dat"
     out_path.write_text("\n".join(lines) + "\n")
     return out_path
@@ -1202,11 +1373,52 @@ def port_building(object_entries: list[tuple[str, str]]) -> Building:
     land on `Building.type`); values are preserved verbatim, which
     matches the engine's STRICMP lookup on type names.
     """
-    lookup = {k.lower(): v for k, v in object_entries}
-    if lookup.get("obj", "").lower() != "building":
-        raise ValueError(f"not obj=building: {lookup.get('obj')!r}")
+    return _port_building_like(
+        object_entries, expected_obj="building", cls=Building,
+        scalars_tuple=_BUILDING_FIELDS_SCALAR,
+        indexed_map=_BUILDING_INDEXED_HARVEST_TO_FIELD,
+    )
 
-    scalars = set(_BUILDING_FIELDS_SCALAR)
+
+_FACTORY_INDEXED_HARVEST_TO_FIELD: dict[str, str] = {
+    dat_key.lower(): attr for attr, dat_key in _FACTORY_FIELDS_LIST
+}
+
+
+def port_factory(object_entries: list[tuple[str, str]]) -> Factory:
+    """Convert one parsed upstream `Obj=factory` object to a `Factory`.
+
+    Mirrors `port_building` but lands on the Factory subclass and walks
+    Factory's larger scalar+list field set (factory-only keys plus every
+    Building visual field).  `type=` is ignored on read -- Factory's
+    default `"fac"` stands in for the engine-set value.
+    """
+    return _port_building_like(
+        object_entries, expected_obj="factory", cls=Factory,
+        scalars_tuple=_FACTORY_FIELDS_SCALAR,
+        indexed_map=_FACTORY_INDEXED_HARVEST_TO_FIELD,
+    )
+
+
+def _port_building_like(
+    object_entries: list[tuple[str, str]], *,
+    expected_obj: str, cls,
+    scalars_tuple: tuple[str, ...],
+    indexed_map: dict[str, str],
+):
+    """Shared port routine for `obj=building` / `Obj=factory` shapes.
+
+    Both share the footprint (`dims=X,Y[,Z]`), the `backimage[…]`
+    height + season index sniff, and the indexed-list harvest; only
+    the obj header, scalar/list tuples, and target class differ.
+    """
+    lookup = {k.lower(): v for k, v in object_entries}
+    if lookup.get("obj", "").lower() != expected_obj:
+        raise ValueError(
+            f"not obj={expected_obj}: {lookup.get('obj')!r}"
+        )
+
+    scalars = set(scalars_tuple)
     kwargs: dict = {}
     max_height = 0
     max_season = 0
@@ -1240,7 +1452,7 @@ def port_building(object_entries: list[tuple[str, str]]) -> Building:
         if kl in scalars and not _INDEX_RE.search(k):
             kwargs[kl] = _coerce(v)
 
-    for base, dest_field in _BUILDING_INDEXED_HARVEST_TO_FIELD.items():
+    for base, dest_field in indexed_map.items():
         values = _harvest_indexed(object_entries, base)
         if values:
             kwargs[dest_field] = [_coerce(v) for v in values]
@@ -1250,7 +1462,7 @@ def port_building(object_entries: list[tuple[str, str]]) -> Building:
     if max_season > 0:
         kwargs["seasons"] = max_season + 1
 
-    return Building(**kwargs)
+    return cls(**kwargs)
 
 
 _WAY_PORT_DROP: frozenset[str] = frozenset({"icon", "cursor"})

@@ -22,6 +22,7 @@ from pak.dat import (
     TUNNEL_FACING_LABELS,
     Bridge,
     Building,
+    Factory,
     Symmetry,
     Tree,
     Tunnel,
@@ -30,6 +31,7 @@ from pak.dat import (
     building_footprint_centroid,
     emit_bridge,
     emit_building,
+    emit_factories,
     emit_trees,
     emit_tunnel,
     emit_vehicles,
@@ -41,6 +43,7 @@ from pak.dat import (
     parse,
     port_bridge,
     port_building,
+    port_factory,
     port_vehicle,
     port_way,
     seed_python,
@@ -906,6 +909,129 @@ class TestPortBuilding(unittest.TestCase):
     def test_seed_python_renders_building_constructor(self):
         src = seed_python(Building(name="X", type="cur"))
         self.assertTrue(src.startswith("Building("))
+
+
+class TestPortFactory(unittest.TestCase):
+    # Chemist1860-shaped sample (1x1 footprint, two seasons, one input
+    # good, no output) -- exercises the factory-specific scalar + the
+    # parallel inputgood/inputcapacity/inputfactor lists.  Shared
+    # across the harvest and roundtrip tests.
+    _ENTRIES = [
+        ("Obj", "factory"),
+        ("name", "Chemist1860"),
+        ("level", "15"),
+        ("Dims", "1,1,4"),
+        ("Location", "City"),
+        ("Productivity", "2"),
+        ("Range", "1"),
+        ("MapColor", "215"),
+        ("electricity_amount", "1"),
+        ("electricity_boost", "320"),
+        ("InputGood[0]", "pharmaceuticals"),
+        ("InputCapaCity[0]", "16"),
+        ("InputFactor[0]", "100"),
+        ("BackImage[0][0][0][0][0][1]", "images/fac/chemist.1.2"),
+    ]
+
+    def test_round_trips_through_seed_python(self):
+        original = Factory(
+            name="Chemist1860",
+            level=15, productivity=2, range=1, distributionweight=18,
+            mapcolor=215, location="City",
+            seasons=2,
+            class_proportion=[15, 20, 35, 15, 15],
+            inputgood=["pharmaceuticals"],
+            inputcapacity=[16],
+            inputfactor=[100],
+        )
+        roundtripped = eval(seed_python(original), {"Factory": Factory})
+        self.assertEqual(roundtripped, original)
+
+    def test_harvests_scalars_and_parallel_lists(self):
+        f = port_factory(self._ENTRIES)
+        self.assertEqual(f.name, "Chemist1860")
+        self.assertEqual(f.type, "fac")
+        self.assertEqual((f.dims_x, f.dims_y), (1, 1))
+        self.assertEqual(f.location, "City")
+        self.assertEqual(f.productivity, 2)
+        self.assertEqual(f.range, 1)
+        self.assertEqual(f.mapcolor, 215)
+        self.assertEqual(f.inputgood, ["pharmaceuticals"])
+        self.assertEqual(f.inputcapacity, [16])
+        self.assertEqual(f.inputfactor, [100])
+        # Season harvested from the trailing index of backimage refs.
+        self.assertEqual(f.seasons, 2)
+
+    def test_rejects_non_factory_obj(self):
+        with self.assertRaisesRegex(ValueError, "not obj=factory"):
+            port_factory([("obj", "building"), ("name", "X")])
+
+    def test_type_defaults_without_caller_override(self):
+        # Factory overrides Building's required `type` with a "fac"
+        # default; the engine sets it internally, so no Factory port
+        # script should need to pass it.
+        self.assertEqual(Factory(name="X").type, "fac")
+
+
+class TestEmitFactories(unittest.TestCase):
+    def _emit(self, *factories: Factory, layouts: int | None = None) -> str:
+        with TemporaryDirectory() as d:
+            return emit_factories(list(factories), out_dir=Path(d),
+                                  basename="chemist",
+                                  layouts=layouts).read_text()
+
+    def test_obj_header_uses_capitalised_form(self):
+        # `Obj=factory` matches upstream's authoring convention (the
+        # engine reads case-insensitively but the cell-level diff
+        # between our output and upstream stays on-shape if we follow).
+        text = self._emit(Factory(name="X"))
+        self.assertIn("Obj=factory\n", text)
+        self.assertNotIn("Obj=building", text)
+
+    def test_type_filtered_out_of_scalar_emit(self):
+        # `type=` is set by the engine on load; chemist.dat doesn't
+        # carry it and the emit suppresses the redundancy.
+        text = self._emit(Factory(name="X"))
+        self.assertNotIn("type=", text)
+
+    def test_input_lists_parallel(self):
+        f = Factory(
+            name="X",
+            inputgood=["grain", "woodchip"],
+            inputcapacity=[15, 40],
+            inputfactor=[83, 17],
+        )
+        text = self._emit(f)
+        for key in ("inputgood[0]=grain", "inputgood[1]=woodchip",
+                    "inputcapacity[0]=15", "inputcapacity[1]=40",
+                    "inputfactor[0]=83", "inputfactor[1]=17"):
+            self.assertIn(key, text)
+
+    def test_multi_factory_shares_atlas_refs(self):
+        # Upgrade-chain pair sharing one render (chemist.dat's
+        # Chemist1860 + Chemist1955); the second block's backimage
+        # refs point at the same `./chemist.<r>.<c>` cells.
+        a = Factory(name="Chemist1860", seasons=2)
+        b = Factory(name="Chemist1955", seasons=2)
+        text = self._emit(a, b, layouts=6)
+        self.assertEqual(text.count("Obj=factory\n"), 2)
+        self.assertEqual(
+            text.count("backimage[0][0][0][0][0][0]=./chemist.0.0\n"), 2,
+        )
+
+    def test_shape_mismatch_rejected(self):
+        # Multi-factory emit only makes sense when all share dims /
+        # heights / seasons (one atlas).  An accidental mismatch in a
+        # SPECS list would otherwise yield a dat whose refs collided.
+        with self.assertRaisesRegex(ValueError, "shape mismatch"):
+            emit_factories(
+                [Factory(name="A", seasons=1), Factory(name="B", seasons=2)],
+                out_dir=Path("/tmp"), basename="x",
+            )
+
+    def test_empty_list_rejected(self):
+        with self.assertRaisesRegex(ValueError, "at least one Factory"):
+            emit_factories([], out_dir=Path("/tmp"), basename="x")
 
 
 class TestEmitTrees(unittest.TestCase):
