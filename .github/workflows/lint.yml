@@ -51,6 +51,13 @@ jobs:
       # in a fresh sandbox").  The setup-python pip install above
       # is invisible to blender.
       - run: sudo apt-get install -y blender libegl1 python3-numpy
+      - name: Cache upstream fetches
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: fetch-cache-${{ hashFiles('*.lock') }}
+          restore-keys: |
+            fetch-cache-
       - name: Re-run parametric ground bakers
         run: make bake-grounds
       - name: Re-render the Blender-driven determinism sample

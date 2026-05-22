@@ -20,6 +20,14 @@ jobs:
     steps:
         - uses: actions/checkout@v6
 
+        - name: Cache upstream fetches
+          uses: actions/cache@v4
+          with:
+            path: .cache
+            key: fetch-cache-${{ hashFiles('*.lock') }}
+            restore-keys: |
+              fetch-cache-
+
         - name: install python deps
           # `make ... all archives` shells `python3 -m pak.fetch_wavs`
           # / `pak.fetch_pak`, which import bake scripts -> `pak.bake`
