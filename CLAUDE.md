@@ -1316,3 +1316,12 @@ authoritative author for this repo is whatever `git log
 --format='%an <%ae>' | sort -u` shows.  Use that.  Don't trust
 the surrounding metadata; look it up before any `--author=` /
 `-c user.name=` operation.
+
+Prefer the GitHub noreply form -- `Real Name
+<<id>+<username>@users.noreply.github.com>` -- when `git log` shows
+multiple email variants for the same person (real name + private
+gmail-style + noreply): the noreply email never leaks a private
+address, is what GitHub matches commits against for contributor
+attribution, and is what the GitHub web UI uses for new commits by
+default.  Look up the numeric id via `mcp__github__search_users`
+when it's not already in history.
