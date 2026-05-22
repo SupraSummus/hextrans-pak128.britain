@@ -10,11 +10,26 @@ upstream's `pub.1.X` winter row until a snow blend lands.
 
 from pak.bake import bake_factory_main
 from pak.dat import Factory
+from pak.materials import Lighting, Material
 
 _BLEND = "industries/pub.blend"
 _UPSTREAM_DAT = "industry/pub.dat"
 
 _CLIMATES = "rocky,tundra,temperate,mediterran,desert,arctic,tropic"
+
+# AUTO-TUNED: pak.tune_industries
+MATERIALS = {
+    'Brick': Material(image='flemish-bond-improved', size=(0.5, 0.5, 0.5), color=(1.0, 1.0, 1.0)),
+    'Hedge': Material(image='scratched_bricks_9271', size=(4.0, 4.0, 1.0), color=(0.469, 0.858, 0.637)),
+    'Material.001': Material(image='grey_roof_slate.jpg', texco='ORCO', size=(20.0, 20.0, 20.0), color=(1.342, 1.344, 1.303)),
+    'Pavement': Material(image='concrete-paving-small', size=(2.105, 1.89, 1.0), ofs=(0.0, 0.02, 0.0), color=(0.772, 0.754, 0.714)),
+    'Shop2': Material(image='scratched_bricks_.001', size=(4.0, 4.0, 1.0), color=(1.0, 1.0, 1.0)),
+    'Stone Wall': Material(image='stonewall-texture.jpg', color=(1.595, 1.53, 1.499)),
+    'WindowFrame': Material(image='scratched_bricks_.001', size=(4.0, 4.0, 1.0), color=(1.0, 1.0, 1.0)),
+}
+
+LIGHTING = Lighting(world_ambient=(0.45, 0.45, 0.45), sun_energy_scale=71.428571, sun_elev_deg=45.0, sun_az_offset_deg=-90.0)
+# END AUTO-TUNED
 
 SPECS = [
     Factory(
@@ -52,6 +67,8 @@ SPECS = [
         inputfactor=[67, 100],
         blend=_BLEND,
         upstream_dat=_UPSTREAM_DAT,
+        materials=MATERIALS,
+        lighting=LIGHTING,
     ),
     Factory(
         name="Pub1840",
@@ -85,6 +102,8 @@ SPECS = [
         inputfactor=[80, 100],
         blend=_BLEND,
         upstream_dat=_UPSTREAM_DAT,
+        materials=MATERIALS,
+        lighting=LIGHTING,
     ),
     Factory(
         name="Pub1910",
@@ -114,6 +133,8 @@ SPECS = [
         inputfactor=[100, 100],
         blend=_BLEND,
         upstream_dat=_UPSTREAM_DAT,
+        materials=MATERIALS,
+        lighting=LIGHTING,
     ),
 ]
 

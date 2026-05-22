@@ -177,6 +177,36 @@ sidecar is open but on hold (legacy-renderer dependency we'd
 rather not carry -- see "Pixel-perfect building match needs UVs"
 for the framing).
 
+**Winter snow materials need `noise=True` conversion at seed time.**
+`pak.tune_industries.seed_materials` collapses BI slot-form
+materials to the `image=` heuristic with `color=(1,1,1)` so the
+gradient solver can move them.  For summer that's fine; for the
+snow-blend variant the seeded form keeps each surface's authored
+brick / pavement image, multiplied by a tunable colour clamped to
+[0, 2.5].  A dark-red brick image at gain 2.5 still reads dark, so
+no setting of `color=` reaches upstream's near-white snow tint.
+All six seasonal industries' winter dRGB stayed at ~20 after the
+catalog tune (vs ~4 summer).  Concrete next move: in the seeder,
+when the blend filename matches `*-snow.blend` (or pass a
+`winter=True` flag from the caller), substitute `noise=True,
+color=(<tint>)` for every slot-image material -- BI's default
+CLOUDS slot at fac=1.0 paints `mix(diffuse, white, noise)` which
+the noise-form approximates.  Then re-run with `--winter` (the
+flag was wired but the seeder treats winter identically today, so
+it has no effect).
+
+**`industry/pub` summer dRGB stuck at 13.35.**  Other ported
+industries converged to ~4 dRGB after `pak.tune_industries`; pub
+stayed high because its silhouette IoU (0.85 vs ~0.96 elsewhere)
+leaves little common-pixel area for the id-map's per-material
+mean sampler to work with.  Geometry / model-frame issue, not a
+materials one; tuning further won't help.  Concrete next move:
+run `pak.diag_centroid_align` against `industries/pub.blend` to
+see if a model-offset recovers the missing 10 IoU points, the
+same way it did for multi-tile buildings.  If R² is high pin the
+offset on the SPEC; if low, log the residual as model authorship
+and accept the soft-acceptance dRGB.
+
 **Per-material dRGB attribution surfaced two systematic gaps.**
 `pak.diag_per_material --all` (added this session) aggregates by
 material name across the catalog and reveals the dominant
@@ -199,7 +229,7 @@ manifestation.
 sun_az_offset_deg)` lives on the SPEC alongside `materials=`,
 threaded through bake / diff / render via `--lighting` JSON.
 `res_1600_kg_01` carries one (ambient 0.55, elev 45°); the other
-six ported buildings still rely on the global EEVEE-substitute
+six ported citybuildings still rely on the global EEVEE-substitute
 defaults (ambient 0.30, elev 30°).  Per-asset preferences diverge
 (res_kg_1920's opposing-ambient need is structural, not fixed by
 material data) so the global is unlikely to beat per-asset tuning
@@ -207,6 +237,19 @@ across the fleet.  Concrete next move: run `pak.tune_materials` on
 each ported building, accept whichever per-asset `lighting=` +
 `materials=` it converges to.  Light cost (~2-5 min per asset);
 does not require any infrastructure beyond what landed.
+
+For ported industries the same loop ran via `pak.tune_industries`
+under a single fleet-wide `Lighting(world_ambient=(0.45, 0.45,
+0.45), sun_energy_scale=2.0/0.028, sun_elev_deg=45, sun_az_offset
+_deg=-90)`; a 5-iter lighting-sweep on bakery + butchery + pub
+ranked that ahead of the engine default (0.30, 30) and ahead of
+res_1600's (0.55, 45) by margins inside iter-budget noise.  Open
+questions a longer-iter sweep could answer: does amb=0.55 catch
+up with 15+ iters (gain_clamp 2.0 means each iter halves the
+distance, so high-ambient needs more iters), and is the
+(0.45, 45) optimum genuinely industry-class-specific or would
+citybuildings prefer it too if re-tuned against the same value.
+Cheap to settle if the question gets in the way.
 
 **Pavement texture file missing from upstream blends repo.**
 Multiple Britain blends reference a `concrete-paving-small` Image
