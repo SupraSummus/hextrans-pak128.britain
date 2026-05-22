@@ -19,7 +19,10 @@ SPEC = Way(
     wear_capacity=1548000000,
     cost=52000,
     maintenance=575,
+    icon_src="./images/wooden_sleeper_steel_rail_early.3.4",
+    cursor_src="./images/wooden_sleeper_steel_rail_early.3.5",
     blend="ways/ns-cssr.blend",
+    upstream_dat="ways/wssr_early.dat",
     materials={
         "Ballast": (67, 59, 57),
         "Wood": (98, 89, 83),

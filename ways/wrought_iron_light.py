@@ -18,7 +18,10 @@ SPEC = Way(
     wear_capacity=142560000,
     cost=32000,
     maintenance=750,
+    icon_src="./images/wrought_iron_light.3.4",
+    cursor_src="./images/wrought_iron_light.3.5",
     blend="ways/ns-cssr.blend",
+    upstream_dat="ways/wrought_iron_light.dat",
     materials={
         "Ballast": (55, 52, 47),
         "Wood": (85, 80, 64),

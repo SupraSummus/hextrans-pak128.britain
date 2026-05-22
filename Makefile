@@ -253,6 +253,14 @@ bake-outside:
 	@echo "===> BAKE pak1file/128/outside"
 	@PYTHONPATH=. python3 pak1file/128/outside.py
 
+# Slice upstream `icon_src` / `cursor_src` cells out of the
+# SHA-pinned upstream pak into per-asset `<basename>_icon.png`
+# siblings (committed).  Walks every ported bake unit; no Blender.
+.PHONY: bake-icons
+bake-icons:
+	@echo "===> BAKE icons"
+	@python3 -m pak.bake_icons
+
 clean:
 	@echo "===> CLEAN"
 	@rm -fr $(PAKDIR) $(DESTFILE).tbz2 $(DESTFILE).zip simutranslator/*.zip

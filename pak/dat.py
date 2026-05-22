@@ -278,13 +278,12 @@ class Way:
     clip_below: int | None = None
     has_double_slopes: int | None = None
 
-    # Toolbar / placement, read via `cursorskin_writer_t` in
-    # `way_writer.cc`.  `port_way` drops upstream's `./images/...`
-    # refs (their PNGs were stripped from history); `emit_way`
-    # defaults unset values to existing ribi-atlas cells so
-    # `way_builder_t::weg_search` picks the way up as a buildable
-    # default (TODO.md → "Bake hex icon + cursor sprites for ways").
-    # SPECs that want bespoke artwork set their own ref.
+    # Toolbar / placement (read via `cursorskin_writer_t` in
+    # `way_writer.cc`).  Set by `emit_way` from `icon_src` /
+    # `cursor_src` (see below) when those are declared; otherwise a
+    # SPEC literal here is used verbatim; otherwise a stub points
+    # into the way's own hex atlas so `way_builder_t::weg_search`
+    # still picks the way up as a buildable default.
     icon: str | None = None
     cursor: str | None = None
 
@@ -299,6 +298,14 @@ class Way:
     # provenance").  Mirrors `Building.blend_source`.
     blend_source: str = _bake_meta(default="jp")
     upstream_dat: str | None = _bake_meta()
+    # Upstream icon / cursor cells to slice into the sibling
+    # `<basename>_icon.png` -- `<path>.<row>.<col>` upstream-format
+    # refs (e.g. "./images/concrete_sleeper_steel_rail.3.4").
+    # `pak.bake_icons` produces the local PNG (1-2 cells, ~3KB
+    # committed); `emit_way` derives the dat `icon=`/`cursor=`
+    # refs from these.  See CLAUDE.md → "Upstream icon passthrough".
+    icon_src: str | None = _bake_meta()
+    cursor_src: str | None = _bake_meta()
     materials: dict[str, tuple[int, int, int]] | None = _bake_meta()
     # Install the blend's authored camera instead of the projection
     # default; JH viaduct blends author SW-looking-NE at
@@ -372,10 +379,7 @@ class Bridge:
     pillar_distance: int | None = None
     pillar_asymmetric: int | None = None
 
-    # Toolbar / placement.  Defaulted to existing atlas cells in
-    # `emit_bridge` when unset, matching the `Way` convention --
-    # `bridge_builder_t::lookup` picks the bridge up as a buildable
-    # default rather than failing on a missing icon ref.
+    # Toolbar / placement -- see `Way.icon` for the system.
     icon: str | None = None
     cursor: str | None = None
 
@@ -391,6 +395,8 @@ class Bridge:
     blend_ramp:   str | None = _bake_meta()
     blend_pillar: str | None = _bake_meta()
     upstream_dat: str | None = _bake_meta()
+    icon_src: str | None = _bake_meta()
+    cursor_src: str | None = _bake_meta()
 
 
 _BRIDGE_FIELDS_SCALAR: tuple[str, ...] = tuple(
@@ -441,8 +447,8 @@ class Tunnel:
     # this way.  Empty / None = no embedded way.
     way: str | None = None
 
-    # Toolbar / placement -- defaulted to atlas cells at emit time
-    # when unset (mirrors Bridge / Way).
+    # Toolbar / placement -- see `Way.icon` for the system; mirrors
+    # Bridge / Way handling.
     icon: str | None = None
     cursor: str | None = None
 
@@ -453,6 +459,8 @@ class Tunnel:
     blend: str | None = _bake_meta()
     blend_source: str = _bake_meta(default="jh")
     upstream_dat: str | None = _bake_meta()
+    icon_src: str | None = _bake_meta()
+    cursor_src: str | None = _bake_meta()
 
 
 _TUNNEL_FIELDS_SCALAR: tuple[str, ...] = tuple(
@@ -1014,6 +1022,21 @@ def emit_vehicles(vehicles: list[Vehicle], *, out_dir: Path, basename: str) -> P
     return out_path
 
 
+def _icon_ref(literal: str | None, src: str | None,
+              basename: str, *, slot: int, stub: str) -> str:
+    """Resolve a dat `icon=`/`cursor=` value.
+
+    `src` (upstream cell ref, sliced into `<basename>_icon.png` by
+    `pak.bake_icons`) wins; `literal` (raw SPEC string) is next;
+    `stub` (a cell in the asset's own hex atlas) is the fallback.
+    `slot` is the column index in the sliced sibling -- icon=0,
+    cursor=1, matching `pak.bake_icons`' single-row layout.
+    """
+    if src is not None:
+        return f"./{basename}_icon.0.{slot}"
+    return literal or stub
+
+
 def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
     """Write `<out_dir>/<basename>.dat` from a Way.
 
@@ -1025,16 +1048,19 @@ def emit_way(way: Way, *, out_dir: Path, basename: str) -> Path:
 
     Slope sprites (`imageup[<slope_key>][N]`), seasons and front layer
     are not yet baked, so this writer omits them; revisit when the
-    slope-cell pass lands.  `cursor` / `icon` default to existing ribi
-    cells (TODO.md → "Bake hex icon + cursor sprites for ways") so the
-    engine's `way_builder_t::weg_search` picks the way up as a
-    buildable default; SPECs override by setting their own.  Returns
-    the dat path.
+    slope-cell pass lands.  `cursor`/`icon` are derived from
+    `icon_src`/`cursor_src` (the sliced sibling `<basename>_icon.png`
+    produced by `pak.bake_icons`) when those are set, fall back to a
+    literal SPEC value, and finally to a stub into the way's own
+    hex atlas so `way_builder_t::weg_search` still picks the way up
+    as a buildable default.  Returns the dat path.
     """
     way = replace(
         way,
-        cursor=way.cursor or f"./{basename}.0.0",
-        icon=way.icon or f"./{basename}.1.6",
+        icon=_icon_ref(way.icon, way.icon_src, basename, slot=0,
+                       stub=f"./{basename}.1.6"),
+        cursor=_icon_ref(way.cursor, way.cursor_src, basename, slot=1,
+                         stub=f"./{basename}.0.0"),
     )
     lines: list[str] = ["obj=way"]
     for name in _WAY_FIELDS_SCALAR:
@@ -1078,8 +1104,10 @@ def emit_bridge(bridge: Bridge, *, out_dir: Path, basename: str) -> Path:
     """
     bridge = replace(
         bridge,
-        cursor=bridge.cursor or f"./{basename}.1.0",
-        icon=bridge.icon or f"./{basename}.0.0",
+        icon=_icon_ref(bridge.icon, bridge.icon_src, basename, slot=0,
+                       stub=f"./{basename}.0.0"),
+        cursor=_icon_ref(bridge.cursor, bridge.cursor_src, basename, slot=1,
+                         stub=f"./{basename}.1.0"),
     )
     lines: list[str] = ["obj=bridge"]
     for name in _BRIDGE_FIELDS_SCALAR:
@@ -1107,8 +1135,10 @@ def emit_tunnel(tunnel: Tunnel, *, out_dir: Path, basename: str) -> Path:
     `pak.bake.bake_tunnel`; atlas layout: `tunnel_hex_viewpoint`."""
     tunnel = replace(
         tunnel,
-        cursor=tunnel.cursor or f"./{basename}.0.0",
-        icon=tunnel.icon or f"./{basename}.0.0",
+        icon=_icon_ref(tunnel.icon, tunnel.icon_src, basename, slot=0,
+                       stub=f"./{basename}.0.0"),
+        cursor=_icon_ref(tunnel.cursor, tunnel.cursor_src, basename, slot=1,
+                         stub=f"./{basename}.0.0"),
     )
     lines: list[str] = ["obj=tunnel"]
     for fname in _TUNNEL_FIELDS_SCALAR:
@@ -1465,22 +1495,17 @@ def _port_building_like(
     return cls(**kwargs)
 
 
-_WAY_PORT_DROP: frozenset[str] = frozenset({"icon", "cursor"})
-
-
 def port_way(object_entries: list[tuple[str, str]]) -> Way:
     """Convert one parsed upstream `obj=way` object to a `Way`.
 
     Seeder for new way bakes — pastes a starter `Way(...)` source into
     a `ways/<asset>.py` bake script via `seed_python`.  Harvests every
-    scalar `Way` field the upstream dat sets; image refs (Upstream
-    `Image[<square_ribi>]`, `ImageUp[N]`, `Diagonal[<dir>]`, `cursor`,
-    `icon`) are dropped — the hex bake re-emits them from its own
-    atlas under `image[<hex_ribi>][N]=...` keys.  `icon` / `cursor`
-    upstream values point at `./images/<name>.X.Y` cells that live in
-    the upstream pak's stripped images/ dir and would make makeobj
-    error out (see `Way.icon` field doc); they're dropped here so a
-    seeded SPEC bakes cleanly without manual scrubbing.
+    scalar `Way` field the upstream dat sets, including `icon` /
+    `cursor`: upstream's flat-art icon refs ship verbatim under hex
+    via the `pak.fetch_icons` build step (see `Way.icon` field doc).
+    Per-ribi image refs (`Image[<square_ribi>]`, `ImageUp[N]`,
+    `Diagonal[<dir>]`) are dropped — the hex bake re-emits those from
+    its own atlas under `image[<hex_ribi>][N]=...` keys.
     """
     lookup = {k.lower(): v for k, v in object_entries}
     if lookup.get("obj", "").lower() != "way":
@@ -1490,8 +1515,6 @@ def port_way(object_entries: list[tuple[str, str]]) -> Way:
     kwargs: dict = {}
     for k, v in object_entries:
         kl = k.lower()
-        if kl in _WAY_PORT_DROP:
-            continue
         if kl in scalars and not _INDEX_RE.search(k):
             kwargs[kl] = _coerce(v)
 
@@ -1509,13 +1532,11 @@ def port_bridge(object_entries: list[tuple[str, str]]) -> Bridge:
 
     Seeder for new bridge bakes -- produces a paste-ready
     `Bridge(...)` source via `seed_python`.  Harvests every scalar
-    `Bridge` field the upstream dat sets; per-cell image refs
-    (`BackImage[...]`, `FrontStart[...]`, etc., and their `2`-suffixed
-    variant cousins) are dropped -- the hex bake re-emits them from
-    its own atlas.  `icon` / `cursor` are also dropped (upstream's
-    values point at `./images/<name>.X.Y` cells stripped from
-    history); `emit_bridge` defaults them to existing atlas cells
-    so the bridge picks up as a buildable default.
+    `Bridge` field upstream sets, including `icon` / `cursor` (flat
+    2D art that ships verbatim under hex via `pak.fetch_icons`;
+    mirrors `port_way`).  Per-cell image refs (`BackImage[...]`,
+    `FrontStart[...]`, etc., and their `2`-suffixed variant cousins)
+    are dropped -- the hex bake re-emits them from its own atlas.
 
     Variant-2 keys (`BackImage2`, etc.) are dropped on the same
     prefix-match -- only one variant is bake-side modelled yet.
@@ -1534,8 +1555,6 @@ def port_bridge(object_entries: list[tuple[str, str]]) -> Bridge:
         # only by a trailing `2` we want to ignore.
         prefix_no_variant = prefix.rstrip("0123456789")
         if prefix_no_variant in _BRIDGE_PORT_DROP_PREFIXES:
-            continue
-        if kl in ("icon", "cursor"):
             continue
         if kl in scalars and not _INDEX_RE.search(k):
             kwargs[kl] = _coerce(v)
