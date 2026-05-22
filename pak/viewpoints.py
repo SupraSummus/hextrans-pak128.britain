@@ -378,6 +378,16 @@ HEX_KOORD_R_WORLD: tuple[float, float] = (0.0,
 HEX_HEIGHT_LEVEL_WORLD_Z: float = 2.0 * HEX_TILE_RADIUS / HEX_SHEAR_Z_COEF
 
 
+# Square-dimetric analogue of `HEX_HEIGHT_LEVEL_WORLD_Z`.  Under the
+# 60°-tilted cardinal camera world z projects onto screen y by
+# `sin(60°)`, so `units_per_tile / sin(60°)` world units shift one
+# full image height (= the engine's per-h `raster_width = W`).
+# Invariant to multi-tile expansion (ortho and canvas both scale by
+# max_dims, leaving the per-tile screen height at W px).
+def sq_height_level_world_z(units_per_tile: float) -> float:
+    return units_per_tile / HEX_SHEAR_Z_COEF
+
+
 def hex_tile_screen_offset(qx: int, ry: int) -> tuple[float, float]:
     """Image-space pixel offset for tile `(qx, ry)` under the standard
     hex camera (`ortho_scale=2R`, image width `DEFAULT_W`).
@@ -566,11 +576,11 @@ def building_square_viewpoint(
     heights: int = 1, lighting=None,
 ) -> Viewpoint:
     """Square-dimetric Viewpoint for the N-tile calibration diff: one
-    Facing per layout rendered under upstream's normal-alignment
-    cardinal cameras, each carrying `slices` listing per-cell positions
-    on the layout canvas.  The render harness emits both the full
-    canvas (for the stitched multi-tile diff) and per-cell 128² sprites
-    (for the single-tile diff or per-cell multi-tile diff).
+    Facing per `(layout, height)` rendered under upstream's normal-
+    alignment cardinal cameras, each carrying `slices` listing per-cell
+    positions on the layout canvas.  The render harness emits both the
+    full canvas (for the stitched multi-tile diff) and per-cell 128²
+    sprites (for the single-tile diff or per-cell multi-tile diff).
 
     Layout `l` selects one of the four cardinal cameras
     (S, W, N, E in `_UPSTREAM_NORMAL_CARDINAL`) — equivalent to upstream
@@ -579,12 +589,13 @@ def building_square_viewpoint(
     does.  The two conventions render the same silhouette per layout,
     but only the camera-rotation form matches upstream's actually-
     published per-layout PNGs (which is what the diff measures against).
-    Heights > 1 still unsupported.
+
+    Per-cell Z stacking (`heights > 1`) mirrors `building_hex_viewpoint`:
+    a height-h Facing translates the model DOWN by `h *
+    sq_height_level_world_z(units_per_tile)` so the height-h band lands
+    at the camera's z=0 view; the engine then paints level h at one
+    `raster_width` higher in screen y.
     """
-    if heights != 1:
-        raise NotImplementedError(
-            "square_building viewpoint is single-height only"
-        )
     if layouts > len(_UPSTREAM_NORMAL_CARDINAL):
         raise ValueError(
             f"square_building supports up to {len(_UPSTREAM_NORMAL_CARDINAL)} "
@@ -601,20 +612,23 @@ def building_square_viewpoint(
     # residual per-layout offset" for the per-L positional drift this
     # leaves and the open question of generalising the formula.
     step = 360.0 / layouts
+    z_per_h = sq_height_level_world_z(units_per_tile)
     facings: list[Facing] = []
-    for l in range(layouts):
-        _label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
-        facings.append(Facing(
-            label=f"L{l}_H0",
-            camera_location=loc,
-            camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
-            sun_rotation_euler=sun_rotation_for_camera(cam_z),
-            model_rot_z_deg=(2.0 * step * l) % 360.0,
-            slices=_building_slices(
-                l, 0, dims_x, dims_y, sq_tile_screen_offset,
-                pixel_mask=sq_tile_pixel_mask,
-            ),
-        ))
+    for h in range(heights):
+        for l in range(layouts):
+            _label, cam_z, loc = _UPSTREAM_NORMAL_CARDINAL[l]
+            facings.append(Facing(
+                label=f"L{l}_H{h}",
+                camera_location=loc,
+                camera_rotation_euler=(radians(60), 0.0, radians(cam_z)),
+                sun_rotation_euler=sun_rotation_for_camera(cam_z),
+                model_rot_z_deg=(2.0 * step * l) % 360.0,
+                model_translation=(0.0, 0.0, -h * z_per_h),
+                slices=_building_slices(
+                    l, h, dims_x, dims_y, sq_tile_screen_offset,
+                    pixel_mask=sq_tile_pixel_mask,
+                ),
+            ))
     max_dims = max(dims_x, dims_y)
     canvas_w = canvas_h = DEFAULT_W * max_dims
     camera_ortho = _pinned(units_per_tile * max_dims)

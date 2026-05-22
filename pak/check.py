@@ -99,6 +99,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
             per_cell, per_layout = diff_buildings.run_multitile(
                 blend, upstream_dat,
                 dims_x=spec.dims_x, dims_y=spec.dims_y, layouts=4,
+                heights=spec.heights,
                 out_dir=out_dir,
                 materials=spec.materials, lighting=spec.lighting,
                 name=spec.name,

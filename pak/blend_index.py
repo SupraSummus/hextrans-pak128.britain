@@ -133,13 +133,17 @@ def _contains(haystack: list[str], needle: list[str]) -> bool:
     return False
 
 
+_CATEGORY_ALIAS = {"industry": "industries"}
+
+
 def candidates_for(dat: Path, blend_paths: dict[str, list[str]]) -> list[tuple[str, str]]:
     """`(source, blend_path)` pairs matching `dat` by category + token-subseq.
 
     Category match: dat's top-level dir (`trains`, `air`, …) must equal
     the blend's top-level dir, case-insensitive (upstream uses `Trains/`
-    in jamespetts vs `trains/` in ours).  Two-direction token match,
-    both legitimate fanout patterns:
+    in jamespetts vs `trains/` in ours).  One alias: our singular
+    `industry/` maps onto upstream's plural `industries/`.  Two-direction
+    token match, both legitimate fanout patterns:
 
     - Blend ⊂ dat: one blend backs many dat variants (carriages —
       `4wheel-1850.blend` covers `4wheel-1850s-{brake,composite,…}`).
@@ -149,6 +153,7 @@ def candidates_for(dat: Path, blend_paths: dict[str, list[str]]) -> list[tuple[s
     Reports all hits; agent disambiguates when N > 1.
     """
     category = dat.relative_to(REPO_ROOT).parts[0].lower()
+    category = _CATEGORY_ALIAS.get(category, category)
     dat_toks = _dat_tokens(dat.stem)
     hits: list[tuple[str, str]] = []
     for slug, paths in blend_paths.items():
