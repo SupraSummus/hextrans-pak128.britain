@@ -534,14 +534,32 @@ facings accordingly.  Seasons (the `s` axis) and height-stacking
 (the `h` axis) are already plumbed end-to-end and tested — same
 axis-multiplication pattern.
 
-**Industry catalog port -- 8 assets shipped, ~58 dats pending.**
-`pak.dat.Factory(Building)` + `emit_factories` / `port_factory` /
-`bake_factory` exercise the schema end-to-end via chemist, bakery,
-butchery, fishmongers, greengrocers, bookshop, hardware_shop, pub
-(square-projection worst-of-best IoU 0.96 across the calibrated set;
-pub at 0.85 falls in the soft-acceptance polish band).  Pub /
-bookshop ship with `seasons=1` because no upstream `*-snow.blend`
-exists for either.
+**Industry catalog port -- 11 single-tile assets shipped, ~45
+multi-tile dats blocked.**  `pak.dat.Factory(Building)` +
+`emit_factories` / `port_factory` / `bake_factory` exercise the
+schema end-to-end via chemist, bakery, butchery, fishmongers,
+greengrocers, bookshop, hardware_shop, pub, newsagent (1860),
+china-shop (1750), fishing-port (5 eras); calibrated set lands at
+square-projection worst-of-best IoU 0.96, pub at 0.85 in the
+soft-acceptance band.  Pub / bookshop / newsagent ship with
+`seasons=1` (no upstream `*-snow.blend` for either).
+
+All ~45 unported industries with a matched blend declare
+`dims=X,Y,4` with X or Y ≥ 2; the bake completes and the hex
+production atlas shows the right model, but square-diff per-cell
+IoU lands at 0.20-0.50 (market 2x1 worst 0.34, dairy 2x1 worst
+0.25) because each cell shows a model fragment rather than the
+per-tile partition.  Root cause is "Multi-tile XY offset gap" /
+"hex vs square building viewpoints disagree on footprint
+centring" below.  Concrete next move: land
+`blend_world_offset_xyz` (the cheap CLI-arg fix), then auto-port
+the multi-tile backlog through `diag_centroid_align` to recover
+the per-asset offset.
+
+The remaining ~8 unported dats are orphans without an upstream
+blend (apothecary, blacksmith, cooper, wainwright, stonemason,
+fish-chip, supermarket, oil-well) -- skip per `docs/porting.md`
+"don't chase orphans".
 
 **Farm-fields schema not modelled.**  `factory_field_group_writer_t`
 reads `fields[N]` + `has_snow[N]` + `production_per_field[N]` +
