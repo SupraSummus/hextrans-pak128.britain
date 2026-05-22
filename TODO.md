@@ -515,12 +515,14 @@ facings accordingly.  Seasons (the `s` axis) and height-stacking
 (the `h` axis) are already plumbed end-to-end and tested — same
 axis-multiplication pattern.
 
-**Industry catalog port -- first asset shipped, ~63 dats pending.**
+**Industry catalog port -- 8 assets shipped, ~58 dats pending.**
 `pak.dat.Factory(Building)` + `emit_factories` / `port_factory` /
-`bake_factory` exercise the schema end-to-end via `industry/chemist.py`
-(Chemist1860 + Chemist1955 shared-sprite pair; square-projection IoU
-0.97 summer / 0.97 winter, layout perm `[1,0,3,2]` matching the known
-per-blend authoring offset).
+`bake_factory` exercise the schema end-to-end via chemist, bakery,
+butchery, fishmongers, greengrocers, bookshop, hardware_shop, pub
+(square-projection worst-of-best IoU 0.96 across the calibrated set;
+pub at 0.85 falls in the soft-acceptance polish band).  Pub /
+bookshop ship with `seasons=1` because no upstream `*-snow.blend`
+exists for either.
 
 **Farm-fields schema not modelled.**  `factory_field_group_writer_t`
 reads `fields[N]` + `has_snow[N]` + `production_per_field[N]` +
@@ -534,16 +536,13 @@ emit to `emit_factories`.
 **Cross-atlas upgrade chains lose eras silently.**  Several upstream
 industry chains close with a 1950s+ era pointing at a shared
 `1950shops.*` atlas (chemist, butchery, bakery, fishmongers,
-greengrocers, hardware-shop, newsagent, …); the chemist port drops
-`Chemist1975` to avoid a dangling `upgrade=` reference.  Concrete
-next move: write a single `industry/_1950shops.py` packing every
-1950s-era shop as one shared-sprite `SPECS` list, then walk the
-affected chemist / butchery / etc. ports and restore the dropped
-`upgrade[…]=` entries.
-
-**`industry/` not yet in DIRS128.**  Makefile gate not flipped, so
-`make all` still skips the directory.  Triggered on next port: add
-`DIRS128 += industry`.
+greengrocers, hardware-shop, newsagent, bookshop, …); pub closes
+on a parallel `1950pubs.*` atlas.  Each port drops the trailing
+`upgrade[…]=` entries to avoid dangling references.  Concrete next
+move: write `industry/_1950shops.py` packing every 1950s-era shop
+as one shared-sprite `SPECS` list (and `industry/_1950pubs.py`
+likewise for pub), then walk every affected port's `upgrade=` list
+and restore the dropped entries.
 
 **Hex bridge: bake pipeline shipped, in-engine schema unverified.**
 `pak.dat.Bridge` + `emit_bridge`, `pak.bake.bake_bridge_main`, the
