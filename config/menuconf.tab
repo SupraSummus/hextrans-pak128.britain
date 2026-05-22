@@ -393,16 +393,16 @@ toolbar[0][39]=dialog_tool[28]
 # slope tools
 toolbar[1][0]=general_tool[2]
 toolbar[1][1]=general_tool[3]
-toolbar[1][2]=general_tool[4],10,,36 #southslope
-toolbar[1][3]=general_tool[4],11,,4 #northslope
-toolbar[1][4]=general_tool[4],12,,12 #westslope
-toolbar[1][5]=general_tool[4],13,,28 #eastslope
-toolbar[1][6]=general_tool[4],43,,72 #southslope x2
-toolbar[1][7]=general_tool[4],44,,8 #northslope x2
-toolbar[1][8]=general_tool[4],45,,24 #westslope x2
-toolbar[1][9]=general_tool[4],46,,56 #eastslope x2
-toolbar[1][10]=general_tool[4],14,,82 #all up slope
-toolbar[1][11]=general_tool[4],15,,83 #all down slope
+toolbar[1][2]=general_tool[4],10,,1280 #southslope
+toolbar[1][3]=general_tool[4],11,,20 #northslope
+toolbar[1][4]=general_tool[4],12,,1028 #westslope
+toolbar[1][5]=general_tool[4],13,,272 #eastslope
+toolbar[1][6]=general_tool[4],43,,2560 #southslope x2
+toolbar[1][7]=general_tool[4],44,,40 #northslope x2
+toolbar[1][8]=general_tool[4],45,,2056 #westslope x2
+toolbar[1][9]=general_tool[4],46,,544 #eastslope x2
+toolbar[1][10]=general_tool[4],14,,4097 #all up slope
+toolbar[1][11]=general_tool[4],15,,4098 #all down slope
 toolbar[1][12]=general_tool[5]
 
 #pier tools
