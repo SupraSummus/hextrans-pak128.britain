@@ -55,6 +55,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 from pak import REPO_ROOT
 from pak.bake_units import import_script, specs_of
@@ -234,8 +235,6 @@ def main(argv: list[str]) -> int:
     # authored layouts).  Pinned regardless of the hex bake's layout
     # count, which the SPEC's `symmetry` derives.
     layouts = 4
-
-    from PIL import Image
 
     render_name = Path(spec.blend).stem
     our_canvases = _load_our_renders(out_dir, render_name, layouts)

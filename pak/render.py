@@ -40,6 +40,8 @@ factory and doesn't touch render.py.
 from __future__ import annotations
 
 import argparse
+import json
+import pickle
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -47,11 +49,27 @@ from math import radians
 from pathlib import Path
 from typing import NamedTuple
 
+import numpy as np
+
 HERE = Path(__file__).resolve().parent
 # Put the repo root on sys.path so `pak.<module>` imports resolve.
 # `hex_synth` uses `from .way import …`, so we need the package form,
 # not a flat sys.path on the `pak/` dir.  Mirrors `pak/bake_way.py`.
 sys.path.insert(0, str(HERE.parent))
+
+from pak.fetch_blend import fetch as fetch_blend  # noqa: E402
+
+try:
+    import bmesh
+    import bpy
+    import mathutils
+except ImportError:
+    # bpy / bmesh / mathutils are only available inside the Blender
+    # subprocess (see `pak.bake.run_render`).  This module is also
+    # imported from plain Python for the dataclass definitions
+    # (Facing, Slice, Viewpoint, …) and `RenderPayload`; those
+    # consumers never call into the bpy-using functions.
+    bpy = bmesh = mathutils = None
 
 
 class Slice(NamedTuple):
@@ -250,7 +268,6 @@ def _reload_external_textures(bpy) -> None:
     image data block whose file failed to load (size 0), look up its
     basename in the blends repo's `textures/` directory via fetch_blend
     and rewrite the filepath.  No-op for images that loaded fine."""
-    from pak.fetch_blend import fetch as fetch_blend
     for img in bpy.data.images:
         if img.size[0] != 0:
             continue
@@ -685,8 +702,6 @@ def _apply_holdout(bpy, names: tuple[str, ...] | set[str]) -> None:
     absent from the scene."""
     if not names:
         return
-    import bmesh
-    import mathutils
     wanted = set(names)
     holdout = bpy.data.materials.new("_holdout")
     holdout.use_nodes = True
@@ -726,7 +741,6 @@ def _fit_plane_z(verts) -> tuple[float, float, float]:
     world-space coordinates.  Returns `(a, b, c)`.  The fit is exact
     when the input verts are coplanar (which Plane.003 in JH tunnel
     blends is)."""
-    import numpy as np
     pts = np.array([(v.co.x, v.co.y, v.co.z) for v in verts])
     A = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(pts))])
     coeffs, *_ = np.linalg.lstsq(A, pts[:, 2], rcond=None)
@@ -943,8 +957,6 @@ def render_facings(bpy, mathutils, viewpoint: Viewpoint, out_dir: Path,
     resulting renders pixel-align with the normal pass but each
     material's coverage is identifiable.  Used by `pak.diag_per_material`
     to attribute the upstream-vs-ours dRGB to specific materials."""
-    import json
-
     authored = strip_scene(bpy, viewpoint.strip_meshes,
                            viewpoint.strip_material_substrings)
     _apply_holdout(bpy, viewpoint.holdout_meshes)
@@ -1022,11 +1034,6 @@ def _parse_args(argv):
 
 
 def main(argv):
-    import pickle
-
-    import bpy
-    import mathutils
-
     args = _parse_args(argv)
     with open(args.payload, "rb") as fh:
         payload: RenderPayload = pickle.load(fh)

@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from grounds.water import N_DEPTHS, WATER_BASE_RGB, depth_shade_factor
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 
 
 def render_outside(geom: hex_synth.HexGeom | None = None) -> np.ndarray:
@@ -28,7 +28,7 @@ def _outside_entries(_geom):
 
 
 if __name__ == "__main__":
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name="outside",
         obj_name="Outside",

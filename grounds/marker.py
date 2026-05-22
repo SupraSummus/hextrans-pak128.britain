@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 
 OUTLINE_COLOR_RGB = (255, 128, 0)
 
@@ -42,7 +42,7 @@ def render_marker(slope: int, background: bool,
 
 
 if __name__ == "__main__":
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name="marker",
         obj_name="Marker",

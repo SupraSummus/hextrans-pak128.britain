@@ -37,7 +37,7 @@ from .way import (
     edge_unit_dir as hex_edge_unit_dir,
     hex_clip_planes,
 )
-from .way_topology import StraightPath, for_edges_paths as hex_for_edges_paths
+from .way_topology import STUB_LENGTH_FRACTION, StraightPath, for_edges_paths as hex_for_edges_paths
 
 # ---- Square tile geometry -------------------------------------------------
 #
@@ -205,7 +205,6 @@ def _square_stub(edge: str) -> list[StraightPath]:
     cap_centre = (-end[1] / n, end[0] / n)
     # Reuse the hex stub fraction so both projections share the
     # "stub stops well short of the centre" visual convention.
-    from .way_topology import STUB_LENGTH_FRACTION
     start = (end[0] * (1.0 - STUB_LENGTH_FRACTION),
              end[1] * (1.0 - STUB_LENGTH_FRACTION))
     return [StraightPath(start=start, end=end,

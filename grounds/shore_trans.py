@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 
 # ALPHA_RED-keyed two-colour palette.  Engine reads only the red
 # channel as alpha; blue's RGB doesn't matter beyond `R == 0`.
@@ -92,7 +92,7 @@ def _shore_entries(geom):
 
 
 if __name__ == "__main__":
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name="shore_trans",
         obj_name="ShoreTrans",

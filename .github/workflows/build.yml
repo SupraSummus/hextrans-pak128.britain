@@ -20,6 +20,13 @@ jobs:
     steps:
         - uses: actions/checkout@v6
 
+        - name: install python deps
+          # `make ... all archives` shells `python3 -m pak.fetch_wavs`
+          # / `pak.fetch_pak`, which import bake scripts -> `pak.bake`
+          # -> `pak.compose` / `pak.viewpoints` (numpy + Pillow at
+          # module top after the PLC0415 hoist).
+          run: pip install numpy Pillow
+
         - name: build makeobj
           run: |
             sudo apt-get update

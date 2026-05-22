@@ -14,12 +14,16 @@ extend-exclude = [".cache", "out"]
 # B007 unused loop vars hinting at typos).
 # PLE: pylint error subset -- bad super calls, format string
 # mismatches, return in __init__.
+# PLC0415: import-outside-top-level -- lazy imports hide import
+# errors until execution path is hit and scatter the dep graph
+# across function bodies.  Heavy-dep avoidance belongs in module
+# splits or `try/except ImportError` at top, not in-body imports.
 # NPY: numpy correctness -- legacy np.random, numpy-2 deprecations.
 # RUF100: unused noqa directives (the rest of the RUF group is mostly
 # stylistic against this codebase's conventions -- `×` in docstrings,
 # `_list_field()` dataclass factory, class-level constant lists).
 # A: flake8-builtins -- shadowing list/type/id as parameter or local.
-select = ["F", "E", "W", "I", "UP", "B", "PLE", "NPY", "RUF100", "A"]
+select = ["F", "E", "W", "I", "UP", "B", "PLE", "PLC0415", "NPY", "RUF100", "A"]
 ignore = ["E501", "E702", "E741"]
 
 [tool.ruff.lint.isort]

@@ -23,9 +23,25 @@ Output mirrors `pak.diff_upstream.run()`: per-facing FacingMetric +
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from pak import REPO_ROOT
+from pak.diff import (
+    MAGIC_PINK,
+    GridCell,
+    cell_metric,
+    compose_grid,
+    iou,
+    key_magic_pink_to_alpha,
+    silhouette_mask,
+)
+from pak.fetch_pak import fetch as fetch_pak
 
 CELL = 128
 
@@ -56,10 +72,6 @@ def _composite_cell(atlas, row_back: int, row_front: int, col: int):
     `(row_front, col)` cell alpha-composited on top — the engine's
     back/front draw order for one bridge facing.
     """
-    from PIL import Image
-
-    from pak.diff import key_magic_pink_to_alpha
-
     x = col * CELL
     back = key_magic_pink_to_alpha(
         atlas.crop((x, row_back * CELL, x + CELL, row_back * CELL + CELL))
@@ -104,7 +116,6 @@ def run(
 
 
 def _open_atlas(atlas_path: Path, variant: int):
-    from PIL import Image
     atlas = Image.open(atlas_path).convert("RGBA")
     row_back = 0 if variant == 0 else 2
     return atlas, row_back, row_back + 1
@@ -158,11 +169,6 @@ def _start_or_ramp_cells(atlas, row_back, row_front, cols: dict[str, int]) -> di
 
 
 def _grid_and_metrics(rendered_dir, render_stem, upstream_cells, out_dir):
-    import numpy as np
-    from PIL import Image
-
-    from pak.diff import MAGIC_PINK, GridCell, cell_metric, compose_grid
-
     out_dir.mkdir(parents=True, exist_ok=True)
     for facing, im in upstream_cells.items():
         im.save(out_dir / f"upstream_{facing}.png")
@@ -204,11 +210,6 @@ def match(
     (`START_COLS` / `RAMP_COLS` / `IMAGE_COLS`); each column's
     Back+Front composite is the candidate cell.
     """
-    import numpy as np
-    from PIL import Image
-
-    from pak.diff import MAGIC_PINK, iou, silhouette_mask
-
     atlas, row_back, row_front = _open_atlas(atlas_path, variant)
     candidates = {
         label: _composite_cell(atlas, row_back, row_front, col)
@@ -247,11 +248,6 @@ def format_table(metrics: list[FacingMetric]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    import argparse
-
-    from pak import REPO_ROOT
-    from pak.fetch_pak import fetch as fetch_pak
-
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("rendered_dir", help="dir holding <stem>_<facing>.png")
     ap.add_argument("stem", help="rendered atlas stem, e.g. straight")

@@ -10,7 +10,7 @@ depth tier, so missing cells flicker the sprite out.  Engine clamps
 the depth axis at `water_depth_levels = count - 2`; flat-only on slope.
 
 Atlas is keyed by `(depth, stage)`, not by slope — passes its own
-`iter_entries` to `hex_synth.bake_pakset` rather than the
+`iter_entries` to `bake_grounds.bake_pakset` rather than the
 slope-keyed default.
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 
 N_DEPTHS = 6
 N_STAGES = 32
@@ -106,7 +106,7 @@ def _water_entries(_geom):
 
 
 if __name__ == "__main__":
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name="water",
         obj_name="Water",

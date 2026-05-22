@@ -26,9 +26,13 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 from pak import REPO_ROOT, diff_buildings, diff_tunnel, diff_upstream, diff_way
 from pak.bake_units import specs_of
 from pak.dat import Building, Tunnel, Way
+from pak.fetch_pak import fetch as fetch_pak
+from pak.upstream import image_stem
 
 _SKIP_DIRS = {"pak", "tests", "out", ".cache", ".git"}
 
@@ -122,10 +126,6 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
         # cardinal cameras at 4, so layouts beyond that go unrendered
         # (e.g. an upstream-8 atlas would still diff against our 4
         # cardinals -- diagonals are deferred until they ship).
-        from PIL import Image
-
-        from pak.fetch_pak import fetch as fetch_pak
-        from pak.upstream import image_stem
         with Image.open(fetch_pak(f"{image_stem(upstream_dat, name=spec.name)}.png")) as im:
             up_w = im.size[0]
         layouts = min(up_w // 128, 4)

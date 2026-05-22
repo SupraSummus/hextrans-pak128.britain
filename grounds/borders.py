@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 
 OUTLINE_COLOR_RGB = (32, 32, 32)
 
@@ -35,7 +35,7 @@ def render_border(slope: int, geom: hex_synth.HexGeom | None = None) -> np.ndarr
 
 
 if __name__ == "__main__":
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name="borders",
         obj_name="Borders",
