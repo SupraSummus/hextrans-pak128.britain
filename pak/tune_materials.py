@@ -183,6 +183,70 @@ def _aggregate_means(blend_path, out_dir, vp_normal, vp_idmap,
             {n: accum_up[n] / accum_n[n] for n in accum_n})
 
 
+def tune(blend: str, upstream_dat: str, *, name: str,
+         materials: dict[str, Material],
+         lighting=None, season_row: int = 0,
+         max_iters: int = 50, blur_sigma: float = 3.0,
+         blend_units_per_tile: float = 12.0,
+         out_dir: Path,
+         ) -> tuple[float, float, dict[str, Material]]:
+    """Run the gradient solver against `building_square_viewpoint`.
+    Returns `(baseline_dRGB, best_dRGB, best_materials)` -- the caller
+    decides what to do with the result (mutate a SPEC in memory, write
+    it back to a script, print it for paste-in).  No file I/O beyond
+    the per-iter scratch renders under `out_dir`."""
+    from pak.upstream import image_stem
+    from pak.viewpoints import building_square_viewpoint
+    blend_path = fetch_blend(blend)
+    up_arr = np.array(Image.open(fetch_pak(
+        f"{image_stem(upstream_dat, name=name)}.png"
+    )).convert("RGB"))
+    layouts = min(up_arr.shape[1] // 128, 4)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    vp_normal = building_square_viewpoint(
+        layouts=layouts, units_per_tile=blend_units_per_tile,
+        dims_x=1, dims_y=1, heights=1, lighting=lighting,
+    )
+    vp_idmap = building_square_viewpoint(
+        layouts=layouts, units_per_tile=blend_units_per_tile,
+        dims_x=1, dims_y=1, heights=1,
+    )
+    baseline = _measure_drgb(blend_path, out_dir, vp_normal, materials,
+                             up_arr, season_row, "baseline", blur_sigma)
+    print(f"  baseline dRGB={baseline:.3f}")
+    best, best_mats, current = baseline, dict(materials), dict(materials)
+    for i in range(max_iters):
+        try:
+            mean_ours, mean_up = _aggregate_means(
+                blend_path, out_dir, vp_normal, vp_idmap, current,
+                up_arr, season_row, f"meas{i}",
+            )
+        except Exception as e:
+            print(f"  iter {i}: aggregate_means failed: {e}; stopping")
+            break
+        proposed = dict(current)
+        moved = False
+        for n_, mat in current.items():
+            if n_ not in mean_ours or mat.color is None:
+                continue
+            nc = proposed_color(mat.color, mean_ours[n_], mean_up[n_])
+            if nc != mat.color:
+                proposed[n_] = dataclasses.replace(mat, color=nc)
+                moved = True
+        if not moved:
+            print(f"  iter {i}: no movement; stopping")
+            break
+        drgb = _measure_drgb(blend_path, out_dir, vp_normal, proposed,
+                             up_arr, season_row, f"prop{i}", blur_sigma)
+        improved = drgb < best - 0.01
+        print(f"  iter {i}: proposed dRGB={drgb:.3f} "
+              f"{'(IMPROVED)' if improved else '(WORSE; stopping)'}")
+        if not improved:
+            break
+        best, best_mats, current = drgb, proposed, proposed
+    return baseline, best, best_mats
+
+
 def run(bake_path: Path, season: str = "summer", max_iters: int = 50) -> None:
     mod = _load_module(bake_path)
     spec = getattr(mod, "SPEC", None)
@@ -191,63 +255,20 @@ def run(bake_path: Path, season: str = "summer", max_iters: int = 50) -> None:
     if season == "winter":
         if spec.seasons < 2:
             raise SystemExit("asset has no winter season")
-        blend = spec.blend_winter
-        materials = dict(spec.materials_winter or {})
-        season_row = 1
-    else:
-        blend = spec.blend
-        materials = dict(spec.materials or {})
-        season_row = 0
-    lighting = spec.lighting
-    from pak.upstream import image_stem
-    upstream_png = f"{image_stem(spec.upstream_dat, name=spec.name)}.png"
-
-    blend_path = fetch_blend(blend)
-    up_path = fetch_pak(upstream_png)
-    up_arr = np.array(Image.open(up_path).convert("RGB"))
-    layouts = min(up_arr.shape[1] // 128, 4)
-
-    out_dir = REPO_ROOT / "out" / "tune" / bake_path.stem
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    from pak.viewpoints import building_square_viewpoint
-    vp_normal = building_square_viewpoint(
-        layouts=layouts, units_per_tile=spec.blend_units_per_tile,
-        dims_x=1, dims_y=1, heights=1, lighting=lighting,
-    )
-    vp_idmap = building_square_viewpoint(
-        layouts=layouts, units_per_tile=spec.blend_units_per_tile,
-        dims_x=1, dims_y=1, heights=1,
-    )
-    best_drgb = _measure_drgb(blend_path, out_dir, vp_normal,
-                              materials, up_arr, season_row, "baseline")
-    best_materials = dict(materials)
-    print(f"  baseline dRGB={best_drgb:.3f}")
-
-    current = dict(materials)
-    for i in range(max_iters):
-        mean_ours, mean_up = _aggregate_means(
-            blend_path, out_dir, vp_normal, vp_idmap, current,
-            up_arr, season_row, f"meas{i}",
+        blend, materials, season_row = (
+            spec.blend_winter, dict(spec.materials_winter or {}), 1,
         )
-        proposed = dict(current)
-        for name_, mat in current.items():
-            if name_ not in mean_ours or mat.color is None:
-                continue
-            new_color = proposed_color(mat.color, mean_ours[name_], mean_up[name_])
-            proposed[name_] = dataclasses.replace(mat, color=new_color)
-        drgb = _measure_drgb(blend_path, out_dir, vp_normal, proposed,
-                             up_arr, season_row, f"prop{i}")
-        improved = drgb < best_drgb
-        print(f"  iter {i}: proposed dRGB={drgb:.3f}  "
-              f"{'(IMPROVED)' if improved else '(WORSE; stopping)'}")
-        if improved:
-            best_drgb = drgb
-            best_materials = proposed
-            current = proposed
-        else:
-            break
-
+    else:
+        blend, materials, season_row = (
+            spec.blend, dict(spec.materials or {}), 0,
+        )
+    _, best_drgb, best_materials = tune(
+        blend, spec.upstream_dat, name=spec.name,
+        materials=materials, lighting=spec.lighting,
+        season_row=season_row, max_iters=max_iters,
+        blend_units_per_tile=spec.blend_units_per_tile,
+        out_dir=REPO_ROOT / "out" / "tune" / bake_path.stem,
+    )
     print(f"\n# Best MATERIALS for {bake_path.stem} ({season}); dRGB={best_drgb:.3f}")
     print("MATERIALS = {")
     for name_, mat in best_materials.items():

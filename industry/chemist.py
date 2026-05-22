@@ -12,12 +12,29 @@ re-add when the 1950shops bake unit lands and restores that era.
 
 from pak.bake import bake_factory_main
 from pak.dat import Factory
+from pak.materials import Lighting, Material
 
 _BLEND = "industries/chemist.blend"
 _BLEND_WINTER = "industries/chemist-snow.blend"
 _UPSTREAM_DAT = "industry/chemist.dat"
 
 _CLIMATES = "rocky,tundra,temperate,mediterran,desert,arctic,tropic"
+
+# AUTO-TUNED: pak.tune_industries
+MATERIALS = {
+    'Brick': Material(image='flemish-bond-improved', size=(0.5, 0.5, 0.5), color=(0.619, 0.53, 0.345)),
+    'BrickCapping': Material(image='flemish-bond-improved', texco='ORCO', size=(2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0)),
+    'Pavement': Material(image='concrete-paving-small', size=(2.105, 1.89, 1.0), ofs=(0.0, 0.02, 0.0), color=(0.78, 0.754, 0.694)),
+    'Roof': Material(image='flemish-bond-improved', size=(3.0, 1.0, 2.0), color=(0.215, 0.155, 0.1)),
+    'RoofSide': Material(image='flemish-bond-improved', size=(3.0, 1.0, 2.0), color=(1.0, 1.0, 1.0)),
+    'Shop1': Material(image='scratched_bricks_.001', size=(4.0, 4.0, 1.0), color=(0.863, 0.537, 1.135)),
+    'Shop2': Material(image='scratched_bricks_.001', size=(4.0, 4.0, 1.0), color=(1.0, 1.0, 1.0)),
+    'Shop3': Material(image='scratched_bricks_.001', size=(4.0, 4.0, 1.0), color=(1.0, 1.0, 1.0)),
+    'WindowFrame': Material(image='scratched_bricks_.001', size=(4.0, 4.0, 1.0), color=(1.0, 1.0, 1.0)),
+}
+
+LIGHTING = Lighting(world_ambient=(0.45, 0.45, 0.45), sun_energy_scale=71.428571, sun_elev_deg=45.0, sun_az_offset_deg=-90.0)
+# END AUTO-TUNED
 
 SPECS = [
     Factory(
@@ -49,6 +66,8 @@ SPECS = [
         blend=_BLEND,
         blend_winter=_BLEND_WINTER,
         upstream_dat=_UPSTREAM_DAT,
+        materials=MATERIALS,
+        lighting=LIGHTING,
     ),
     Factory(
         name="Chemist1955",
@@ -79,6 +98,8 @@ SPECS = [
         blend=_BLEND,
         blend_winter=_BLEND_WINTER,
         upstream_dat=_UPSTREAM_DAT,
+        materials=MATERIALS,
+        lighting=LIGHTING,
     ),
 ]
 

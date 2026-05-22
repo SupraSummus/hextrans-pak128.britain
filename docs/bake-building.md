@@ -231,6 +231,14 @@ larger step than the small-gradient iteration assumes.  Opt an
 image-only material into solver tuning by giving it an explicit
 `color=` starting point in the bake script.
 
+The solver function `pak.tune_materials.tune(blend, upstream_dat,
+name, materials, ...)` is also the engine behind
+`pak.tune_industries` -- the industries driver seeds image-form
+materials from the blend, runs the same `tune`, and writes
+`MATERIALS` + `LIGHTING` back into the bake script between marker
+comments.  Re-rendering the committed PNG is a separate
+`python3 -m industry.<name>` after `--apply`.
+
 **Texture rebinding.**  Blender 2.80 dropped BI's
 `material.texture_slots[i]` API, but the Material+MTex struct
 data survives in the .blend binary because Britain's blends are
