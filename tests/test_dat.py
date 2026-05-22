@@ -422,29 +422,24 @@ class TestPortWay(unittest.TestCase):
         w = port_way(entries)  # must not raise
         self.assertEqual(w.name, "x")
 
-    def test_drops_icon_and_cursor_on_port(self):
-        # Upstream `icon=`/`cursor=` reference cells under the pak's
-        # stripped images/ dir — they'd make makeobj error out at
-        # build time if they survived a port unchanged (see
-        # `Way.icon` field doc).  port_way drops them; the bake
-        # script's SPEC stays clean.  `emit_way` then fills in stub
-        # refs pointing at existing hex-atlas cells so makeobj's
-        # cursorskin writer sees a non-empty cursor/icon and the
-        # engine's `weg_search` picks the way up as a buildable
-        # default (option (a) in TODO.md → "Bake hex icon + cursor
-        # sprites for ways").
-        entries = [
-            ("obj", "way"), ("Name", "x"), ("waytype", "track"),
-            ("icon", "> ./images/x.3.4"),
-            ("cursor", "./images/x.3.5"),
-        ]
-        w = port_way(entries)
-        self.assertIsNone(w.icon)
-        self.assertIsNone(w.cursor)
+    def test_emit_way_derives_icon_refs_from_src(self):
+        # `icon_src` / `cursor_src` declare the upstream cell to
+        # slice via `pak.bake_icons`; `emit_way` writes refs into
+        # the resulting `<basename>_icon.png` sibling.
+        w = Way(name="x", waytype="track",
+                icon_src="./images/foo.3.4",
+                cursor_src="./images/foo.3.5")
         with TemporaryDirectory() as d:
             text = emit_way(w, out_dir=Path(d), basename="x").read_text()
-        # Stub refs point at hex-atlas cells, not the stripped
-        # upstream images/ dir.
+        self.assertIn("icon=./x_icon.0.0", text)
+        self.assertIn("cursor=./x_icon.0.1", text)
+
+    def test_emit_way_stubs_icon_and_cursor_when_unset(self):
+        # Stub fallback keeps `way_builder_t::weg_search` happy for
+        # ways with no upstream art and no hex re-bake.
+        with TemporaryDirectory() as d:
+            text = emit_way(Way(name="x", waytype="track"),
+                            out_dir=Path(d), basename="x").read_text()
         self.assertIn("cursor=./x.0.0", text)
         self.assertIn("icon=./x.1.6", text)
         self.assertNotIn("images/", text)
@@ -583,23 +578,14 @@ class TestPortBridge(unittest.TestCase):
         b = port_bridge(entries)
         self.assertEqual(b.name, "X")
 
-    def test_drops_icon_and_cursor_on_port(self):
-        # Same convention as port_way: upstream icon/cursor cells live
-        # under the stripped images/ dir; emit_bridge fills in stub
-        # refs pointing at existing atlas cells.
-        entries = [
-            ("obj", "bridge"), ("name", "X"), ("waytype", "track"),
-            ("icon", "> ./images/x.4.0"),
-            ("cursor", "./images/x.4.1"),
-        ]
-        b = port_bridge(entries)
-        self.assertIsNone(b.icon)
-        self.assertIsNone(b.cursor)
+    def test_emit_bridge_derives_icon_refs_from_src(self):
+        b = Bridge(name="X", waytype="track",
+                   icon_src="./images/x.4.0",
+                   cursor_src="./images/x.4.1")
         with TemporaryDirectory() as d:
             text = emit_bridge(b, out_dir=Path(d), basename="x").read_text()
-        self.assertIn("icon=./x.0.0", text)
-        self.assertIn("cursor=./x.1.0", text)
-        self.assertNotIn("images/", text)
+        self.assertIn("icon=./x_icon.0.0", text)
+        self.assertIn("cursor=./x_icon.0.1", text)
 
     def test_harvests_engine_scalars(self):
         # Lift directly from the upstream plate-girder.dat shape -- the

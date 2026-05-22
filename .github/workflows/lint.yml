@@ -53,6 +53,11 @@ jobs:
       - run: sudo apt-get install -y blender libegl1 python3-numpy
       - name: Re-run parametric ground bakers
         run: make bake-grounds
+      - name: Re-slice upstream icon / cursor cells
+        # Same shape as bake-grounds: deterministic PIL crop, no
+        # Blender; the committed `<asset>_icon.png` siblings are
+        # what ship.
+        run: make bake-icons
       - name: Re-render the Blender-driven determinism sample
         # One asset per pipeline shape: vehicle (pak/render.py
         # standard atlas, Cycles), way (pak/bake_way.py Workbench),

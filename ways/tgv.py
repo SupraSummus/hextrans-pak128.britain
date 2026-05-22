@@ -20,7 +20,10 @@ SPEC = Way(
     # Lower than otherwise owing to the hard concrete base in place
     # of ballast.
     maintenance=950,
+    icon_src="./images/tgv.3.4",
+    cursor_src="./images/tgv.3.5",
     blend="ways/tgv.blend",
+    upstream_dat="ways/tgv.dat",
     materials={
         "Ballast": (83, 77, 75),
         "Wood": (129, 119, 115),

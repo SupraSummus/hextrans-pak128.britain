@@ -536,6 +536,40 @@ A full blends-repo clone is multi-GB (jamespetts unpacks to
 of tree objects.  Drop the clone under `/tmp/` so it doesn't
 end up in the working repo.
 
+## Upstream icon passthrough
+
+Toolbar icons and edit-cursor sprites (read by `cursorskin_writer_t`
+from `icon=`/`cursor=` dat keys) are flat 2D pakset art with no
+hex-projection burden -- the same shortcut that lets `gui/gui*/`
+skins ship verbatim under hex.  Per-asset SPECs (`Way`, `Bridge`,
+`Tunnel`) declare bake-meta `icon_src` / `cursor_src` pointing at
+the upstream cell to slice
+(`icon_src="./images/concrete_sleeper_steel_rail.3.4"`).
+`pak/bake_icons.py` is the reproducible slicer (same shape as the
+parametric ground bakers): fetches the upstream PNG via
+SHA-pinned `pak.fetch_pak`, crops the named 128-px cells, writes a
+tight single-row `<basename>_icon.png` sibling next to the dat
+(committed, ~3 KB per asset).  `emit_*` derives the dat refs from
+the same SPEC fields, so the file naming
+(`./<basename>_icon.0.0` for icon, `0.1` for cursor) is the single
+source of truth between slicer and emitter.
+
+When a SPEC sets neither `icon_src` nor a literal `icon`/`cursor`,
+`emit_*` falls back to a stub ref into the asset's own hex atlas
+(e.g. `icon=./<basename>.1.6`) so `way_builder_t::weg_search` /
+`bridge_builder_t::lookup` still pick the asset up as a buildable
+default.  Reach for the stub when the asset has no upstream
+analogue (hex-only ways); reach for `icon_src` when an upstream
+ref exists -- flat art reads cleaner in the toolbar than a
+perspective-rendered ribi cell.
+
+CI's `rebake` job re-runs `make bake-icons` and asserts byte-
+identical output -- same shape as `make bake-grounds`.  Same
+machinery extends mechanically to any future asset class with
+`icon=`/`cursor=` keys (depots, signalboxes, stops): add
+`icon_src`/`cursor_src` bake-meta to the SPEC, route emit through
+`_icon_ref`.  `pak.bake_icons` is class-agnostic.
+
 ## Bake units and per-asset layout
 
 A "bake unit" is one bake script.  It owns a `SPEC` (or `SPECS`)

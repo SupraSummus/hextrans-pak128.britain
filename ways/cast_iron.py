@@ -19,7 +19,10 @@ SPEC = Way(
     wear_capacity=8640000,
     cost=30000,
     maintenance=800,
+    icon_src="./images/cast_iron.3.4",
+    cursor_src="./images/cast_iron.3.5",
     blend="ways/ns-cssr.blend",
+    upstream_dat="ways/cast_iron.dat",
     materials={
         "Ballast": (62, 54, 42),
         "Wood": (77, 66, 51),

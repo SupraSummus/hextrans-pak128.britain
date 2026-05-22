@@ -905,17 +905,17 @@ those families are wanted: author fresh blends, or accept a
 recolour of `brick_viaduct/straight.blend` as a placeholder.
 Soft trigger.
 
-**Bake hex icon + cursor sprites for ways.**  Option (a) is in
-today (`emit_way` stubs `cursor=./<basename>.0.0` and
-`icon=./<basename>.1.6` for every way) so `way_builder_t::weg_search`
-picks the way up as a buildable default and the engine doesn't fatal
-with "No road found at all".  Toolbar icons render the no-way and
-straight-through-tile ribi cells instead of dedicated artwork —
-visually crude but functional.  Concrete next move when the visual
-matters: extend `pak/bake_way.py` with a dedicated icon/cursor
-render mode that appends two cells to the atlas (e.g. at (8,0) and
-(8,1)) at a canonical camera angle, then drop the `emit_way` stubs
-and have `port_way` keep upstream's refs.
+**Hex-native icon / cursor render for ways.**  All eight ported
+ways currently ship upstream's flat 2D toolbar art via the
+passthrough system (CLAUDE.md → "Upstream icon passthrough"); the
+hard fallback when a SPEC sets neither is a stub into the way's
+own hex atlas (visually crude).  Concrete next move when the
+hex-distinctive look matters: extend `pak/bake_way.py` with a
+dedicated icon/cursor render mode that appends two cells to the
+atlas at a canonical camera angle, then have SPECs that want
+hex-rendered icons point `icon=` at those cells instead of the
+upstream image.  Soft trigger -- upstream art reads fine in the
+toolbar.
 
 **Road-blend generalization.**  `bake_way.py` was tuned against
 the rail strand atom in `ns-cssr.blend` (one straight cross-section

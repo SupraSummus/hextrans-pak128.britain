@@ -16,7 +16,10 @@ SPEC = Way(
     wear_capacity=32500000,
     cost=40000,
     maintenance=400,
+    icon_src="./images/tarmac_road.3.4",
+    cursor_src="./images/tarmac_road.3.5",
     blend="ways/tarmac/standard-city-base.blend",
+    upstream_dat="ways/tarmac_road.dat",
     materials={
         "Dirt": (64, 64, 64),
         "MainColour1": (80, 80, 80),
