@@ -23,9 +23,22 @@ then reuses the same blend through the hex projection.
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from pak import REPO_ROOT
+from pak.bake import fetch_blend_by_source, run_render
+from pak.compose import compose_atlas
+from pak.dat import find_object, iter_image_refs, parse
+from pak.diff import MAGIC_PINK, GridCell, cell_metric, compose_grid, key_magic_pink_to_alpha
+from pak.fetch_pak import fetch as fetch_pak
+from pak.upstream import image_stem
+from pak.viewpoints import tunnel_square_viewpoint
 
 CELL = 128
 
@@ -62,8 +75,6 @@ def _parse_tunnel_image_entries(dat_path: Path, *, name: str):
     only ships Back for W and N, so other facings stitch against Front
     alone.  Multi-object dats are filtered by `name=` (matches the
     object's `Name=` case-insensitively)."""
-    from pak.dat import find_object, iter_image_refs, parse
-
     obj = find_object(parse(dat_path), name, source=dat_path)
     by_facing: dict[str, dict[str, tuple[int, int] | None]] = {}
     for ref in iter_image_refs(obj):
@@ -83,10 +94,6 @@ def _stitch_upstream_cell(atlas, front_rc: tuple[int, int],
                           back_rc: tuple[int, int] | None):
     """Alpha-composite upstream Back under Front at the shared 128² cell.
     Back-less facings (e.g. stone tunnel's E/S) collapse to Front alone."""
-    from PIL import Image
-
-    from pak.diff import key_magic_pink_to_alpha
-
     def _crop(rc: tuple[int, int]):
         row, col = rc
         return key_magic_pink_to_alpha(
@@ -104,7 +111,6 @@ def _stitch_upstream_cell(atlas, front_rc: tuple[int, int],
 def _ours_cell(rendered_atlas_path: Path, facing: str):
     """Slice the calibration render atlas (single-row 4-cell, columns
     S/N/E/W per `SQUARE_FACING_LABELS`) at the given facing."""
-    from PIL import Image
     col = SQUARE_FACING_LABELS.index(facing)
     atlas = Image.open(rendered_atlas_path).convert("RGBA")
     return atlas.crop((col * CELL, 0, col * CELL + CELL, CELL))
@@ -121,16 +127,6 @@ def run(blend: str, upstream_dat: str, *, out_dir: Path, name: str,
     image_stem`.  `name` is the SPEC's `name=` (used for multi-object
     upstream dats; single-object dats can pass any of the names).
     """
-    import numpy as np
-    from PIL import Image
-
-    from pak.bake import fetch_blend_by_source, run_render
-    from pak.compose import compose_atlas
-    from pak.diff import MAGIC_PINK, GridCell, cell_metric, compose_grid
-    from pak.fetch_pak import fetch as fetch_pak
-    from pak.upstream import image_stem
-    from pak.viewpoints import tunnel_square_viewpoint
-
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -180,9 +176,6 @@ def format_table(metrics: list[FacingMetric]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    import argparse
-
-    from pak import REPO_ROOT
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("blend")
     ap.add_argument("upstream_dat")

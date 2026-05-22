@@ -37,7 +37,9 @@ from pak.way import (
     ribi_edges,
     ribi_label,
 )
+from pak.way_proj import SQUARE_PROJECTION
 from pak.way_topology import (
+    STUB_LENGTH_FRACTION,
     atom_offsets_along_path,
     cap_plane,
     for_edges_paths,
@@ -154,7 +156,6 @@ class PathCoordinates(unittest.TestCase):
         # `stub_paths` lays a chord from STUB_LENGTH_FRACTION-of-way-in
         # toward the edge midpoint; start should be the midpoint scaled
         # by (1 - STUB_LENGTH_FRACTION).
-        from pak.way_topology import STUB_LENGTH_FRACTION
         mx, my = edge_midpoint("N")
         sx, sy = stub_paths("N")[0].start
         scale = 1.0 - STUB_LENGTH_FRACTION
@@ -310,10 +311,6 @@ class HexInvariants(_ProjectionInvariants, unittest.TestCase):
 class SquareInvariants(_ProjectionInvariants, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Late-bind so importing this test module doesn't pull
-        # `way_proj` (which transitively pulls numpy via `hex_synth`)
-        # at collection time on pure-stdlib runs.
-        from pak.way_proj import SQUARE_PROJECTION
         cls.entries = SQUARE_PROJECTION.entries
         cls.for_edges_paths = staticmethod(SQUARE_PROJECTION.for_edges_paths)
         cls.clip_planes = staticmethod(SQUARE_PROJECTION.clip_planes)
@@ -339,7 +336,6 @@ class SquareProjection(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from pak.way_proj import SQUARE_PROJECTION
         cls.proj = SQUARE_PROJECTION
 
     def test_fifteen_entries(self):

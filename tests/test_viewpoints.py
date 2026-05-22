@@ -9,13 +9,17 @@ Run from the repo root:
 from __future__ import annotations
 
 import math
+import pickle
 import unittest
+
+import numpy as np
 
 from pak.dat import building_footprint_centroid
 from pak.materials import Lighting
 from pak.render import CYCLES, EEVEE, BlendAuthored
 from pak.viewpoints import (
     DEFAULT_W,
+    HEX_TILE_RADIUS,
     HEX_VIEWPOINT,
     SQUARE_VIEWPOINT,
     bridge_hex_viewpoint,
@@ -25,6 +29,7 @@ from pak.viewpoints import (
     fence_square_viewpoint,
     hex_tile_pixel_mask,
     hex_tile_screen_offset,
+    sq_height_level_world_z,
     sq_tile_pixel_mask,
     sun_rotation_for_camera,
     tree_hex_viewpoint,
@@ -139,7 +144,6 @@ class TestBuildingHexNTile(unittest.TestCase):
         # (= 2R*max_dims engine world units); fit scale = `2R /
         # (units_per_tile * max_dims)`.  Independent of the blend's
         # authored ortho_scale.
-        from pak.viewpoints import HEX_TILE_RADIUS
         single = building_hex_viewpoint(layouts=6, units_per_tile=12.0, dims_x=1, dims_y=1)
         multi = building_hex_viewpoint(layouts=4, units_per_tile=12.0, dims_x=2, dims_y=1)
         big = BlendAuthored(ortho_scale=999.0)
@@ -258,7 +262,6 @@ class TestBuildingSquareViewpoint(unittest.TestCase):
         """heights nests layouts; each Facing shifts -h *
         sq_height_level_world_z(units_per_tile) in world z so the
         height-h band lands at the camera's z=0 view."""
-        from pak.viewpoints import sq_height_level_world_z
         upt = 12.0
         vp = building_square_viewpoint(
             layouts=4, units_per_tile=upt, dims_x=1, dims_y=1, heights=2,
@@ -297,7 +300,6 @@ class TestSqTilePixelMask(unittest.TestCase):
         # (+32, +16) from canvas centre.  Each tile's mask placed at its
         # canvas position must NOT overlap with its neighbour's — the
         # strict-ownership invariant that motivated the whole design.
-        import numpy as np
         a_off, b_off = (-32, -16), (32, 16)
         ma = sq_tile_pixel_mask(a_off, [b_off])
         mb = sq_tile_pixel_mask(b_off, [a_off])
@@ -341,7 +343,6 @@ class TestHexTilePixelMask(unittest.TestCase):
         # WORLD` step from A on screen — their projected hexes meet
         # along a shared edge, must partition the canvas with no
         # overlap once pasted at their respective slots.
-        import numpy as np
         a_off, b_off = (-48, -16), (48, 16)
         ma = hex_tile_pixel_mask(a_off, [b_off])
         mb = hex_tile_pixel_mask(b_off, [a_off])
@@ -364,7 +365,6 @@ class TestHexTilePixelMask(unittest.TestCase):
         # `other_offsets` can only shrink the mask -- never grow it.
         # Strict equality fails on the +1 AA slack ring and on the
         # closer-to-viewer tie-break, so containment is the invariant.
-        import numpy as np
         neighbours = [
             (int(round(x)), int(round(y)))
             for x, y in (hex_tile_screen_offset(qx, ry)
@@ -388,7 +388,6 @@ class TestViewpointPickleRoundTrip(unittest.TestCase):
     factories to this list; cost is one line per factory."""
 
     def _assert_round_trip(self, vp):
-        import pickle
         vp2 = pickle.loads(pickle.dumps(vp))
         a = BlendAuthored(ortho_scale=12.0, sun_energy=0.028)
         self.assertEqual(vp2.camera_ortho(a), vp.camera_ortho(a))

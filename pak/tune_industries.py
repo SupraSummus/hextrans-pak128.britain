@@ -34,7 +34,7 @@ from pak.bake_units import import_script, specs_of
 from pak.dat import Factory
 from pak.extract_materials import materials_from_blend
 from pak.fetch_blend import fetch as fetch_blend
-from pak.materials import Lighting, Material
+from pak.materials import Lighting, Material, _non_default_items
 from pak.tune_materials import tune
 
 
@@ -70,7 +70,6 @@ def seed_materials(blend_relpath: str) -> dict[str, Material]:
 
 def _format_block(materials: dict[str, Material],
                   lighting: Lighting | None) -> str:
-    from pak.materials import _non_default_items
     lines = ["# AUTO-TUNED: pak.tune_industries", "MATERIALS = {"]
     for name, m in materials.items():
         parts = []

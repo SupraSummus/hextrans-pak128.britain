@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 from pak.hex_synth import (
     HexGeom,
     fill_polygon,
@@ -61,7 +61,7 @@ def render_lightmap(slope: int, geom: HexGeom | None = None) -> np.ndarray:
 
 
 if __name__ == "__main__":
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name="light_texture",
         obj_name="LightTexture",

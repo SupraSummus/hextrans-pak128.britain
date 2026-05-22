@@ -23,13 +23,19 @@ import json
 import pickle
 import subprocess
 import tempfile
+from dataclasses import replace
+from math import gcd
 from pathlib import Path
 
+from PIL import Image
+
 from pak import REPO_ROOT
+from pak.compose import compose_atlas
 from pak.dat import (
     HEX_BRIDGE_ATLAS_COLS,
     HEX_BRIDGE_PIECE_ORDER,
     TREE_AGE_COUNT,
+    TUNNEL_FACING_LABELS,
     Bridge,
     Building,
     Factory,
@@ -49,13 +55,15 @@ from pak.dat import (
 from pak.fetch_blend import fetch
 from pak.fetch_jh_blend import fetch as fetch_jh
 from pak.materials import Material
-
-# `pak.compose` and `pak.viewpoints` pull in numpy via hex_synth;
-# kept off the module-import path so `pak.reemit_dats` /
-# `pak.fetch_wavs` -- both of which import bake-unit scripts that
-# `from pak.bake import bake_main` -- still work in dat-only CI
-# environments without numpy installed.  Imported lazily inside
-# each bake_* function below.
+from pak.render import RenderPayload
+from pak.viewpoints import (
+    HEX_VIEWPOINT,
+    bridge_hex_viewpoint,
+    building_hex_viewpoint,
+    building_square_viewpoint,
+    tree_hex_viewpoint,
+    tunnel_hex_viewpoint,
+)
 
 _RENDER_SCRIPT = Path(__file__).resolve().parent / "render.py"
 _BAKE_WAY_SCRIPT = Path(__file__).resolve().parent / "bake_way.py"
@@ -75,7 +83,6 @@ def hex_layouts_default(symmetry: Symmetry) -> int:
     """
     if symmetry is Symmetry.CONTINUOUS:
         return 1
-    from math import gcd
     return _HEX_LAYOUT_QUANTUM // gcd(_HEX_LAYOUT_QUANTUM, int(symmetry))
 
 
@@ -133,7 +140,6 @@ def run_render(
     """Pickle a `RenderPayload` to a tempfile and drive `pak/render.py`
     against it.  Caller's Viewpoint feeds both this and the parent-side
     `compose_atlas`, so the factory dispatch lives in one place."""
-    from pak.render import RenderPayload
     payload = RenderPayload(
         viewpoint=viewpoint, materials=materials,
         model_offset=model_offset, material_id_map=material_id_map,
@@ -193,8 +199,6 @@ def bake_vehicle(
     for atlas and dat — typically the bake script's
     `Path(__file__).stem`.  Returns the dat path.
     """
-    from pak.compose import compose_atlas
-    from pak.viewpoints import HEX_VIEWPOINT
     specs = [spec] if isinstance(spec, Vehicle) else list(spec)
     blend = _shared_blend(specs, basename)
     blend_path = fetch(blend)
@@ -283,8 +287,6 @@ def _render_bridge_piece(
     """Render one piece blend through `bridge_hex_viewpoint(piece)`
     into `<out_dir>/<name>.png` and return the path.  One blender
     subprocess per call."""
-    from pak.compose import compose_atlas
-    from pak.viewpoints import bridge_hex_viewpoint
     blend_path = fetch_jh(blend)
     vp = bridge_hex_viewpoint(piece)
     run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir)
@@ -301,7 +303,6 @@ def _stitch_bridge_atlas(
     on top); each row is padded to `HEX_BRIDGE_ATLAS_COLS` cells wide
     so the narrower image row's 3 axis cells land flush-left with the
     trailing cells transparent."""
-    from PIL import Image
     sizes = {Image.open(p).size for p in piece_pngs.values()}
     heights = {h for _, h in sizes}
     if len(heights) != 1:
@@ -363,10 +364,6 @@ def bake_bridge_main(spec: Bridge, file: str) -> Path:
 def bake_tunnel(spec: Tunnel, *, basename: str, out_dir: Path) -> Path:
     """Fetch the portal blend, render through `tunnel_hex_viewpoint()`,
     compose the atlas, emit the dat.  Returns the dat path."""
-    from pak.compose import compose_atlas
-    from pak.dat import TUNNEL_FACING_LABELS
-    from pak.viewpoints import tunnel_hex_viewpoint
-
     if spec.blend is None:
         raise ValueError(f"Tunnel SPEC {spec.name!r} missing blend=")
     blend_path = fetch_blend_by_source(spec.blend, spec.blend_source)
@@ -424,10 +421,6 @@ def bake_building_atlas(
     (production) and `square_building` (calibration diff)
     viewpoint kinds.  `keep_per_facing=True` keeps the per-slice
     cells on disk for the diff path's `_load_our_cell`."""
-    from dataclasses import replace
-
-    from pak.compose import compose_atlas
-    from pak.viewpoints import building_hex_viewpoint, building_square_viewpoint
     factory = (building_hex_viewpoint if viewpoint_kind == "hex_building"
                else building_square_viewpoint)
     vp = factory(
@@ -473,7 +466,6 @@ def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
     formula `s * heights + h` (each season is a `heights`-row
     stripe).  All inputs must share dimensions (same viewpoint, same
     footprint)."""
-    from PIL import Image
     images = [Image.open(p).convert("RGBA") for p in season_pngs]
     sizes = {img.size for img in images}
     if len(sizes) > 1:
@@ -575,8 +567,6 @@ def bake_tree(
     `[0, ages)` at the last rendered cell of the same season.  Returns
     the dat path.
     """
-    from pak.compose import compose_atlas
-    from pak.viewpoints import tree_hex_viewpoint
     specs = [spec] if isinstance(spec, Tree) else list(spec)
     # All specs must agree on seasons for one shared atlas; emit_trees
     # walks per-Tree `seasons` independently, but the rendered atlas is

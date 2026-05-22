@@ -28,6 +28,9 @@ from __future__ import annotations
 import re
 from pathlib import Path, PurePosixPath
 
+from pak.dat import find_object, iter_image_refs, parse
+from pak.fetch_pak import fetch as fetch_pak
+
 _FACING_TOKENS = ("S", "SE", "E", "NE", "N", "NW", "W", "SW")
 _REC_FACING = re.compile(r"_(?:" + "|".join(_FACING_TOKENS) + r")$")
 
@@ -38,8 +41,6 @@ def _first_image_basename(local_dat: Path, *, name: str | None) -> str:
     is set, scan only the matching object (case-insensitive); otherwise
     scan every object in order — multi-object upstream dats
     (citybuildings, train carriage families) need the name filter."""
-    from pak.dat import find_object, iter_image_refs, parse
-
     objects = parse(local_dat)
     scan = [find_object(objects, name, source=local_dat)] if name else objects
     for obj in scan:
@@ -72,8 +73,6 @@ def image_stem(upstream_dat: str, *, name: str | None = None) -> str:
     dat is known to be multi-object.  Single-object dats can leave it
     unset.
     """
-    from pak.fetch_pak import fetch as fetch_pak
-
     local = fetch_pak(upstream_dat)
     basename = _first_image_basename(local, name=name)
     return _resolve_stem(basename, PurePosixPath(upstream_dat).parent)

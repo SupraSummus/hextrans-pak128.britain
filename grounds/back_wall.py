@@ -31,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 
 WALL_COUNT = 3
 IMAGE_COUNT = hex_synth.CLIFF_IMAGE_COUNT
@@ -73,7 +73,7 @@ def _wall_index_entries(artificial: bool):
 
 
 def _bake_flavor(*, asset_name: str, obj_name: str, artificial: bool) -> None:
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name=asset_name,
         obj_name=obj_name,

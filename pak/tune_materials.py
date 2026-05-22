@@ -31,13 +31,19 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import gaussian_filter
 
 from pak import REPO_ROOT
+from pak.bake import run_render
+from pak.compose import compose_atlas
 from pak.dat import Building
-from pak.diff import MAGIC_PINK, silhouette_mask
+from pak.diff import MAGIC_PINK, drgb_intersection, silhouette_mask
+from pak.diff_buildings import _best_permutation, _iou_matrix
 from pak.fetch_blend import fetch as fetch_blend
 from pak.fetch_pak import fetch as fetch_pak
 from pak.materials import Material
+from pak.upstream import image_stem
+from pak.viewpoints import building_square_viewpoint
 
 
 def _load_module(path: Path):
@@ -53,8 +59,6 @@ def _render(blend_path: Path, out_dir: Path, name: str, vp,
     pre-builds `vp_normal` (with `lighting`) and `vp_idmap` (without)
     so the per-iteration call only needs to swap materials in or
     flip to id-map mode."""
-    from pak.bake import run_render
-    from pak.compose import compose_atlas
     run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir,
                materials=None if id_map else materials,
                material_id_map=id_map)
@@ -74,7 +78,6 @@ def _per_material_means(ours, idmap, upstream, mat_to_id,
     produced colours that drove each material's surface mean to
     upstream's surface mean but worsened the σ=3 metric, because the
     metric averages neighborhoods across material boundaries."""
-    from scipy.ndimage import gaussian_filter
     our_sil = silhouette_mask(ours, magic_rgb=MAGIC_PINK, alpha_threshold=0)
     up_sil = silhouette_mask(upstream, magic_rgb=MAGIC_PINK, alpha_threshold=0)
     common = our_sil & up_sil
@@ -127,8 +130,6 @@ def _measure_drgb(blend_path: Path, out_dir: Path, vp,
                   iter_label: str, blur_sigma: float = 3.0) -> float:
     """Render with `materials`, compute the same blurred-all-pixel dRGB
     used by `diff_buildings.run`."""
-    from pak.diff import drgb_intersection
-    from pak.diff_buildings import _best_permutation, _iou_matrix
     layouts = len(vp.facings)
     name = f"iter_{iter_label}"
     _render(blend_path, out_dir, name, vp, materials)
@@ -152,7 +153,6 @@ def _aggregate_means(blend_path, out_dir, vp_normal, vp_idmap,
                      materials, up_arr, season_row, iter_label: str):
     """Render + id-map render at the current MATERIALS; return per-material
     `(ours_mean_rgb, upstream_mean_rgb)` aggregated across layouts."""
-    from pak.diff_buildings import _best_permutation, _iou_matrix
     layouts = len(vp_normal.facings)
     name = f"iter_{iter_label}"
     _render(blend_path, out_dir, name, vp_normal, materials)
@@ -195,8 +195,6 @@ def tune(blend: str, upstream_dat: str, *, name: str,
     decides what to do with the result (mutate a SPEC in memory, write
     it back to a script, print it for paste-in).  No file I/O beyond
     the per-iter scratch renders under `out_dir`."""
-    from pak.upstream import image_stem
-    from pak.viewpoints import building_square_viewpoint
     blend_path = fetch_blend(blend)
     up_arr = np.array(Image.open(fetch_pak(
         f"{image_stem(upstream_dat, name=name)}.png"

@@ -27,7 +27,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
 from pak import REPO_ROOT
+from pak.bake import run_render
+from pak.diff import GridCell, cell_metric, compose_grid
+from pak.fetch_blend import fetch as fetch_blend
+from pak.fetch_pak import fetch as fetch_pak
+from pak.upstream import image_stem
+from pak.viewpoints import tree_square_viewpoint
 
 # Upstream filename tags per season slot, indexed by the engine's
 # season number (0=summer ... 4=winter-snow).  Trees with `seasons=2`
@@ -59,8 +68,6 @@ def _parse(argv: list[str]) -> argparse.Namespace:
 
 
 def _render(blend_path: Path, out_dir: Path, name: str, ages: int, seasons: int) -> None:
-    from pak.bake import run_render
-    from pak.viewpoints import tree_square_viewpoint
     run_render(blend=blend_path,
                viewpoint=tree_square_viewpoint(ages=ages, seasons=seasons),
                name=name, out_dir=out_dir)
@@ -70,11 +77,6 @@ def _compose(
     ours_dir: Path, up_paths: dict[tuple[int, int], Path],
     name: str, ages: int, seasons: int, out_grid: Path,
 ) -> list[CellMetric]:
-    import numpy as np
-    from PIL import Image
-
-    from pak.diff import GridCell, cell_metric, compose_grid
-
     if seasons != 1:
         # Phase-1 scope is summer only (per module docstring); the
         # multi-season grid layout (stacked 3-row blocks, one per
@@ -107,10 +109,6 @@ def run(blend: str, upstream_dat: str, *, ages: int, seasons: int,
     `name` selects which object in a multi-object upstream dat to read
     image refs from (most tree dats are single-object so it can be left
     unset)."""
-    from pak.fetch_blend import fetch as fetch_blend
-    from pak.fetch_pak import fetch as fetch_pak
-    from pak.upstream import image_stem
-
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)
     render_name = Path(blend).stem

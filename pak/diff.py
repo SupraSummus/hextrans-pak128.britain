@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from PIL import Image, ImageDraw
+from scipy.ndimage import gaussian_filter
 
 # Upstream pak128.Britain's transparency key colour.  RGB PNGs with this
 # pixel value mark "outside the silhouette" — the engine reads it as
@@ -34,7 +36,6 @@ def checker(sz: int,
     """RGBA checker-pattern background of size `sz`x`sz`.  Pasted under
     each diff cell so transparent regions visibly differ from
     silhouette-grey ones in the rendered grid."""
-    from PIL import Image
     a = np.zeros((sz, sz, 3), dtype=np.uint8)
     ys, xs = np.indices((sz, sz))
     mask = ((xs // step + ys // step) % 2 == 0)
@@ -116,7 +117,6 @@ def drgb_intersection(rgba_a: np.ndarray, rgba_b: np.ndarray,
                  rgba_b[..., :3].astype(np.float32),
                  bg[None, None, :])
     if blur_sigma > 0:
-        from scipy.ndimage import gaussian_filter
         a = np.stack([gaussian_filter(a[..., c], sigma=blur_sigma)
                       for c in range(3)], axis=-1)
         b = np.stack([gaussian_filter(b[..., c], sigma=blur_sigma)
@@ -131,7 +131,6 @@ def key_magic_pink_to_alpha(im):
     ships with alpha=255), so PIL's alpha-compositing operators
     overwrite Back wholesale with Front-shaped transparent rectangles
     unless this conversion runs first."""
-    from PIL import Image
     a = np.array(im.convert("RGBA"))
     keyed = ((a[..., 0] == MAGIC_PINK[0])
              & (a[..., 1] == MAGIC_PINK[1])
@@ -221,8 +220,6 @@ def compose_grid(cells: list[GridCell], *,
     saved grid PNG self-identifies (asset name, season, etc.) when
     opened in isolation.
     """
-    from PIL import Image, ImageDraw
-
     rows = len(cells)
     cols = 3
     col_headers = ("ours", "upstream", "XOR (red=ours, blue=upstream)")

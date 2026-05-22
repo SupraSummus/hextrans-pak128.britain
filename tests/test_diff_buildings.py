@@ -14,6 +14,7 @@ Run from the repo root:
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import numpy as np
@@ -123,7 +124,6 @@ class TestIoUMatrix(unittest.TestCase):
 
 class TestParseBackimageEntries(unittest.TestCase):
     def _write_dat(self, body: str):
-        from pathlib import Path
         fp = NamedTemporaryFile(suffix=".dat", delete=False, mode="w")
         fp.write(body)
         fp.close()

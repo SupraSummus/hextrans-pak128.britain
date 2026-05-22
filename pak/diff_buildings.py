@@ -63,9 +63,26 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
 from pak import REPO_ROOT
-from pak.dat import building_footprint_centroid
-from pak.diff import MAGIC_PINK, cell_metric, drgb_intersection, iou, silhouette_mask
+from pak.bake import bake_building_atlas
+from pak.dat import building_footprint_centroid, find_object, iter_image_refs, parse
+from pak.diff import (
+    MAGIC_PINK,
+    GridCell,
+    cell_metric,
+    compose_grid,
+    drgb_intersection,
+    iou,
+    silhouette_mask,
+)
+from pak.fetch_blend import fetch as _fetch_jp
+from pak.fetch_jh_blend import fetch as _fetch_jh
+from pak.fetch_pak import fetch as fetch_pak
+from pak.upstream import image_stem
+from pak.viewpoints import DEFAULT_W, sq_tile_screen_offset
 
 HERE = Path(__file__).resolve().parent
 # Worst-of-best across `res_1600_kg_01`'s four layouts measures 0.905;
@@ -104,7 +121,6 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
             model_offset_xyz: tuple[float, float, float] | None = None,
             strip: str | None = None,
             ) -> None:
-    from pak.bake import bake_building_atlas
     bake_building_atlas(
         viewpoint_kind="square_building",
         blend_path=blend_path,
@@ -121,9 +137,6 @@ def _split_upstream(up_png: Path, layouts: int, season_row: int = 0):
     """Slice the upstream atlas into N_layouts 128x128 cells from row
     `season_row` (0=summer, 1=winter).  Returns a list of (h, w, 4)
     numpy arrays in column order."""
-    import numpy as np
-    from PIL import Image
-
     full = np.asarray(Image.open(up_png).convert("RGBA"))
     H, W = full.shape[:2]
     if W < 128 * layouts:
@@ -150,8 +163,6 @@ def _parse_backimage_entries(dat_path: Path, *, name: str | None = None):
     seven buildings); unset takes the first object.  Sub-atlas /
     `frontimage` refs are ignored — the diff targets `backimage` only.
     """
-    from pak.dat import find_object, iter_image_refs, parse
-
     obj = find_object(parse(dat_path), name, source=dat_path)
     entries: list[dict] = []
     for ref in iter_image_refs(obj, family="backimage"):
@@ -204,7 +215,6 @@ def _canvas_size(dims_x: int, dims_y: int) -> tuple[int, int]:
     """Match the `square_building` viewpoint's canvas formula --
     `sprite_w * max(dims_x, dims_y)` -- so the stitch lattice and the
     render lattice agree pixel-for-pixel."""
-    from pak.viewpoints import DEFAULT_W
     w = h = DEFAULT_W * max(dims_x, dims_y)
     return w, h
 
@@ -220,7 +230,6 @@ def _tile_topleft(x: int, y: int,
     The cell's `_CELL_GROUND_ANCHOR` pixel lands at the engine
     `koord_to_screen` offset from `centroid_xy` (in koord units),
     anchored on the canvas's stitch anchor."""
-    from pak.viewpoints import sq_tile_screen_offset
     cx, cy = _stitch_anchor(canvas_w, canvas_h)
     xc, yc = centroid_xy
     ax, ay = _CELL_GROUND_ANCHOR
@@ -234,7 +243,6 @@ def _stitch_upstream_layout(cells_by_yx, centroid_xy, *, magic_rgb,
     128×128 cell pasted at its tile (y, x) screen position around
     `centroid_xy`.  Background fills with `magic_rgb` so upstream's
     transparency convention survives stitch."""
-    import numpy as np
     canvas = np.empty((canvas_h, canvas_w, 4), dtype=np.uint8)
     canvas[..., :3] = magic_rgb
     canvas[..., 3] = 255
@@ -345,13 +353,6 @@ def run_multitile(
 
     `season` picks which upstream cells to compare against (0=summer).
     """
-    import numpy as np
-    from PIL import Image
-
-    from pak.diff import GridCell, compose_grid
-    from pak.fetch_pak import fetch as fetch_pak
-    from pak.upstream import image_stem
-
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = _resolve_blend(blend, blend_source)
     render_name = Path(blend).stem
@@ -445,9 +446,6 @@ def _load_our_renders(our_dir: Path, name: str, layouts: int):
     """Per-layout RGBA arrays produced by `_render`: the full 512²
     canvas at `{name}_L{l}_H0.png` (the Facing.label PNG).  Per-cell
     sprites load separately via `_load_our_cell`."""
-    import numpy as np
-    from PIL import Image
-
     return [
         np.asarray(
             Image.open(our_dir / f"{name}_L{l}_H0.png").convert("RGBA")
@@ -460,9 +458,6 @@ def _load_our_cell(our_dir: Path, name: str,
                    l: int, y: int, x: int, h: int):
     """Per-cell 128² RGBA sprite the render harness wrote via the
     multi-tile `Facing.slices` mechanism."""
-    import numpy as np
-    from PIL import Image
-
     return np.asarray(
         Image.open(
             our_dir / f"{name}_L{l}_Y{y}_X{x}_H{h}.png",
@@ -472,8 +467,6 @@ def _load_our_cell(our_dir: Path, name: str,
 
 def _iou_matrix(our_masks, up_masks):
     """N x N silhouette IoU matrix (rows = our layout, cols = upstream col)."""
-    import numpy as np
-
     n = len(our_masks)
     mat = np.zeros((n, n), dtype=np.float64)
     for l in range(n):
@@ -502,9 +495,9 @@ def _resolve_blend(blend: str, blend_source: str) -> Path:
     citybuildings / signals / vehicles / ways), "jh" for JamesHood
     (attractions, depots, anything jamespetts doesn't carry)."""
     if blend_source == "jp":
-        from pak.fetch_blend import fetch
+        fetch = _fetch_jp
     elif blend_source == "jh":
-        from pak.fetch_jh_blend import fetch
+        fetch = _fetch_jh
     else:
         raise ValueError(
             f"unknown blend_source={blend_source!r}; expected 'jp' or 'jh'"
@@ -529,10 +522,6 @@ def _diff_one_season(blend: str, upstream_dat: str, *, layouts: int,
     seasonal caller can disambiguate `summer L0` from `winter L0` in
     a combined grid.
     """
-    from pak.diff import GridCell
-    from pak.fetch_pak import fetch as fetch_pak
-    from pak.upstream import image_stem
-
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = _resolve_blend(blend, blend_source)
     render_name = Path(blend).stem
@@ -590,8 +579,6 @@ def run(blend: str, upstream_dat: str, *, layouts: int, out_dir: Path,
 
     Side effect: writes per-layout PNGs and `<grid_name>` into `out_dir`.
     """
-    from pak.diff import compose_grid
-
     cells, mat, perm, drgb_per_layout = _diff_one_season(
         blend, upstream_dat, layouts=layouts, out_dir=out_dir,
         materials=materials, season_row=season_row,
@@ -622,8 +609,6 @@ def run_seasonal(
     summer rows first, winter rows below, labelled.  Returns a list of
     `(season_label, mat, perm, drgb)` so per-season IoU / permutation /
     dRGB stay separately reportable."""
-    from pak.diff import compose_grid
-
     summer_cells, *summer_stats = _diff_one_season(
         blend, upstream_dat, layouts=layouts, out_dir=out_dir,
         materials=materials, season_row=0,

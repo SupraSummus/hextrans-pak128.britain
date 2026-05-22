@@ -30,9 +30,13 @@ difference is which `Viewpoint` instance gets passed in.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from functools import partial
 from math import radians
 
+import numpy as np
+
+from pak.dat import HEX_BRIDGE_PIECE_LABELS, TUNNEL_FACING_LABELS, building_footprint_centroid
 from pak.hex_synth import (
     DEFAULT_W,
     HEX_SHEAR_Z_COEF,
@@ -153,7 +157,6 @@ def _lighting_overrides_facings(
         lighting.sun_elev_deg is None and lighting.sun_az_offset_deg is None
     ):
         return facings
-    from dataclasses import replace
     elev = lighting.sun_elev_deg if lighting.sun_elev_deg is not None else 30.0
     az = (lighting.sun_az_offset_deg
           if lighting.sun_az_offset_deg is not None else -90.0)
@@ -446,7 +449,6 @@ def sq_tile_pixel_mask(
     the canvas centre, same value passed in `Facing.slices`.
     `other_offsets`: every other tile's slice centre.
     """
-    import numpy as np
     half = image_width // 2
     full = image_width
     ys, xs = np.indices((full, full))
@@ -502,7 +504,6 @@ def hex_tile_pixel_mask(
     `my_offset`: this tile's slice centre offset (`cx_px, cy_px`).
     `other_offsets`: every other footprint tile's slice centre.
     """
-    import numpy as np
     half = image_width // 2
     quarter = image_width // 4
     full = image_width
@@ -546,7 +547,6 @@ def _building_slices(
     against the cell-shape would crop content (towers, gables) that
     upstream's 128² single-tile PNGs keep.
     """
-    from pak.dat import building_footprint_centroid
     xc, yc = building_footprint_centroid(dims_x, dims_y, layout)
     yh, xw = (dims_x, dims_y) if layout & 1 else (dims_y, dims_x)
     cells = [(y, x) for y in range(yh) for x in range(xw)]
@@ -717,7 +717,6 @@ def bridge_hex_viewpoint(piece: str) -> Viewpoint:
     -- see CLAUDE.md -> "CI" -> "Lint" for the engine-choice
     rationale.
     """
-    from pak.dat import HEX_BRIDGE_PIECE_LABELS
     if piece not in HEX_BRIDGE_PIECE_LABELS:
         raise ValueError(
             f"bridge_hex_viewpoint: piece must be one of "
@@ -937,7 +936,6 @@ def tunnel_hex_viewpoint() -> Viewpoint:
     engine paints rails separately -- so upstream-Back-vs-ours-Back IoU
     is not directly comparable (upstream bakes rails into Back).
     """
-    from pak.dat import TUNNEL_FACING_LABELS
     facings = [
         Facing(
             label=f"{edge}_{layer}",

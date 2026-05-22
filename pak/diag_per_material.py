@@ -41,10 +41,21 @@ import argparse
 import importlib.util
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
 from pak import REPO_ROOT
+from pak.bake import run_render
+from pak.bake_units import discover, import_script, specs_of
+from pak.compose import compose_atlas
 from pak.dat import Building
+from pak.fetch_blend import fetch as fetch_blend
+from pak.fetch_pak import fetch as fetch_pak
+from pak.upstream import image_stem
+from pak.viewpoints import building_square_viewpoint
 
 _TRANSPARENT_RGB = (231, 255, 255)
 
@@ -57,7 +68,6 @@ def _load_bake_script(path: Path):
 
 
 def _building_vp(layouts: int, units_per_tile: float):
-    from pak.viewpoints import building_square_viewpoint
     return building_square_viewpoint(
         layouts=layouts, units_per_tile=units_per_tile,
         dims_x=1, dims_y=1, heights=1,
@@ -69,8 +79,6 @@ def _render_id_map(blend_path: Path, out_dir: Path, name: str,
                    ) -> tuple[Path, dict[str, tuple[int, int, int]]]:
     """Run render.py with --material-id-map.  Returns the rendered atlas
     path and the parsed `{material_name: (r,g,b)}` mapping."""
-    from pak.bake import run_render
-    from pak.compose import compose_atlas
     vp = _building_vp(layouts, units_per_tile)
     run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir,
                material_id_map=True)
@@ -85,8 +93,6 @@ def _render_normal(blend_path: Path, out_dir: Path, name: str, layouts: int,
                    units_per_tile: float,
                    materials: dict | None) -> Path:
     """Run render.py the regular way."""
-    from pak.bake import run_render
-    from pak.compose import compose_atlas
     vp = _building_vp(layouts, units_per_tile)
     run_render(blend=blend_path, viewpoint=vp, name=name, out_dir=out_dir,
                materials=materials)
@@ -98,7 +104,6 @@ def _render_normal(blend_path: Path, out_dir: Path, name: str, layouts: int,
 def _silhouette_mask(rgba):
     """Mirror `diff_buildings._silhouette_mask`: opaque + non-magic-pink.
     Works on either RGBA (our renders) or RGB-with-pink (upstream)."""
-    import numpy as np
     if rgba.shape[-1] == 4:
         a = rgba[..., 3] > 0
     else:
@@ -120,7 +125,6 @@ def _per_material_stats(ours_rgba, upstream_rgba, idmap_rgba,
     and upstream's silhouette so the dRGB matches `diff_buildings`'s
     sense.
     """
-    import numpy as np
     up_mask = _silhouette_mask(upstream_rgba)
     common = ours_silhouette & up_mask
     out: list[dict] = []
@@ -151,8 +155,6 @@ def _per_material_stats(ours_rgba, upstream_rgba, idmap_rgba,
 def _load_atlases(name_normal: str, name_idmap: str, our_dir: Path,
                   upstream_png: Path, layouts: int):
     """Load all three atlases into 128xN cells, return aligned arrays."""
-    import numpy as np
-    from PIL import Image
     ours = np.asarray(Image.open(our_dir / f"{name_normal}.png").convert("RGBA"))
     idmap = np.asarray(Image.open(our_dir / f"{name_idmap}.png").convert("RGB"))
     upstream = np.asarray(Image.open(upstream_png).convert("RGB"))
@@ -190,7 +192,6 @@ def _resolve_season(mod, season: str):
     upstream_dat = spec.upstream_dat
     if blend is None or upstream_dat is None:
         return None
-    from pak.upstream import image_stem
     upstream_png = f"{image_stem(upstream_dat, name=spec.name)}.png"
     if season == "winter":
         if not (spec.seasons >= 2 and spec.blend_winter):
@@ -203,11 +204,6 @@ def _collect_stats(bake_path: Path, season: str) -> tuple[list[dict], int] | Non
     """Render the asset's normal + id-map atlases for `season`, then
     return per-material stats.  None when the asset doesn't declare
     that season (skipped silently — callers print their own diagnostic)."""
-    from PIL import Image
-
-    from pak.fetch_blend import fetch as fetch_blend
-    from pak.fetch_pak import fetch as fetch_pak
-
     mod = _load_bake_script(bake_path)
     resolved = _resolve_season(mod, season)
     if resolved is None:
@@ -268,7 +264,6 @@ def _print_catalog_summary(all_stats: dict[str, dict[str, list[dict]]]) -> None:
     match any material exactly).  A ~10-20% difference between the two
     is normal; treat this aggregate as relative-contribution sorting,
     not absolute calibration."""
-    from collections import defaultdict
     by_name: dict[str, dict] = defaultdict(
         lambda: {"contrib": 0.0, "n_assets": 0, "n_px": 0,
                  "ours_sum": [0.0, 0.0, 0.0], "up_sum": [0.0, 0.0, 0.0]}
@@ -323,7 +318,6 @@ def main(argv):
     seasons = ["summer", "winter"] if args.season == "both" else [args.season]
 
     if args.all:
-        from pak.bake_units import discover, import_script, specs_of
         all_stats: dict[str, dict[str, list[dict] | None]] = {}
         for s in discover():
             try:

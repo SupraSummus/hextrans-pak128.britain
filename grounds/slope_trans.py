@@ -40,7 +40,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pak import hex_synth
+from pak import bake_grounds, hex_synth
 
 SLOPE_RED   = np.array([255, 0,   0,   255], dtype=np.uint8)
 SLOPE_GREEN = np.array([0,   255, 0,   255], dtype=np.uint8)
@@ -109,7 +109,7 @@ def _slope_entries(geom):
 
 
 if __name__ == "__main__":
-    hex_synth.bake_pakset(
+    bake_grounds.bake_pakset(
         script_path=Path(__file__).resolve(),
         asset_name="slope_trans",
         obj_name="SlopeTrans",

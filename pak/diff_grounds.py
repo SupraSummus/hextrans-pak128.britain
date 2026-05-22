@@ -40,6 +40,7 @@ import numpy as np
 from PIL import Image
 
 from pak import REPO_ROOT
+from pak.dat import find_object, iter_image_refs, parse
 from pak.diff import MAGIC_PINK, iou, silhouette_mask
 from pak.fetch_pak import fetch as fetch_pak
 
@@ -73,7 +74,6 @@ def parse_slope_to_cell(dat_path: Path,
     `Image[0][0]` namespace.  `obj_name` selects which `Name=`
     declaration's entries to keep; when omitted, the first object's
     entries are returned."""
-    from pak.dat import find_object, iter_image_refs, parse
     obj = find_object(parse(dat_path), obj_name, source=dat_path)
     out: dict[int, tuple[int, int]] = {}
     for ref in iter_image_refs(obj, family="image"):

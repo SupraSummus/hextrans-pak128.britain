@@ -31,7 +31,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
 from pak import REPO_ROOT
+from pak.bake import _BAKE_WAY_SCRIPT, _run_blender
+from pak.dat import parse
+from pak.diff import MAGIC_PINK, GridCell, cell_metric, compose_grid
+from pak.fetch_pak import fetch as fetch_pak
+from pak.upstream import image_stem
+from pak.way_proj import SQUARE_PROJECTION
 
 # Exit-code threshold.  Loose; deck-only ports cluster well below
 # the vehicle 0.90 bar because upstream's silhouette includes the
@@ -58,9 +67,6 @@ def _ribi_cells(upstream_dat: str, *, name: str | None) -> dict[str, tuple[int, 
     col)` in the upstream atlas, parsed from `image[<ribi>][0]=
     ...row.col,...` keys on the named object (or first object when
     `name` is None)."""
-    from pak.dat import parse
-    from pak.fetch_pak import fetch as fetch_pak
-
     objects = parse(fetch_pak(upstream_dat))
     if name is None:
         obj = objects[0]
@@ -91,8 +97,6 @@ def _bake_square(spec, *, render_name: str, cell_dir: Path) -> None:
     `spec.blend`; per-cell PNGs land at `<cell_dir>/<render_name>_<ribi>.png`.
     Mirrors the production bake's plumbing so the square diff sees
     what hex ships."""
-    from pak.bake import _BAKE_WAY_SCRIPT, _run_blender
-
     args: dict[str, object] = {
         "blend": spec.blend,
         "blend-source": spec.blend_source,
@@ -120,14 +124,6 @@ def run(spec, *, out_dir: Path) -> list[RibiMetric]:
     per-ribi metrics list (ordered by `SQUARE_PROJECTION.entries`).
     Ribi labels present in our render but absent from upstream's
     refs (or vice versa) are skipped silently."""
-    import numpy as np
-    from PIL import Image
-
-    from pak.diff import MAGIC_PINK, GridCell, cell_metric, compose_grid
-    from pak.fetch_pak import fetch as fetch_pak
-    from pak.upstream import image_stem
-    from pak.way_proj import SQUARE_PROJECTION
-
     out_dir.mkdir(parents=True, exist_ok=True)
 
     render_name = Path(spec.blend).stem

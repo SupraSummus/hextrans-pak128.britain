@@ -51,7 +51,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
 from pak import REPO_ROOT
+from pak.bake import run_render
+from pak.diff import GridCell, cell_metric, compose_grid
+from pak.fetch_blend import fetch as fetch_blend
+from pak.fetch_pak import fetch as fetch_pak
+from pak.upstream import image_stem
+from pak.viewpoints import SQUARE_VIEWPOINT
 
 HERE = Path(__file__).resolve().parent
 VIEWS_8 = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
@@ -79,18 +88,11 @@ def _parse(argv: list[str]) -> argparse.Namespace:
 
 
 def _render(blend_path: Path, out_dir: Path, name: str) -> None:
-    from pak.bake import run_render
-    from pak.viewpoints import SQUARE_VIEWPOINT
     run_render(blend=blend_path, viewpoint=SQUARE_VIEWPOINT,
                name=name, out_dir=out_dir)
 
 
 def _compose(ours_dir: Path, up_paths: dict[str, Path], name: str, views: list[str], out_grid: Path) -> list[FacingMetric]:
-    import numpy as np
-    from PIL import Image
-
-    from pak.diff import GridCell, cell_metric, compose_grid
-
     cells: list[GridCell] = []
     metrics: list[FacingMetric] = []
     for v in views:
@@ -116,10 +118,6 @@ def run(blend: str, upstream_dat: str, *, views: int = 8, out_dir: Path,
     image refs from (e.g. when a carriage family dat packs five
     vehicles); single-object dats can leave it unset.
     """
-    from pak.fetch_blend import fetch as fetch_blend
-    from pak.fetch_pak import fetch as fetch_pak
-    from pak.upstream import image_stem
-
     view_list = VIEWS_8 if views == 8 else VIEWS_4
     out_dir.mkdir(parents=True, exist_ok=True)
     blend_path = fetch_blend(blend)

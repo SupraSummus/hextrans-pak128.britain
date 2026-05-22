@@ -27,9 +27,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from pak.bake import run_render
 from pak.diff import MAGIC_PINK, iou, silhouette_mask
 from pak.fetch_blend import fetch as fetch_blend
 from pak.fetch_pak import fetch as fetch_pak
+from pak.viewpoints import fence_square_viewpoint
 
 # Each pairing: which facing(s) of our render get composited (via
 # silhouette OR for multi-facing entries) and which upstream basename
@@ -48,8 +50,6 @@ MIN_IOU = 0.80
 
 def render_fence_blend(out_dir: Path) -> dict[str, np.ndarray]:
     """Run `pak.render` on `grounds/fence.blend` and return per-facing RGBA."""
-    from pak.bake import run_render
-    from pak.viewpoints import fence_square_viewpoint
     blend_path = fetch_blend("grounds/fence.blend")
     run_render(blend=blend_path, viewpoint=fence_square_viewpoint(),
                name="fence_blend", out_dir=out_dir)

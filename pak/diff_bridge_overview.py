@@ -32,7 +32,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+from PIL import Image, ImageDraw
+
 from pak import REPO_ROOT
+from pak.bake import run_render
+from pak.diff import MAGIC_PINK, checker, silhouette_mask, xor_image
+from pak.diff_bridge import run
+from pak.fetch_jh_blend import fetch as fetch_jh
+from pak.fetch_pak import fetch as fetch_pak
+from pak.viewpoints import bridge_square_viewpoint
 
 # The five standard plate-girder bridge cases that have a one-blend
 # source.  Per-case label is what appears in the overview row header;
@@ -65,9 +74,6 @@ def _render_blend_if_missing(blend_repo_path: str, render_dir: Path,
                              bake_stem: str) -> None:
     """Skip blender if every per-facing PNG already exists; otherwise
     shell out to `pak.render` once for the four facings."""
-    from pak.bake import run_render
-    from pak.fetch_jh_blend import fetch as fetch_jh
-    from pak.viewpoints import bridge_square_viewpoint
     if all((render_dir / f"{bake_stem}_{f}.png").is_file()
            for f in ("S", "W", "N", "E")):
         return
@@ -78,11 +84,6 @@ def _render_blend_if_missing(blend_repo_path: str, render_dir: Path,
 
 
 def _stitch_overview(results: list[CaseResult], out_path: Path) -> None:
-    import numpy as np
-    from PIL import Image, ImageDraw
-
-    from pak.diff import MAGIC_PINK, checker, silhouette_mask, xor_image
-
     bg = checker(CELL)
 
     facings = ("S", "W", "N", "E")
@@ -137,9 +138,6 @@ def overview(blends_dir: str, atlas_path: str, out_path: Path) -> list[CaseResul
     filename so the out-dir layout (`out/diff/<family>-<bake_stem>`)
     follows from a single input rather than a hardcoded prefix.
     """
-    from pak.diff_bridge import run
-    from pak.fetch_pak import fetch as fetch_pak
-
     family = Path(atlas_path).stem
     atlas_local = fetch_pak(atlas_path)
     results: list[CaseResult] = []

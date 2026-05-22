@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from pak.bake import clamp_age_overrides, hex_layouts_default
 from pak.dat import (
     HEX_BRIDGE_PIECE_LABELS,
     HEX_BRIDGE_PIECE_ORDER,
@@ -639,7 +640,6 @@ class TestBuildingFootprint(unittest.TestCase):
         self.assertEqual(layouts_default(4, 5), 2)
 
     def test_hex_layouts_default_from_symmetry(self):
-        from pak.bake import hex_layouts_default
         self.assertEqual(hex_layouts_default(Symmetry.NONE), 6)
         self.assertEqual(hex_layouts_default(Symmetry.CONTINUOUS), 1)
 
@@ -1089,12 +1089,10 @@ class TestClampAgeOverrides(unittest.TestCase):
     dat round-trips."""
 
     def test_clamps_above_rendered_ages(self):
-        from pak.bake import clamp_age_overrides
         overrides = clamp_age_overrides(seasons=1, ages=4)
         self.assertEqual(overrides, {(4, 0): (3, 0)})
 
     def test_clamps_every_season(self):
-        from pak.bake import clamp_age_overrides
         overrides = clamp_age_overrides(seasons=2, ages=3)
         self.assertEqual(overrides, {
             (3, 0): (2, 0), (3, 1): (2, 1),
@@ -1102,7 +1100,6 @@ class TestClampAgeOverrides(unittest.TestCase):
         })
 
     def test_empty_when_all_ages_rendered(self):
-        from pak.bake import clamp_age_overrides
         self.assertEqual(
             clamp_age_overrides(seasons=5, ages=TREE_AGE_COUNT),
             {},

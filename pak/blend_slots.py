@@ -22,6 +22,7 @@ from __future__ import annotations
 import gzip
 import io
 import struct
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -325,7 +326,6 @@ def _read_color_band(
 
 
 def _main():
-    import sys
     path = Path(sys.argv[1])
     for name, ms in extract(path).items():
         print(f"\n{name}  rgb={tuple(round(c, 3) for c in ms.rgb)} alpha={ms.alpha:.3f}")

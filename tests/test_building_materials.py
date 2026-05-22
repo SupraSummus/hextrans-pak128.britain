@@ -12,11 +12,15 @@ which is the actual source of truth.  Mirrors `tests/test_way_materials.py`.
 from __future__ import annotations
 
 import importlib
+import json
 import unittest
 from types import ModuleType
 
+import numpy as np
+
 from pak import REPO_ROOT
 from pak.materials import Lighting, Material, Slot, from_jsonable, seed_python, to_jsonable
+from pak.tune_materials import proposed_color
 
 
 def _building_specs_with_materials() -> list[tuple[str, ModuleType]]:
@@ -174,7 +178,6 @@ class TestLighting(unittest.TestCase):
         L = Lighting(world_ambient=(0.55, 0.55, 0.55),
                      sun_energy_scale=71.4,
                      sun_elev_deg=45.0, sun_az_offset_deg=-90.0)
-        import json
         self.assertEqual(
             Lighting.from_jsonable(json.loads(json.dumps(L.to_jsonable()))),
             L,
@@ -187,9 +190,6 @@ class TestProposedColor(unittest.TestCase):
     is testable without one."""
 
     def test_pushes_toward_target(self):
-        import numpy as np
-
-        from pak.tune_materials import proposed_color
         # Current declared (1,1,1), ours renders (100,100,100),
         # target upstream (200,100,100) -- R should scale up.
         new = proposed_color((1.0, 1.0, 1.0),
@@ -201,9 +201,6 @@ class TestProposedColor(unittest.TestCase):
         self.assertAlmostEqual(new[2], 1.0, places=2)
 
     def test_damping_shrinks_step(self):
-        import numpy as np
-
-        from pak.tune_materials import proposed_color
         ours = np.array([100, 100, 100])
         up = np.array([200, 100, 100])
         aggressive = proposed_color((1.0,) * 3, ours, up, damping=1.0)
@@ -212,9 +209,6 @@ class TestProposedColor(unittest.TestCase):
         self.assertLess(abs(timid[0] - 1.0), abs(aggressive[0] - 1.0))
 
     def test_gain_clamp_bounds_runaway(self):
-        import numpy as np
-
-        from pak.tune_materials import proposed_color
         # Ours near-zero -- raw gain would be huge; clamp protects.
         new = proposed_color((1.0, 1.0, 1.0),
                              np.array([1, 1, 1]),

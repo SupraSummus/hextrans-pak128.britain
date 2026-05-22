@@ -1165,3 +1165,22 @@ and `airNNN/` subdirs).  Hex engine plans?  Concrete next move:
 look at `hextrans/src/simutrans/display/` for zoom-level
 configuration and decide whether to mirror the upstream
 multi-res convention or stay 128-only.
+
+**`pak.render` bpy parameter passing now redundant.**  Fourteen
+functions in `pak/render.py` (plus `exit_edit_mode` consumed by
+`pak/bake_way.py`) take `bpy` -- and some `mathutils` -- as
+parameters, scaffolding from when those modules were lazy-imported
+inside `main()` and threaded through.  After the PLC0415 hoist,
+`bpy` / `bmesh` / `mathutils` are module-globals (or `None` on
+non-Blender Python via the top-level `try/except ImportError`);
+the parameter is dead weight.  Concrete next move: drop `bpy` /
+`mathutils` from the signatures of `render_facings`,
+`_apply_holdout`, `_install_camera_and_sun`,
+`_reload_external_textures`, `_resolve_image`,
+`_build_image_material`, `_build_noise_material`,
+`_bind_textures_via_nodes`, `_build_slot_output`,
+`_build_multislot_material`, `_swap_to_id_map`,
+`_collection_renders`, `_bake_world_into_meshes`,
+`exit_edit_mode`; update the two callers (`bake.py`,
+`bake_way.py`) and `tests/test_compose.py`.  Pure simplification,
+no behaviour change.
