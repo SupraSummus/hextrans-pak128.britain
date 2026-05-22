@@ -137,16 +137,34 @@ that engine port lands: bump `blends.lock` (if helpful) and run
 the full CI rebake; otherwise no work needed until then.  Soft
 trigger.
 
-**`sp_*` player-colour mask pass.**  Upstream blends use a
-`sp_*` material naming convention for player-colour masks (see
-`render_SimutransRender_pak128Britain-65.py` "Make Masks" path).
-render.py renders the native materials only; the mask render
-is a second pass that swaps those materials for the engine's
-mask palette and emits a parallel `_mask.png` set the dat
-references via `EmptyImage[FRONT-...]` etc.  Concrete next move:
-port the material-swap code from the upstream `-65` script into
-a `--mask` mode on render.py.  Trigger: first asset that
-gameplay-actually-needs livery support (probably a BR-era loco).
+**Special-colour PIXVAL handling.**  See `docs/special-colors.md`
+for the full mechanism, palette categories (P1/P2, day-night,
+menu-gray, transparency) and empirical state of the catalog.
+Two concrete passes outstanding.
+
+*Defensive snap.*  Cycles AA randomly produces opaque pixels
+landing exactly on reserved-palette triples (3 px of
+`DN.lampdark` on the signalbox alone, scattered hits across the
+train catalog).  makeobj encodes them as special-PIXVAL and the
+runtime flickers them at dusk or recolours per-player.  Mirror
+`pak/lightmap.py::safe_face_rgb` inverted as a `compose.py`
+post-pass: any opaque pixel whose RGB ∈ `RGBTAB_RESERVED`, nudge
+±1.  ~10 lines, no trigger needed.
+
+*Per-asset mask authoring.*  Player-owned buildings (signalboxes
+at minimum) lose their player-color mask in our re-bake — real
+shipped regression.  Upstream's `sp_*` material convention
+doesn't apply because none of the signalbox blends we have
+contain `sp_*` materials (the masks must have come from hand-
+painting or a different source — `docs/special-colors.md`
+records the three plausible origins).  The path forward is to
+author masks ourselves: bake-script `materials=` overrides
+pointing a named blend material at a reserved-triple emission,
+or a per-asset Python-defined stencil that paints the mask
+region post-render.  Don't generalise until the first concrete
+building port forces a shape.  Trigger: first port that wants
+its signalbox / depot / station / HQ to display the owning
+player's colour.
 
 
 **BI-faithful slot composition replaces, heuristic multiplies.**
