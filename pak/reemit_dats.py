@@ -25,12 +25,14 @@ from pak.bake_units import discover, import_script, specs_of
 from pak.dat import (
     Bridge,
     Building,
+    Factory,
     Tree,
     Tunnel,
     Vehicle,
     Way,
     emit_bridge,
     emit_building,
+    emit_factories,
     emit_trees,
     emit_tunnel,
     emit_vehicles,
@@ -59,6 +61,15 @@ def emit_for_specs(specs: list, out_dir: Path, basename: str) -> Path:
         return emit_bridge(specs[0], out_dir=out_dir, basename=basename)
     if len(specs) == 1 and isinstance(specs[0], Tunnel):
         return emit_tunnel(specs[0], out_dir=out_dir, basename=basename)
+    # Factory must come before Building -- Factory subclasses Building
+    # so `isinstance(s, Building)` matches Factory too; routing to
+    # emit_building would silently drop the factory-only keys.
+    if specs and all(isinstance(s, Factory) for s in specs):
+        spec = specs[0]
+        return emit_factories(
+            specs, out_dir=out_dir, basename=basename,
+            layouts=hex_layouts_default(spec.symmetry),
+        )
     if len(specs) == 1 and isinstance(specs[0], Building):
         spec = specs[0]
         return emit_building(

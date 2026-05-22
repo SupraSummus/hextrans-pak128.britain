@@ -1001,6 +1001,15 @@ EEVEE renders driven by the footprint
 `materials=` + `lighting=` declared on the SPEC.  See
 [`docs/bake-building.md`](docs/bake-building.md).
 
+Factories (`Obj=factory` — industries) port via `Factory(Building)`
++ `bake_factory_main`.  Engine `factory_writer.cc` delegates to
+`building_writer.cc` for every visual field, so the bake pipeline
+(viewpoint, atlas layout, season stitching) carries through
+unchanged; only the dat emitter swaps the obj header and walks the
+extra factory-only scalars + parallel input/output good lists.
+Shared-sprite multi-Obj uses `SPECS: list[Factory]` (e.g. chemist's
+1860 + 1955 upgrade pair sharing one render).
+
 ## Way-bake architecture
 
 Ways (rails, roads, trams) treat an upstream rail-shape blend

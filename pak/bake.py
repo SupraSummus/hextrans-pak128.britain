@@ -32,6 +32,7 @@ from pak.dat import (
     TREE_AGE_COUNT,
     Bridge,
     Building,
+    Factory,
     Symmetry,
     Tree,
     Tunnel,
@@ -39,6 +40,7 @@ from pak.dat import (
     Way,
     emit_bridge,
     emit_building,
+    emit_factories,
     emit_trees,
     emit_tunnel,
     emit_vehicles,
@@ -483,6 +485,43 @@ def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
     combined.save(out_path)
 
 
+def _render_seasonal_atlas(
+    spec: Building, *, basename: str, out_dir: Path, layouts: int,
+) -> None:
+    """Render the per-asset atlas, stitching summer + optional winter.
+
+    Single-season writes straight to `<basename>.png`; multi-season
+    renders per-season into `<basename>__s<i>.png` tempfiles, then
+    `_stitch_seasons` concatenates summer-on-top.  Shared by
+    `bake_building` and `bake_factory` -- Factory subclasses Building
+    so every field this needs (`blend`, `materials`, `seasons`,
+    `blend_winter`, `materials_winter`, `lighting`) carries through.
+    """
+    if spec.blend is None:
+        raise ValueError(f"{basename}: SPEC missing blend=")
+    season_inputs: list[tuple[str, dict[str, Material] | None]] = [
+        (spec.blend, spec.materials),
+    ]
+    if spec.seasons >= 2:
+        if spec.blend_winter is None:
+            raise ValueError(
+                f"{basename}: spec.seasons={spec.seasons} requires blend_winter"
+            )
+        season_inputs.append((spec.blend_winter, spec.materials_winter))
+    single = len(season_inputs) == 1
+    tmp_paths: list[Path] = []
+    for s, (b, m) in enumerate(season_inputs):
+        name = basename if single else f"{basename}__s{s}"
+        tmp_paths.append(_render_building_season(
+            blend=b, name=name, out_dir=out_dir, layouts=layouts,
+            spec=spec, materials=m, lighting=spec.lighting,
+        ))
+    if not single:
+        _stitch_seasons(tmp_paths, out_dir / f"{basename}.png")
+        for p in tmp_paths:
+            p.unlink()
+
+
 def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     """Fetch the blend(s), render the N-tile atlas, emit the dat.
 
@@ -501,9 +540,7 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     When `spec.seasons >= 2`, requires `spec.blend_winter` (the
     upstream sibling `-snow.blend` per asset) and typically
     `spec.materials_winter` (seed via `python3 -m pak.extract_materials
-    <winter-blend>`).  Renders each season into a temporary
-    `<basename>__s<i>.png`, then vertically concatenates with summer
-    on top.
+    <winter-blend>`).
 
     Layout rotation, per-cell translation, and the model's centring
     convention are all best-guess on the first pass.  When the first
@@ -511,36 +548,8 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     `viewpoints.building_hex_viewpoint` (rotation sign / koord-tile
     mapping) and in its `fit_matrix` factory.
     """
-    if spec.blend is None:
-        raise ValueError(f"{basename}: SPEC missing blend=")
     layouts = hex_layouts_default(spec.symmetry)
-
-    # Single-season bake renders straight into `<basename>.png`;
-    # multi-season renders per-season into `<basename>__s<i>.png`
-    # tempfiles, then `_stitch_seasons` concatenates summer-on-top.
-    season_inputs: list[tuple[str, dict[str, Material] | None]] = [
-        (spec.blend, spec.materials),
-    ]
-    if spec.seasons >= 2:
-        if spec.blend_winter is None:
-            raise ValueError(
-                f"{basename}: spec.seasons={spec.seasons} requires blend_winter"
-            )
-        season_inputs.append((spec.blend_winter, spec.materials_winter))
-
-    single = len(season_inputs) == 1
-    tmp_paths: list[Path] = []
-    for s, (b, m) in enumerate(season_inputs):
-        name = basename if single else f"{basename}__s{s}"
-        tmp_paths.append(_render_building_season(
-            blend=b, name=name, out_dir=out_dir, layouts=layouts,
-            spec=spec, materials=m, lighting=spec.lighting,
-        ))
-    if not single:
-        _stitch_seasons(tmp_paths, out_dir / f"{basename}.png")
-        for p in tmp_paths:
-            p.unlink()
-
+    _render_seasonal_atlas(spec, basename=basename, out_dir=out_dir, layouts=layouts)
     out_dat = emit_building(spec, out_dir=out_dir, basename=basename,
                             layouts=layouts)
     _print_wrote(out_dat)
@@ -621,3 +630,35 @@ def bake_building_main(spec: Building, file: str) -> Path:
     """`bake_building` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_building(spec, basename=path.stem, out_dir=path.parent)
+
+
+def bake_factory(
+    spec: Factory | list[Factory], *, basename: str, out_dir: Path,
+) -> Path:
+    """Bake one or more `Obj=factory` definitions sharing one atlas.
+
+    Visual pipeline mirrors `bake_building` (Factory subclasses
+    Building, so the building viewpoint + render path consume the SPEC
+    unchanged).  Picks the first Factory as visual representative —
+    `emit_factories` enforces shape consistency across the list —
+    renders, then emits one combined dat.  Shared-sprite multi-object
+    is the chemist.dat `Chemist1860 + Chemist1955` case; distinct-
+    sprite eras (e.g. `Chemist1975` pointing at `1950shops.*`) need
+    their own bake unit.
+    """
+    specs = [spec] if isinstance(spec, Factory) else list(spec)
+    if not specs:
+        raise ValueError(f"{basename}: bake_factory requires at least one Factory")
+    visual = specs[0]
+    layouts = hex_layouts_default(visual.symmetry)
+    _render_seasonal_atlas(visual, basename=basename, out_dir=out_dir, layouts=layouts)
+    out_dat = emit_factories(specs, out_dir=out_dir, basename=basename,
+                             layouts=layouts)
+    _print_wrote(out_dat)
+    return out_dat
+
+
+def bake_factory_main(spec: Factory | list[Factory], file: str) -> Path:
+    """`bake_factory` keyed off the calling script's `__file__`."""
+    path = Path(file).resolve()
+    return bake_factory(spec, basename=path.stem, out_dir=path.parent)

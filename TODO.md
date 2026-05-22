@@ -506,22 +506,44 @@ in screen px, add `(h, y, x)` rows to `Facing.slices`, and have
 the renderer's per-height z shift line each storey up into a
 visible window.
 
-**Building schema gaps.**  `pak.dat.Building` covers attractions,
-monuments, city buildings (res/com/ind), townhalls, HQs, stops,
-extensions — the dat shapes around the engine's `obj=building`
-type field.  Two known gaps: (a) **Factory schema** —
-`Obj=factory` (industries like brewery, bakery, fishing-ground)
-carries `Productivity`, `Range`, `InputGood[N]`, `OutputGood[N]`,
-`distributionweight`, `passenger_boost`, smoke fields etc., much
-fatter than Building; add a `Factory` dataclass once the first
-industry ports.  (b) **Animation phase** — `emit_building`
-hardcodes phase=0.  Animated assets (phase > 0) need their own
-axis in `iter_building_cells` and the viewpoint factory.
+**Building schema gap: animation phase.**  `emit_building` /
+`emit_factories` hardcode phase=0.  Animated assets (phase > 0) need
+their own axis in `iter_building_cells` and the viewpoint factory.
 Concrete next move when the first port needs it: extend the cell
-iterator to yield `(s, l, y, x, h, p)` and the viewpoint to
-multiply facings accordingly.  Seasons (the `s` axis) and
-height-stacking (the `h` axis) are already plumbed end-to-end and
-tested — same axis-multiplication pattern.
+iterator to yield `(s, l, y, x, h, p)` and the viewpoint to multiply
+facings accordingly.  Seasons (the `s` axis) and height-stacking
+(the `h` axis) are already plumbed end-to-end and tested — same
+axis-multiplication pattern.
+
+**Industry catalog port -- first asset shipped, ~63 dats pending.**
+`pak.dat.Factory(Building)` + `emit_factories` / `port_factory` /
+`bake_factory` exercise the schema end-to-end via `industry/chemist.py`
+(Chemist1860 + Chemist1955 shared-sprite pair; square-projection IoU
+0.97 summer / 0.97 winter, layout perm `[1,0,3,2]` matching the known
+per-blend authoring offset).
+
+**Farm-fields schema not modelled.**  `factory_field_group_writer_t`
+reads `fields[N]` + `has_snow[N]` + `production_per_field[N]` +
+`storage_capacity[N]` + `spawn_weight[N]` plus `probability_to_spawn`
+/ `min_fields` / `max_fields` / `start_fields`; `Factory` doesn't
+carry any of them.  Concrete next move when the first farm-class
+factory ports (arable, cattle, grain, fishing-ground, orchard, …):
+add the parallel indexed-list set to `Factory` and the field-group
+emit to `emit_factories`.
+
+**Cross-atlas upgrade chains lose eras silently.**  Several upstream
+industry chains close with a 1950s+ era pointing at a shared
+`1950shops.*` atlas (chemist, butchery, bakery, fishmongers,
+greengrocers, hardware-shop, newsagent, …); the chemist port drops
+`Chemist1975` to avoid a dangling `upgrade=` reference.  Concrete
+next move: write a single `industry/_1950shops.py` packing every
+1950s-era shop as one shared-sprite `SPECS` list, then walk the
+affected chemist / butchery / etc. ports and restore the dropped
+`upgrade[…]=` entries.
+
+**`industry/` not yet in DIRS128.**  Makefile gate not flipped, so
+`make all` still skips the directory.  Triggered on next port: add
+`DIRS128 += industry`.
 
 **Hex bridge: bake pipeline shipped, in-engine schema unverified.**
 `pak.dat.Bridge` + `emit_bridge`, `pak.bake.bake_bridge_main`, the
