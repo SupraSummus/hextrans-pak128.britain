@@ -254,9 +254,24 @@ class TestBuildingSquareViewpoint(unittest.TestCase):
             self.assertEqual(f.slices[0].offset, (0, 0))
             self.assertIsNone(f.slices[0].alpha_mask)
 
-    def test_multi_height_raises(self):
-        with self.assertRaises(NotImplementedError):
-            building_square_viewpoint(layouts=4, units_per_tile=12.0, dims_x=1, dims_y=1, heights=2)
+    def test_multi_height_doubles_facings_with_z_shift(self):
+        """heights nests layouts; each Facing shifts -h *
+        sq_height_level_world_z(units_per_tile) in world z so the
+        height-h band lands at the camera's z=0 view."""
+        from pak.viewpoints import sq_height_level_world_z
+        upt = 12.0
+        vp = building_square_viewpoint(
+            layouts=4, units_per_tile=upt, dims_x=1, dims_y=1, heights=2,
+        )
+        self.assertEqual(len(vp.facings), 4 * 2)
+        for i, f in enumerate(vp.facings):
+            l, h = i % 4, i // 4
+            self.assertEqual(f.label, f"L{l}_H{h}")
+            self.assertEqual(
+                f.model_translation,
+                (0.0, 0.0, -h * sq_height_level_world_z(upt)),
+            )
+            self.assertEqual(f.slices[0].label, f"L{l}_Y0_X0_H{h}")
 
 
 class TestSqTilePixelMask(unittest.TestCase):

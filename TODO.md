@@ -493,18 +493,37 @@ Roof/Pavement/Stone diffuse for snow tones, like
 `citybuildings/res_1600_kg_01.py`'s winter pass does), or accept
 the per-season divergence from upstream.
 
-**Open: heights coverage.**  The slicing canvas computes vertical
-headroom from hex koord offsets alone; `heights>1` will need
-extra vertical room in the canvas plus per-height slice rows.
-The citybuildings batch hit this on seven `COM_*_1970_*` ports
-sharing `70-office.blend` — upstream's dat carries
-`BackImage[...][1][...]` (heights=2) but the diff harness blew
-up looking for our `H1` sprite slice (`out/diff/.../70-office_
-L0_Y0_X0_H1.png`).  Concrete next move: extend the slicing
-canvas's vertical extent by `heights * HEX_HEIGHT_LEVEL_WORLD_Z`
-in screen px, add `(h, y, x)` rows to `Facing.slices`, and have
-the renderer's per-height z shift line each storey up into a
-visible window.
+**Open: heights coverage in stitched per-layout diff.**
+`building_square_viewpoint` now mirrors the hex variant's
+`heights>1` plumbing: a per-h Facing translates the model down by
+`sq_height_level_world_z(units_per_tile)` so the upper storey
+lands at the camera's z=0 view band, slices carry the H index,
+and `run_multitile`'s per-cell loop walks every `(L, y, x, h)`
+entry in the upstream dat.  Brewery 1840/1910 (heights=2) baked
+and diffed end-to-end on the first attempt.
+
+What's still missing: the per-layout stitched diff (the
+`grid_stitched.png` row) is H=0-only -- our full-canvas H=0 PNG
+gets compared against upstream's H=0-stitched layout.  For
+buildings whose H=1 carries meaningful content (tall offices,
+not brewery's chimney-tip residue), the per-layout IoU under-
+counts.  The `_cell_metric`-driven per-cell IoU stays a
+sufficient gate for now (per-cell reports the H=1 cells); the
+stitched grid is informational only.  Concrete next move when
+the first tall-H1 port lands: render an H=1 stitched canvas
+alongside H=0 and include both in the per-layout table.
+
+A second cosmetic issue: empty-vs-empty cells (upstream key
+exists but both renders are 0-px silhouette -- the
+schema-required-but-visually-quiet case at the top of a building
+that barely overflows H=0) report IoU=0 by the
+`iou(empty, empty) = 0` convention in `pak.diff.iou`.  The
+convention is intentional (surfaces the missing-render bug for
+single-tile vehicles); it just means the per-cell H=1 row in
+`format_multitile_table` shows 0.0 entries that aren't actually
+mismatches.  Per-layout (the FAIL_IOU gate) isn't affected.
+Concrete next move if it becomes a porter-visible nuisance:
+filter empty-upstream cells out of the table's worst/mean line.
 
 **Building schema gap: animation phase.**  `emit_building` /
 `emit_factories` hardcode phase=0.  Animated assets (phase > 0) need

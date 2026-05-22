@@ -98,7 +98,8 @@ def _cell_metric(ours_rgba, up_rgba, *, blur_sigma: float = 3.0):
 
 
 def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
-            *, dims_x: int, dims_y: int, blend_units_per_tile: float,
+            *, dims_x: int, dims_y: int, heights: int = 1,
+            blend_units_per_tile: float,
             materials: dict | None = None, lighting=None,
             model_offset_xyz: tuple[float, float, float] | None = None,
             strip: str | None = None,
@@ -108,7 +109,7 @@ def _render(blend_path: Path, out_dir: Path, name: str, layouts: int,
         viewpoint_kind="square_building",
         blend_path=blend_path,
         name=name, out_dir=out_dir, layouts=layouts,
-        dims_x=dims_x, dims_y=dims_y, heights=1,
+        dims_x=dims_x, dims_y=dims_y, heights=heights,
         units_per_tile=blend_units_per_tile,
         materials=materials, lighting=lighting,
         model_offset_xyz=model_offset_xyz, strip=strip,
@@ -316,6 +317,7 @@ def format_multitile_layout_table(rows: list[MultiTileLayout]) -> str:
 def run_multitile(
     blend: str, upstream_dat: str, *,
     dims_x: int, dims_y: int, layouts: int,
+    heights: int = 1,
     out_dir: Path,
     materials: dict | None = None,
     lighting=None,
@@ -354,7 +356,7 @@ def run_multitile(
     blend_path = _resolve_blend(blend, blend_source)
     render_name = Path(blend).stem
     _render(blend_path, out_dir, render_name, layouts,
-            dims_x=dims_x, dims_y=dims_y,
+            dims_x=dims_x, dims_y=dims_y, heights=heights,
             materials=materials, lighting=lighting,
             blend_units_per_tile=blend_units_per_tile,
             model_offset_xyz=model_offset_xyz,
