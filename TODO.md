@@ -368,8 +368,9 @@ hex pixel mask in place; remaining suspect if not is the
 hex-grid-vs-engine `(layout & 1)` cell-axis convention (engine
 only paints cells along koord +x or +y in `gebaeude.cc`, so the
 6-rotation model under our hex policy lands four of its
-orientations on the "wrong" cell axis — see "open: hex
-multi-tile cell-axis schema mismatch" below).
+orientations on the "wrong" cell axis — engine-side fix tracked
+in `hextrans/TODO.md` → "Multi-tile building footprint — still 2
+of 6 hex axes").
 
 **Open: per-asset `blend_ortho_per_tile` override is opt-in, no
 sniffer.**  `Building.blend_ortho_per_tile` lets a SPEC pin the
@@ -426,24 +427,6 @@ NE-NW top edge, cap at sprite top with a horizontal line", giving
 each tile its own inscribed-rectangle column above the projected
 hex; mirrors the dimetric apex extension to (W/2, 0).  Soft
 trigger.
-
-**Open: hex multi-tile cell-axis schema mismatch.**  The engine's
-`building_desc_t::get_size(layout)` (`descriptor/building_desc.h`)
-keeps the square-pak `(layout & 1) ? (size.y, size.x) : size` rule
-unchanged for hex, so multi-tile cells only ever lay out along
-koord +x (even layouts) or koord +y (odd layouts) — two of the six
-hex axis directions.  Our bake renders the model at 6 distinct
-rotations (`hex_layouts_default` returns 6 for asymmetric assets),
-but only 2 of those rotations align the model's long axis with the
-cell axis the engine paints; the other 4 land the building rotated
-relative to its footprint.  Concrete next move when this matters
-in-engine: extend the engine's `get_size` to recognise all 6 hex
-neighbour directions (and the `building_tile_desc_t::get_offset` /
-`get_tile_list` consumers in `gebaeude.cc`); on the pak side, lift
-`iter_building_cells` and `building_hex_viewpoint`'s slice
-generation to walk those 6 directions instead of the binary swap.
-Soft trigger — only matters once the residual misalignment is
-the visible artefact in-engine.
 
 **Open: `Building.symmetry` schema knob — extension.**
 `Symmetry` enum ships `NONE` (default) and `CONTINUOUS`
@@ -742,18 +725,6 @@ facing per back-wall.  The blend's 4 fence quadrants map naturally
 onto the 3 hex back-edges (NW, N, NE) via per-facing model
 rotation, same pattern as `building_hex_viewpoint`.  Then drop
 the polyline path entirely.
-
-**Fence wall-2 cases render IMG_EMPTY.**  Engine `FENCE_IMAGE_COUNT = 3`
-in `grund.h` caps the per-set sprite count at 3, so `fence_offset`
-values 4..7 (any combo involving the rightmost back-wall, wall 2)
-either index past the artificial set (rendering the wrong sprite)
-or fall off the end (IMG_EMPTY).  Matches upstream Britain's shape —
-their fences.dat also ships 6 entries — but is genuinely under-
-specified for the 3-back-edge hex.  Concrete next move when it
-bites in-game: bump `FENCE_IMAGE_COUNT` to 7 in `grund.h`, extend
-`grounds/fence.py`'s `_WALL_MASKS` to cover all seven non-zero
-masks × {natural, artificial}, and rebake.  Engine-side change,
-not just a pak edit.
 
 **Lightmap multiplier scale mismatch.**  The square-bake diff
 against upstream `grounds/images/texture-lightmap.png` shows a
