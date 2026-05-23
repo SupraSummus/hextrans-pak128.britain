@@ -1,18 +1,23 @@
-"""Property tests for `pak.sq_split` (port of An-dz/tilecutter).
+"""Property tests for `pak.sq_split`.
 
 Two complementary fixtures:
 
   * `tests/data/simutrans_wiki_cut.png` -- the schematic from the
     Simutrans wiki's GraphicsCutting page (paksize 64, 3×3×2
-    footprint).  Property: cut, then stitch -- pixels claimed by
-    some cell's mask must roundtrip; cells must not double-claim.
-    Self-consistency check on the mask-set + corner rules.
+    footprint, cells alternating red / blue).  Cut->stitch roundtrip
+    must restore the claimed region; cells must not double-claim;
+    each cell's RGB palette must be `{red, blue, black, MAGIC_PINK}`
+    with no cell holding both red AND blue (= cut boundary running
+    through a uniform-colour cell).
 
   * `tests/data/oil-refinery.png` + `industry/oil-refinery.dat`
     (OilRefinery1955, largest upstream multi-tile, multi-height
-    asset).  Property: stitch upstream cells, cut the canvas, output
-    matches upstream pixel-exact.  Pins that the algorithm matches
-    the cuts pak128.Britain's artists actually shipped.
+    asset).  Stitch upstream cells, cut the canvas, output matches
+    upstream pixel-exact.  Pins that the cutter reproduces the cuts
+    pak128.Britain's artists shipped -- the closed-form fixed-mask
+    cutter (An-dz/tilecutter, 7 masks indexed by footprint corner)
+    matches our back-wins iteration exactly, so passing this pin
+    means both formulations agree.
 """
 
 from __future__ import annotations
@@ -24,7 +29,8 @@ import numpy as np
 from PIL import Image
 
 from pak import dat as _dat
-from pak.sq_split import MAGIC_PINK, W, cell_anchors, claim_mask, split, stitch
+from pak.cell_split import MAGIC_PINK
+from pak.sq_split import W, cell_anchors, claim_mask, split, stitch
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _REFINERY_DAT = _REPO_ROOT / "industry" / "oil-refinery.dat"
@@ -60,8 +66,8 @@ class TestSplitStitchRoundtripWiki(unittest.TestCase):
     HEIGHTS = 2
     PAKSIZE = 64
 
-    def test_roundtrip(self):
-        canvas = np.asarray(Image.open(_WIKI_PNG).convert("RGBA"))
+    def setUp(self):
+        self.canvas = np.asarray(Image.open(_WIKI_PNG).convert("RGBA"))
         keys = [(y, x, h)
                 for h in range(self.HEIGHTS)
                 for y in range(self.DIMS_Y)
@@ -72,24 +78,57 @@ class TestSplitStitchRoundtripWiki(unittest.TestCase):
         ay0 = (3 * W // 4) * self.PAKSIZE // W
         sx = -min(a[0] - ax0 for a in anchors.values())
         sy = -min(a[1] - ay0 for a in anchors.values())
-        anchors = {k: (a[0] + sx, a[1] + sy) for k, a in anchors.items()}
+        self.anchors = {k: (a[0] + sx, a[1] + sy) for k, a in anchors.items()}
+        self.cells = split(self.canvas, self.anchors, paksize=self.PAKSIZE)
 
-        cells = split(canvas, anchors, paksize=self.PAKSIZE)
-        reassembled = np.full_like(canvas, 255)
+    def test_roundtrip(self):
+        reassembled = np.full_like(self.canvas, 255)
         reassembled[..., :3] = MAGIC_PINK
-        stitch(cells, anchors, into_canvas=reassembled, paksize=self.PAKSIZE)
+        stitch(self.cells, self.anchors,
+               into_canvas=reassembled, paksize=self.PAKSIZE)
 
-        claim = claim_mask(cells, anchors, canvas.shape, paksize=self.PAKSIZE)
+        claim = claim_mask(self.cells, self.anchors,
+                           self.canvas.shape, paksize=self.PAKSIZE)
         any_claim = claim > 0
-        diff = (canvas[..., :3] != reassembled[..., :3]).any(axis=-1)
+        diff = (self.canvas[..., :3] != reassembled[..., :3]).any(axis=-1)
         self.assertEqual(
             int((diff & any_claim).sum()), 0,
             "cut->stitch roundtrip lost pixels in the mask-claimed region",
         )
         self.assertEqual(
             int((claim > 1).sum()), 0,
-            "TileCutter masks overlap -- partition not disjoint",
+            "partition not disjoint -- some pixel claimed by >1 cell",
         )
+
+    def test_cells_are_single_color(self):
+        # Wiki schematic colours each diamond cell either pure red or
+        # pure blue; labels are black; outside-mask is MAGIC_PINK after
+        # the cut.  A correct partition assigns every red/blue pixel to
+        # the one cell whose mask covers it, so each cut cell contains
+        # red xor blue (plus black labels, plus magic pink fill).
+        red = np.array([255, 0, 0], dtype=np.uint8)
+        blue = np.array([0, 0, 255], dtype=np.uint8)
+        black = np.array([0, 0, 0], dtype=np.uint8)
+        allowed = {tuple(red), tuple(blue), tuple(black), tuple(MAGIC_PINK)}
+        for key, cell in self.cells.items():
+            rgb = cell[..., :3]
+            colours = {tuple(c.tolist())
+                       for c in np.unique(rgb.reshape(-1, 3), axis=0)}
+            unexpected = colours - allowed
+            self.assertFalse(
+                unexpected,
+                f"cell {key} has unexpected colours {unexpected}",
+            )
+            # Rear-occluded cells in the 3x3x2 footprint have empty
+            # masks and come back all-pink; the load-bearing property
+            # is just that no cell contains BOTH red and blue.
+            has_red = bool((rgb == red).all(axis=-1).any())
+            has_blue = bool((rgb == blue).all(axis=-1).any())
+            self.assertFalse(
+                has_red and has_blue,
+                f"cell {key} contains both red and blue -- "
+                f"mask straddles a cut boundary",
+            )
 
 
 class TestStitchSplitRefinery(unittest.TestCase):

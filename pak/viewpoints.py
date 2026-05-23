@@ -36,7 +36,9 @@ from math import radians
 
 import numpy as np
 
+from pak import hex_split, sq_split
 from pak.dat import HEX_BRIDGE_PIECE_LABELS, TUNNEL_FACING_LABELS, building_footprint_centroid
+from pak.hex_split import hex_tile_screen_offset
 from pak.hex_synth import (
     DEFAULT_W,
     HEX_SHEAR_Z_COEF,
@@ -45,7 +47,6 @@ from pak.hex_synth import (
     hex_proj_shear,
 )
 from pak.render import EEVEE, BlendAuthored, Facing, Slice, Viewpoint
-from pak.sq_split import cell_mask as _sq_cell_mask
 
 # === Authored-resolution helpers ==========================================
 #
@@ -392,22 +393,6 @@ def sq_height_level_world_z(units_per_tile: float) -> float:
     return units_per_tile / HEX_SHEAR_Z_COEF
 
 
-def hex_tile_screen_offset(qx: int, ry: int) -> tuple[float, float]:
-    """Image-space pixel offset for tile `(qx, ry)` under the standard
-    hex camera (`ortho_scale=2R`, image width `DEFAULT_W`).
-
-    Derivation: world `(1.5·R·qx, -√3/2·R·qx - √3·R·ry, 0)` projects to
-    screen `(W/(2R)·wx, -W/(2R·√3)·wy)` under `hex_proj_shear`.
-    Substituting and flipping y for top-down image coords gives:
-
-        cx_px = 0.75 · W · qx
-        cy_px = 0.25 · W · qx + 0.5 · W · ry
-
-    Used by `building_hex_viewpoint` for multi-tile slice centring."""
-    return (0.75 * DEFAULT_W * qx,
-            0.25 * DEFAULT_W * qx + 0.5 * DEFAULT_W * ry)
-
-
 def sq_tile_screen_offset(x: float, y: float) -> tuple[float, float]:
     """Simutrans Standard dimetric tile lattice: koord +x heads SE on
     screen, koord +y heads SW.  Accepts floats so per-layout footprint
@@ -416,87 +401,6 @@ def sq_tile_screen_offset(x: float, y: float) -> tuple[float, float]:
     `pak.diff_buildings` for upstream-cell stitching — single source of
     truth for the koord→screen mapping either side of the diff."""
     return (64.0 * x - 64.0 * y, 32.0 * x + 32.0 * y)
-
-
-def hex_voronoi_mask(
-    my_offset: tuple[int, int],
-    other_offsets: list[tuple[int, int]] = (),
-    image_width: int = DEFAULT_W,
-):
-    """Pure projection-Voronoi mask for the hex lattice -- no cell-shape
-    clip, no AA slack.
-
-    The `hex_proj_shear` extrinsic compresses world y by `1/√3`, so
-    world Euclidean distance² between two screen-px offsets `(Δx, Δy)`
-    equals `(Δx² + 3·Δy²) / (W/2R)²`.  Voronoi under this metric
-    partitions screen space exactly along the projected hex tile edges
-    -- footprint neighbours adjacent in the hex lattice
-    (`HEX_KOORD_*_WORLD`) cut cleanly along their shared projected
-    edge.  Ties (equidistant pixels) go to the closer-to-viewer cell
-    (`rel_y < 0` = "other is above me in screen").
-
-    `my_offset`: this tile's slice centre offset (`cx_px, cy_px`).
-    `other_offsets`: every other footprint tile's slice centre.
-    """
-    half = image_width // 2
-    full = image_width
-    ys, xs = np.indices((full, full))
-    dx_cell = xs - half
-    anchor_y = 3 * full // 4
-    dy_cell = ys - anchor_y
-    my_dist = dx_cell * dx_cell + 3 * dy_cell * dy_cell
-    keep = np.ones((full, full), dtype=bool)
-    mx, my = my_offset
-    for ox, oy in other_offsets:
-        rel_x, rel_y = ox - mx, oy - my
-        rdx = dx_cell - rel_x
-        rdy = dy_cell - rel_y
-        other_dist = rdx * rdx + 3 * rdy * rdy
-        keep &= (my_dist < other_dist) | (
-            (my_dist == other_dist) & (rel_y < 0)
-        )
-    return keep.astype(np.float32)
-
-
-def hex_cell_shape_mask(image_width: int = DEFAULT_W):
-    """Projected hex polygon mask -- regular hex with corners at
-    `(±W/2, 0)` and `(±W/4, ∓W/4)` relative to the ground anchor at
-    `(W/2, 3W/4)`.  The `+1` slack absorbs the slope-±1 AA edge ring
-    that strict math would clip.
-
-    Clips above the ground anchor at `dy = -W/4`, so silhouettes
-    extending above the tile footprint get cut by the cell-shape
-    rather than carried into the slice.  Wanted for production
-    multi-tile cuts where above-anchor content belongs to a higher
-    cell; NOT wanted for the 2D-remap path where the canvas extends
-    beyond a single hex cell on purpose.
-    """
-    half = image_width // 2
-    quarter = image_width // 4
-    full = image_width
-    ys, xs = np.indices((full, full))
-    dx_cell = xs - half
-    anchor_y = 3 * full // 4
-    dy_cell = ys - anchor_y
-    abs_x = np.abs(dx_cell)
-    abs_y = np.abs(dy_cell)
-    return ((abs_y <= quarter + 1)
-            & (abs_x + abs_y <= half + 1)).astype(np.float32)
-
-
-def hex_tile_pixel_mask(
-    my_offset: tuple[int, int],
-    other_offsets: list[tuple[int, int]] = (),
-    image_width: int = DEFAULT_W,
-):
-    """Production hex cutter: `hex_voronoi_mask` ∩ `hex_cell_shape_mask`.
-
-    The Voronoi gives the LATERAL cuts between footprint neighbours;
-    the cell-shape clip cuts above-anchor content (which would
-    belong to a higher cell, not this one).
-    """
-    return (hex_voronoi_mask(my_offset, other_offsets, image_width)
-            * hex_cell_shape_mask(image_width))
 
 
 def _footprint_cells(layout: int, dims_x: int, dims_y: int):
@@ -511,23 +415,26 @@ def _sq_building_slices(
 ) -> list[Slice]:
     """Per-(layout, height) slices for the square dimetric viewpoint.
 
-    Cell pixel-ownership comes from `pak.sq_split.cell_mask` -- the
-    port of An-dz/tilecutter's fixed-mask cutter, which is the cutter
-    pak128.Britain's upstream art was authored with.  Single-tile
-    footprints skip the mask: upstream's 128² single-tile PNGs ship
-    content above and beside the diamond (towers, gables) that the
-    multi-tile masks crop, so we want the full sprite frame.
+    Cell pixel-ownership comes from `pak.sq_split.cell_keep_masks` --
+    back-wins iteration with h=0 polygon bottom-trim, equivalent
+    pixel-exact to An-dz/tilecutter for the square cuts pak128.Britain's
+    upstream art was authored with.  Single-tile footprints skip the
+    mask: upstream's 128² single-tile PNGs ship content above and beside
+    the diamond (towers, gables) that the multi-tile masks crop, so we
+    want the full sprite frame.
     """
     xc, yc = building_footprint_centroid(dims_x, dims_y, layout)
     cells = _footprint_cells(layout, dims_x, dims_y)
     multi = len(cells) > 1
+    masks = (sq_split.cell_keep_masks([(y, x, height) for (y, x) in cells])
+             if multi else {})
     return [
         Slice(
             label=f"L{layout}_Y{y}_X{x}_H{height}",
             offset=tuple(
                 int(round(v)) for v in sq_tile_screen_offset(x - xc, y - yc)
             ),
-            alpha_mask=(_sq_cell_mask(y, x, height).astype(np.float32)
+            alpha_mask=(masks[(y, x, height)].astype(np.float32)
                         if multi else None),
         )
         for (y, x) in cells
@@ -537,24 +444,27 @@ def _sq_building_slices(
 def _hex_building_slices(
     layout: int, height: int, dims_x: int, dims_y: int,
 ) -> list[Slice]:
-    """Per-(layout, height) slices for the hex viewpoint."""
+    """Per-(layout, height) slices for the hex viewpoint.
+
+    Cell pixel-ownership comes from `pak.hex_split.cell_keep_masks` --
+    the same back-wins cutter as square with the hex polygon bottom-trim.
+    """
     xc, yc = building_footprint_centroid(dims_x, dims_y, layout)
     cells = _footprint_cells(layout, dims_x, dims_y)
-    offsets = [
-        tuple(int(round(v)) for v in hex_tile_screen_offset(x - xc, y - yc))
-        for y, x in cells
-    ]
     multi = len(cells) > 1
+    # Hex axial uses (qx, ry) = (x, y); engine convention so x maps to qx.
+    masks = (hex_split.cell_keep_masks([(x, y, height) for (y, x) in cells])
+             if multi else {})
     return [
         Slice(
             label=f"L{layout}_Y{y}_X{x}_H{height}",
-            offset=offsets[i],
-            alpha_mask=(hex_tile_pixel_mask(
-                offsets[i],
-                [o for j, o in enumerate(offsets) if j != i],
-            ) if multi else None),
+            offset=tuple(
+                int(round(v)) for v in hex_tile_screen_offset(x - xc, y - yc)
+            ),
+            alpha_mask=(masks[(x, y, height)].astype(np.float32)
+                        if multi else None),
         )
-        for i, (y, x) in enumerate(cells)
+        for (y, x) in cells
     ]
 
 

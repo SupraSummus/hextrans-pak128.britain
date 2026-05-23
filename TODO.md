@@ -407,8 +407,9 @@ convention; otherwise treat per-asset override as the steady state.
 **Open: multi-tile calibration diff residual.**
 `diff_buildings.run_multitile` scores two complementary metrics:
 *per-cell* (one 128² crop per (L, y, x) sliced through `building_
-square_viewpoint`'s `Facing.slices`, each clipped by its TileCutter
-mask from `pak.sq_split`) and *per-layout stitched* (full 512²
+square_viewpoint`'s `Facing.slices`, each clipped by its keep-mask
+from `pak.sq_split.cell_keep_masks`) and *per-layout stitched*
+(full 512²
 canvas, upstream cells pasted at their koord positions).  Stitch anchors on `_STITCH_CANVAS_ANCHOR = (256, 288)`
 -- where the camera projects world (0,0,0) per the cardinal-camera
 math (pitch=60° looks at (-4.2, 4.2, 0) not origin; uniform by
@@ -427,24 +428,8 @@ on stonehenge (worst 0.31) since the splitter relies on the
 canvas-anchor convention.  Concrete next move = the offset gap
 entry below.
 
-**Open: hex pixel-mask sprite-tall extension.**  `hex_cell_shape_
-mask` clips each multi-tile slice to the projected hex shape
-(lower half of the slice, dy ∈ [-W/4, +W/4] from the ground
-anchor) -- the strict Voronoi cell of the hex lattice under the
-shear projection's world-Euclidean metric `dx² + 3·dy²`.  The
-dimetric analogue (`pak.sq_split`'s TileCutter masks) extends
-the back-corner / back-edge cells upward to the full sprite frame
-so towers / gables on multi-tile buildings keep their upward
-silhouette; the hex version does not, so a tall multi-tile
-building would have its upper-half-sprite content clipped per
-slice.  Not bitten on the ported multi-tile catalog (signalbox,
-stonehenge — both low-profile).  Concrete next move when a tall
-multi-tile asset ports: port the TileCutter "back-corner keeps
-full top, back-edges keep half" idea to hex via per-cell mask
-based on which hex-lattice neighbours are absent.  Soft trigger.
-
 **Open: validate `pak.sq_split` against more upstream assets.**
-The TileCutter port is pinned cell-for-cell against OilRefinery1955
+The cutter is pinned cell-for-cell against OilRefinery1955
 (largest multi-tile, multi-height asset; all 4 layouts × 1 season
 × 336 BackImage entries).  Other strict-partition assets surveyed
 in the diagnostic that landed the algorithm (coal-mines, gasworks,
@@ -457,17 +442,20 @@ on the cache being populated; flake-resilient because the manifest
 is SHA-pinned.  Trigger: when a non-refinery multi-h, multi-tile
 asset actually ports and we want pre-bake confidence.
 
-**Open: hex cell-shape AA slack rebake.**  `hex_cell_shape_mask`
-ships with `+1` slack on every edge to absorb the slope-±1 AA
-edge ring; the slack lets two adjacent cells double-claim their
-shared edge pixel.  The square cleanup dropped its equivalent
-slack and the partition is now strict.  Hex hasn't because the
-production buildings catalog is baked against the current slack
-behaviour, and the `rebake` CI job would flag the byte diff.
-Concrete next move: deliberate rebake pass of every hex building
-with the slack removed; verify nothing visibly regresses; commit
-the rebake atomically with the slack removal.  Trigger: next
-broad hex-building refactor / rebake event.
+**Open: move `pak.remap_2d_building` onto the cell-split cutter.**
+The 2D-remap path (blendless townhalls sliced onto a 4-hex
+rhombus) still partitions via the legacy
+`pak.hex_split.hex_voronoi_mask` + `hex_cell_shape_mask` (the
+latter carrying `+1` AA slack on every edge).  Now that the cutter
+handles the hex polygon partition cleanly through
+`hex_polygon_bottom_trim`, the remap path could drop both legacy
+primitives.  The slack discussion (`+1` AA ring vs strict polygon)
+becomes a remap-only decision: does the rhombus art want the AA
+ring or strict cuts?  Concrete next move: rewrite `_split_hex` to
+build per-cell anchors and call `pak.cell_split.cell_keep_masks`;
+verify the remapped townhall outputs byte-identical (or visibly
+indistinguishable) on the existing test fixture.  Trigger: next
+touch of `remap_2d_building` for any reason.
 
 **Open: `Building.symmetry` schema knob — extension.**
 `Symmetry` enum ships `NONE` (default) and `CONTINUOUS`
