@@ -1052,6 +1052,13 @@ extra factory-only scalars + parallel input/output good lists.
 Shared-sprite multi-Obj uses `SPECS: list[Factory]` (e.g. chemist's
 1860 + 1955 upgrade pair sharing one render).
 
+Blendless buildings (townhalls, plus likely other pre-blend-pipeline
+square-footprint assets) ride a separate `bake_2d_building_main` that
+slices the upstream sq-dimetric atlas onto a 4-hex rhombus without
+re-rendering.  Visibly compromised (camera-mismatch, magic-pink ring
+at the rhombus edges); ship-vs-skip is an open policy question — see
+TODO.md → "2D-remap for blendless buildings".
+
 ## Way-bake architecture
 
 Ways (rails, roads, trams) treat an upstream rail-shape blend

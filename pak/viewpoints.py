@@ -481,6 +481,8 @@ def hex_tile_pixel_mask(
     my_offset: tuple[int, int],
     other_offsets: list[tuple[int, int]] = (),
     image_width: int = DEFAULT_W,
+    *,
+    cell_shape_clip: bool = True,
 ):
     """Per-cell pixel-ownership mask for the hex lattice.
 
@@ -528,10 +530,14 @@ def hex_tile_pixel_mask(
         )
     # Projected hex cell-shape clip.  `|dy| ≤ W/4 AND |dx| + |dy| ≤
     # W/2` -- the six edges meet the corners (W/2, 0), (±W/4, ±W/4),
-    # (-W/2, 0) at equality on each constraint.
-    abs_x = np.abs(dx_cell)
-    abs_y = np.abs(dy_cell)
-    keep &= (abs_y <= quarter + 1) & (abs_x + abs_y <= half + 1)
+    # (-W/2, 0) at equality on each constraint.  Skipped when the
+    # caller's footprint has no neighbour above the topmost cells
+    # (e.g. an isolated building) and we want to keep above-anchor
+    # content rather than crop it.
+    if cell_shape_clip:
+        abs_x = np.abs(dx_cell)
+        abs_y = np.abs(dy_cell)
+        keep &= (abs_y <= quarter + 1) & (abs_x + abs_y <= half + 1)
     return keep.astype(np.float32)
 
 
