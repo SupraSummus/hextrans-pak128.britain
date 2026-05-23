@@ -15,6 +15,7 @@ import unittest
 import numpy as np
 
 from pak.dat import building_footprint_centroid
+from pak.hex_split import hex_tile_pixel_mask
 from pak.materials import Lighting
 from pak.render import CYCLES, EEVEE, BlendAuthored
 from pak.viewpoints import (
@@ -27,7 +28,6 @@ from pak.viewpoints import (
     building_hex_viewpoint,
     building_square_viewpoint,
     fence_square_viewpoint,
-    hex_tile_pixel_mask,
     hex_tile_screen_offset,
     sq_height_level_world_z,
     sun_rotation_for_camera,

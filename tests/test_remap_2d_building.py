@@ -12,6 +12,7 @@ import unittest
 
 import numpy as np
 
+from pak.hex_split import hex_cell_shape_mask, hex_tile_screen_offset, hex_voronoi_mask
 from pak.remap_2d_building import (
     _CELL_GROUND_ANCHOR,
     MAGIC_PINK,
@@ -19,7 +20,6 @@ from pak.remap_2d_building import (
     W,
     _split_hex,
 )
-from pak.viewpoints import hex_cell_shape_mask, hex_tile_screen_offset, hex_voronoi_mask
 
 R = 1.0
 SQRT3 = math.sqrt(3.0)

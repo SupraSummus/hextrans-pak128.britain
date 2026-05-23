@@ -893,16 +893,18 @@ rendered.  Per-piece bridge and per-season building atlases
 stitch one layer above, in `pak.bake` (`_stitch_bridge_atlas`,
 `_stitch_seasons`).
 
-**Cut.**  `sq_split.py` is the square dimetric cell cutter -- port
-of An-dz/tilecutter's fixed-mask algorithm.  Seven masks chosen
-by which corner of the footprint a `(y, x, h)` cell sits at; no
-neighbour-distance metric.  Pinned cell-for-cell against
-OilRefinery1955 (`tests/test_sq_split.py`), so the cuts match the
-artists' originals exactly.  Hex projection still cuts via
-`viewpoints.hex_tile_pixel_mask` (= `hex_voronoi_mask` ∩
-`hex_cell_shape_mask`); the analogous TileCutter-style port and
-the production rebake to drop the AA `+1` slack are open in
-TODO.md.
+**Cut.**  `pak.cell_split` is the projection-agnostic cell cutter:
+each canvas pixel is owned by the most-back cell whose `box×box`
+sprite covers it, ground-level cells (`h == 0`) get the bottom-
+corner region outside the polygon pre-trimmed.  `pak.sq_split` and
+`pak.hex_split` supply the projection specifics (polygon bottom-
+trim mask, paint-key sort, anchor lattice) via `cell_split.Lattice`.
+Pinned pixel-exact against An-dz/tilecutter's 7-mask cutter on
+OilRefinery1955 (`tests/test_sq_split.py` — the fixed masks are
+the closed-form lookup for the same partition the iteration
+computes).  The legacy hex Voronoi primitives stay exported from
+`pak.hex_split` for `pak.remap_2d_building` (4-hex rhombus
+partition), which doesn't go through the cutter.
 
 **Dat schema.**  `dat.py` defines the `Vehicle` / `Way` /
 `Building` / `Tree` dataclasses + `parse` / `port_*` seeders +

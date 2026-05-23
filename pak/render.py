@@ -79,7 +79,7 @@ class Slice(NamedTuple):
     the cell to the tile's pixel-ownership region for multi-tile
     sprites.  Source of the mask depends on projection: square pipes
     through `pak.sq_split` (the An-dz/tilecutter port); hex pipes
-    through `pak.viewpoints.hex_tile_pixel_mask` (projection Voronoi)."""
+    through `pak.hex_split.hex_tile_pixel_mask` (projection Voronoi)."""
     label: str
     offset: tuple[int, int]
     alpha_mask: object | None

@@ -18,8 +18,9 @@ from PIL import Image
 
 from pak import dat as _dat
 from pak.fetch_pak import fetch as fetch_pak
+from pak.hex_split import hex_tile_screen_offset, hex_voronoi_mask
 from pak.sq_split import GROUND_ANCHOR as _CELL_GROUND_ANCHOR
-from pak.viewpoints import hex_tile_screen_offset, hex_voronoi_mask, sq_tile_screen_offset
+from pak.viewpoints import sq_tile_screen_offset
 
 W = 128
 MAGIC_PINK = (231, 255, 255)
