@@ -88,10 +88,18 @@ sessions.  See "Asset sourcing without cloning" below.
 
 The vanilla (Simutrans-Standard) pak128.Britain on SourceForge SVN
 (`https://sourceforge.net/p/simutrans/code/HEAD/tree/pak128.Britain/`)
-is the pre-fork ancestor and **not used**: vanilla-schema dats,
-~13 generic wavs vs. our 191 extended-fork ones, no blends.  The
-engine's `descriptor/writer/*_writer.cc` is the authoritative
-key list, so the dat diff isn't worth an SVN fetcher.
+is the pre-fork ancestor and **not used** as a port source:
+vanilla-schema dats, 13 generic wavs vs. our 191 extended-fork
+ones, no blends.  The diff fetcher (`pak/fetch_pak.py`) stays on
+Extended too — Extended inherits vanilla's sprite PNGs unchanged
+(it adds dat keys, not renders), so swapping the source wouldn't
+change calibration bytes.  SF SVN holds paksets + tools only; the
+Standard engine moved out and lives at
+`github.com/simutrans/simutrans` (mirror of
+`svn://servers.simutrans.org/simutrans`, per the
+`where-is-the-code.txt` pointer at the SF SVN root).  Key-list
+checks (`descriptor/writer/*_writer.cc` — what hex still reads)
+go against that mirror, not SF.
 
 That said, vanilla is still the cleaner reference when Extended
 has *deprecated* a key that vanilla and hex both still honour.
