@@ -19,7 +19,7 @@ from pak.remap_2d_building import (
     W,
     _split_hex,
 )
-from pak.viewpoints import hex_tile_pixel_mask, hex_tile_screen_offset
+from pak.viewpoints import hex_cell_shape_mask, hex_tile_screen_offset, hex_voronoi_mask
 
 R = 1.0
 SQRT3 = math.sqrt(3.0)
@@ -119,10 +119,10 @@ class TestScreenOffsetsMatchAxial(unittest.TestCase):
 
 
 class TestSplitRoundtrip(unittest.TestCase):
-    """The user's regression: split→restitch must preserve every pixel
-    the cluster's Voronoi partition claims (not just the within-hex-
-    shape band).  Catches `cell_shape_clip=True` regression that would
-    crop the building's upper part to MAGIC_PINK."""
+    """Split→restitch must preserve every pixel the cluster's Voronoi
+    partition claims (not just the within-hex-shape band).  Catches
+    regressions that would crop the building's upper part to
+    MAGIC_PINK by ANDing in `hex_cell_shape_mask`."""
 
     def _restitch(self, hex_cells, orientation):
         offsets = [hex_tile_screen_offset(q, r)
@@ -167,13 +167,13 @@ class TestSplitRoundtrip(unittest.TestCase):
                 )
 
     def test_voronoi_keeps_more_than_cell_shape(self):
-        # With cell_shape_clip removed, the kept-pixel count must be
-        # strictly larger -- if it's equal something else broke.
-        clipped = hex_tile_pixel_mask((0, 0), [(96, 32), (0, 64), (96, 96)],
-                                      image_width=W, cell_shape_clip=True)
-        unclipped = hex_tile_pixel_mask((0, 0), [(96, 32), (0, 64), (96, 96)],
-                                        image_width=W, cell_shape_clip=False)
-        self.assertGreater(unclipped.sum(), clipped.sum())
+        # `hex_voronoi_mask` keeps the full Voronoi cell; ANDing the
+        # cell-shape clip on top can only shrink it -- if it's equal
+        # something else broke.
+        voronoi = hex_voronoi_mask((0, 0), [(96, 32), (0, 64), (96, 96)],
+                                   image_width=W)
+        clipped = voronoi * hex_cell_shape_mask(image_width=W)
+        self.assertGreater(voronoi.sum(), clipped.sum())
 
 
 if __name__ == "__main__":

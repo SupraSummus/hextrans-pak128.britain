@@ -77,8 +77,9 @@ class Slice(NamedTuple):
     `Facing.slices`.  `offset` is the cell-centre position relative to
     the canvas centre; `alpha_mask` (a W×W float array, or None) clips
     the cell to the tile's pixel-ownership region for multi-tile
-    sprites (square dimetric: L1 Voronoi cell ∩ hexagon, see
-    `sq_tile_pixel_mask`)."""
+    sprites.  Source of the mask depends on projection: square pipes
+    through `pak.sq_split` (the An-dz/tilecutter port); hex pipes
+    through `pak.viewpoints.hex_tile_pixel_mask` (projection Voronoi)."""
     label: str
     offset: tuple[int, int]
     alpha_mask: object | None

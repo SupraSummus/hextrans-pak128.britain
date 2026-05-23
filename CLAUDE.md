@@ -893,6 +893,17 @@ rendered.  Per-piece bridge and per-season building atlases
 stitch one layer above, in `pak.bake` (`_stitch_bridge_atlas`,
 `_stitch_seasons`).
 
+**Cut.**  `sq_split.py` is the square dimetric cell cutter -- port
+of An-dz/tilecutter's fixed-mask algorithm.  Seven masks chosen
+by which corner of the footprint a `(y, x, h)` cell sits at; no
+neighbour-distance metric.  Pinned cell-for-cell against
+OilRefinery1955 (`tests/test_sq_split.py`), so the cuts match the
+artists' originals exactly.  Hex projection still cuts via
+`viewpoints.hex_tile_pixel_mask` (= `hex_voronoi_mask` ∩
+`hex_cell_shape_mask`); the analogous TileCutter-style port and
+the production rebake to drop the AA `+1` slack are open in
+TODO.md.
+
 **Dat schema.**  `dat.py` defines the `Vehicle` / `Way` /
 `Building` / `Tree` dataclasses + `parse` / `port_*` seeders +
 `emit_*` writers.  Field-name = dat-key by default; list fields
