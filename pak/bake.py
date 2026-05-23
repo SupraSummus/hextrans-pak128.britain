@@ -27,6 +27,7 @@ from dataclasses import replace
 from math import gcd
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 from pak import REPO_ROOT
@@ -54,7 +55,9 @@ from pak.dat import (
 )
 from pak.fetch_blend import fetch
 from pak.fetch_jh_blend import fetch as fetch_jh
+from pak.fetch_pak import fetch as fetch_pak
 from pak.materials import Material
+from pak.remap_2d_building import remap_to_cells
 from pak.render import RenderPayload
 from pak.viewpoints import (
     HEX_VIEWPOINT,
@@ -652,3 +655,54 @@ def bake_factory_main(spec: Factory | list[Factory], file: str) -> Path:
     """`bake_factory` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_factory(spec, basename=path.stem, out_dir=path.parent)
+
+
+def bake_2d_building(
+    spec: Building, *, basename: str, out_dir: Path,
+    orientation: str = "slash",
+) -> Path:
+    """Remap a blendless upstream 2D building atlas onto a hex 4-hex
+    rhombus -- see TODO.md → "2D-remap for blendless buildings".
+
+    The atlas carries one layout's worth of cells, so SPEC.symmetry
+    must reduce to 1 under `hex_layouts_default` (i.e. CONTINUOUS).
+    Bake and `reemit_dats` both go through `hex_layouts_default` so
+    the lint round-trip stays byte-stable.
+    """
+    if spec.upstream_dat is None:
+        raise ValueError(f"{basename}: SPEC.upstream_dat is required")
+    if (spec.dims_x, spec.dims_y) != (2, 2) or spec.heights != 1:
+        raise ValueError(
+            f"{basename}: bake_2d_building wants dims=2,2 heights=1; got "
+            f"dims={spec.dims_x},{spec.dims_y} heights={spec.heights}",
+        )
+    layouts = hex_layouts_default(spec.symmetry)
+    if layouts != 1:
+        raise ValueError(
+            f"{basename}: bake_2d_building wants symmetry to reduce to "
+            f"layouts=1; got {spec.symmetry!r} → {layouts}",
+        )
+
+    upstream_dat = fetch_pak(spec.upstream_dat)
+    rows = [
+        np.concatenate(
+            remap_to_cells(upstream_dat, spec.name,
+                           layout=0, season=s, orientation=orientation)[0],
+            axis=1,
+        )
+        for s in range(spec.seasons)
+    ]
+    Image.fromarray(np.vstack(rows)).save(out_dir / f"{basename}.png")
+    out_dat = emit_building(spec, out_dir=out_dir, basename=basename,
+                            layouts=layouts)
+    _print_wrote(out_dat)
+    return out_dat
+
+
+def bake_2d_building_main(
+    spec: Building, file: str, *, orientation: str = "slash",
+) -> Path:
+    """`bake_2d_building` keyed off the calling script's `__file__`."""
+    path = Path(file).resolve()
+    return bake_2d_building(spec, basename=path.stem, out_dir=path.parent,
+                            orientation=orientation)

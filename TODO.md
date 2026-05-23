@@ -1122,6 +1122,60 @@ matcher: reject a candidate when the image stem ends in `-[a-
 z0-9]` and the matched blend stem doesn't.  IoU can't catch this
 (the silhouette matches by construction).
 
+**2D-remap for blendless buildings.**  Townhalls (`townhall/townhalls.dat`,
+`Dims=2,2`, five `classical-town-hall-*` variants) have no blend in
+either upstream blends repo (verified 404 against pinned SHAs in both
+`blends.lock` and `jh_blends.lock`); likely also true of other
+square-footprint pre-blend-pipeline assets.  `pak/remap_2d_building.py`
+is the remap primitive: stitch upstream's four `backimage[L][y][x][0]
+[0][s]` cells onto a canvas at `sq_tile_screen_offset`, re-slice at
+`hex_tile_screen_offset` onto a centred-symmetric 4-hex rhombus (three
+orientations available — horizontal / slash / backslash, all
+geometrically congruent under 60° lattice rotation).  `pak.bake.
+bake_2d_building` wraps it for the bake-unit pattern with a `Building`
+SPEC + `emit_building`; three townhalls (`townhall/_00_city.py` /
+`_01_city.py` / `_02_city.py`) ship through `make pak` with the
+`slash` rhombus (the only orientation expressible as engine `Dims=2,2`,
+since horizontal/backslash use axial cells outside the [0,1]² bracket
+range).  Visible artefact: the slash cluster's 128² slice windows reach
+±112 px around the centroid in x, but the sq diamond reaches ±128 px,
+so the sq diamond's leftmost and rightmost ~16-px strips have no hex
+cell to live in -- ~2% of the building pixels are baked as MAGIC_PINK
+on the outer rhombus edges.  Camera mismatch (sq dimetric ~30° vs hex
+60° tilt) is not addressed at all -- buildings read as flatter than
+the hex-projected ground around them.  **Open policy question** still
+stands: project precedent for blendless assets ("Skin-variant matcher
+trap" above) is reject + stub, not remap; this entry's existence
+prejudges the answer.
+
+Concrete next moves IF the answer stays yes:
+(a) **Switch slash → horizontal rhombus** and accept `Dims=3,2`.
+Horizontal-edge cluster's slice windows cover the sq diamond exactly
+(roundtrip loss = 0% on every townhall tested); cost is two empty
+corner cells in the 3×2 bounding rectangle, so the building reserves
+6 map tiles instead of 4.  Engine handles missing `backimage[L][y][x]`
+entries cleanly (empty tiles render transparent); SPEC stays
+`dims_x=3, dims_y=2`, slice cells (q,r) → dat (y, x) = (r, q+1) to
+shift the (-1, 1) cell into the [0, 2] x range.
+(b) Per-pixel affine in the stitch step to scale the sq cells to fit
+the hex-cluster screen extent.  Less surgical than (a) but stays
+`Dims=2,2`.
+(c) Per-layout variation -- upstream ships `layouts=4` with distinct
+visual rotations, the bake uses only L=0 because hex doesn't have a
+clean 90°-rotation analogue.  Defer until orientation policy lands.
+(d) Heights=2 / heights=3 support for 03_CITY / 04_CITY (`bake_2d_
+building` raises today).  Verified empirically that adding heights
+to slash *increases* pixel loss (~8-9%, vs 2% with single-height
+no-mask): the engine's h=0 hex-shape clip excludes ~half the sq
+diamond's content, h=1+ above-anchor rectangles only stack vertically
+and can't claim laterally-misplaced pixels.  Proper heights port
+needs the source to be hex-shape-aligned; sq source isn't.  When
+03/04 actually port, do it via (a)'s horizontal rhombus + heights,
+not slash + heights.
+
+IF the answer flips to no: delete the driver, the bake wrapper, the
+three bake scripts, the test, and revert the Makefile DIRS128 line.
+
 **Distinct-blend multi-object dats** (loco + tender, EMU sets).
 The autoport SPECS pattern handles shared-blend multi-object
 (all objects render from one blend) but not the loco + tender
