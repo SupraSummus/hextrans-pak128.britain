@@ -9,18 +9,26 @@ A small spine that gets the engine to draw something Britain-ish
 under hex.  Order is rough — later items have soft triggers on
 earlier ones.
 
-**Port a distinct-sprite multi-object vehicle.**  Shared-sprite
-multi-object is exercised by `air/dragon_rapide.py` (`SPECS = [
-PASSENGER, MAIL]` → one combined dat sharing one atlas).
-Distinct-sprite (loco + tender, EMU set, carriage family — N
-separate `<basename>.{dat,png}` triples driven by per-output
-`bake_vehicle` calls in one script) is still on paper.  Concrete
-next move: port `gwr-king` (loco + tender) — open the upstream
-blends, see whether loco and tender ship as one .blend with
-collections or two separate .blends, then write the bake script
-calling `bake_vehicle` twice with distinct `basename` (and likely
-distinct `blend`) per output.  Drops the 6 livery refs (extended-
-only).  Will also force the reemit hook (see next entry).
+**Port a distinct-sprite multi-object vehicle (gwr-king).**
+Shared-sprite multi-object is exercised by `air/dragon_rapide.py`
+(`SPECS = [PASSENGER, MAIL]` → one combined dat sharing one
+atlas).  Distinct-sprite (loco + tender, EMU set, carriage family
+— N separate `<basename>.{dat,png}` triples, each with its own
+blend) is still on paper.  Three pieces land together:
+
+* **The port itself.**  Open the upstream `gwr-king` blends, see
+  whether loco and tender ship as one .blend with collections or
+  two separate .blends, write the bake script.  Drops the 6
+  livery refs (extended-only).
+* **Bake-driver API.**  Two equivalent shapes — call
+  `bake_vehicle` twice from the script with distinct `basename`
+  and `blend`, or extend `pak.bake.bake_main` to accept a list of
+  SPECs each with their own `blend=`/`basename=`.  No data either
+  way yet; the port will surface which is less awkward.
+* **Reemit hook.**  `pak/reemit_dats.py` introspects `SPEC` /
+  `SPECS` only — a script with a tender output gets silently
+  missed.  Add a per-script `reemit_dats(out_dir)` hook
+  convention and have `_reemit` prefer it over introspection.
 
 **Expand build scope as categories bake.**  `make all` compiles
 `grounds/`, `air/`, `trains/`, `trams/`, `ways/` today — the
@@ -49,18 +57,6 @@ installing Blender once and only rebaking the touched assets.
 `CLAUDE.md` → "CI" notes this gap.  Trigger: when drift in
 committed vehicle atlases is first observed (or when ~10
 vehicles are baked, whichever comes first).
-
-**Distinct-sprite reemit hook.**  `pak/reemit_dats.py` now handles
-`SPEC` (single) and `SPECS: list[Vehicle]` (shared-sprite multi-
-object, one combined dat).  Distinct-sprite multi-object scripts
-(one script emitting N `<basename>.{dat,png}` triples — designed
-but not yet exercised) still don't fit: the worst case is a
-script with `SPEC` plus an additional tender output that gets
-silently missed.  Concrete next move when the first distinct-
-sprite bake unit lands (`gwr-king` is the canonical candidate):
-add a per-script `reemit_dats(out_dir)` hook convention and have
-`_reemit` prefer it over `SPEC` / `SPECS` introspection.  Trigger:
-distinct-sprite multi-object port.
 
 **Freight-image subsystem unmodelled.**  Hex `vehicle_writer.cc`
 reads `freightimage[<dir>]` (single-freight visual variant),
@@ -136,6 +132,8 @@ the old convention needs a rebake.  Concrete next move when
 that engine port lands: bump `blends.lock` (if helpful) and run
 the full CI rebake; otherwise no work needed until then.  Soft
 trigger.
+
+### Calibration, rendering, materials
 
 **Special-colour PIXVAL handling.**  See `docs/special-colors.md`
 for the full mechanism, palette categories (P1/P2, day-night,
@@ -358,6 +356,8 @@ footprint), add a `vehicle_hex_viewpoint(n_cells)` factory beside
 the building one, and wire the resulting cell layout into the dat.
 Soft trigger.
 
+### Buildings
+
 **Per-blend layout-to-cardinal authoring isn't uniform upstream.**
 Square-projection diff across the six new asymmetric ports lands
 at best-perm IoU ~0.93 (pipeline renders correctly) but the
@@ -578,6 +578,8 @@ facings accordingly.  Seasons (the `s` axis) and height-stacking
 (the `h` axis) are already plumbed end-to-end and tested — same
 axis-multiplication pattern.
 
+### Factories
+
 **Industry catalog port -- 11 single-tile assets shipped, ~45
 multi-tile dats blocked.**  `pak.dat.Factory(Building)` +
 `emit_factories` / `port_factory` / `bake_factory` exercise the
@@ -625,60 +627,52 @@ as one shared-sprite `SPECS` list (and `industry/_1950pubs.py`
 likewise for pub), then walk every affected port's `upgrade=` list
 and restore the dropped entries.
 
-**Hex bridge: bake pipeline shipped, in-engine schema unverified.**
-`pak.dat.Bridge` + `emit_bridge`, `pak.bake.bake_bridge_main`, the
-per-piece `bridge_hex_viewpoint`, and `ways/plate_girder.py`
-exercise the bake side end-to-end (4-row × 6-col atlas: image axes
-/ start dirs / ramp dirs / pillar axes).  What's *not* validated:
-the emitted dat actually loading in-engine.  Three gaps visible in
-the current output:
+### Bridges
 
-* **Hex bridge schema is a guess.**  Dat key tokens
-  (`BackImage[n_s]`, `BackStart[ne]`, …) and the 3-axis / 6-dir
-  layout are translated from upstream's square `[NS]`/`[EW]` and
-  `[N]`/`[S]`/`[E]`/`[W]` keys; hex `bridge_writer.cc` (presumed
-  to exist on the engine side -- `hextrans-pak128/infrastructure/
-  rail_bridges/rail_060_bridge/` is the worked-example pakset)
-  is the authoritative source.  Concrete next move when the
-  Britain pak first builds a `.pak` artifact for bridges: feed
-  `ways/plate_girder.{dat,png}` through makeobj, then load in-
-  engine and read engine logs for unknown-key warnings; if the
-  tokens drift, fix `HEX_BRIDGE_PIECE_LABELS` in `pak.dat` (one
-  source of truth -- bake and emit both read it).
+Bridge pipeline architecture lives in
+[`docs/bake-bridge.md`](docs/bake-bridge.md).  Open work:
 
-* **Depth-clipped Back/Front.**  The Front layer points at the
-  same atlas cell as Back, so the bridge silhouette is fully
-  opaque -- a vehicle traversing the deck vanishes behind the
-  bridge image instead of passing between Back and Front planes.
-  Concrete next move: port the tunnel approach (per-facing camera
-  `clip_start` / `clip_end` at the tile-centre Y plane, doubling
-  the facing count) to `bridge_hex_viewpoint`, grow the atlas to
-  6 rows (Back/Front × 3 pieces), have `emit_bridge` key Front
-  at row + len(piece_labels).  Plane position is more delicate
-  than for tunnels: bridge piece extends along the span axis past
-  the tile so the cut may want to be per-piece (`image` vs `start`
-  vs `ramp`) rather than a single shared depth.
+**Hex bridge schema unverified in-engine.**  Dat key tokens and
+the 3-axis / 6-dir layout (see `HEX_BRIDGE_PIECE_LABELS` in
+`pak.dat`) are translated from upstream's square keys; hex
+`bridge_writer.cc` is the authoritative source.  Concrete next
+move when the Britain pak first builds a bridge `.pak`: feed
+`ways/plate_girder.{dat,png}` through makeobj, then load
+in-engine and read logs for unknown-key warnings; if tokens
+drift, fix `HEX_BRIDGE_PIECE_LABELS` (one source of truth -- bake
+and emit both read it).
 
-* **Variant 2 + season 1 cells.**  Upstream emits four families
-  (variant 1 / variant 2 × season 0 / season 1; variant
-  interleaves under `pillar_asymmetric`, season switches at snow
-  climates).  We emit only variant 1 + season 0.  Concrete next
-  move when asymmetric pillars matter: render a second piece set
-  from a variant-pillar blend (none in JH yet -- see the variant
-  0 entry below) and emit `*2` keys.  Snow follows the building
-  pattern (recolour materials for winter).
+**Depth-clipped Back/Front not yet wired.**  Today the Front
+layer points at the same atlas cell as Back, so the bridge
+silhouette is fully opaque -- a vehicle traversing the deck
+vanishes behind the bridge image instead of passing between Back
+and Front planes.  Concrete next move: port the tunnel approach
+(per-facing camera `clip_start` / `clip_end` at the tile-centre Y
+plane, doubling the facing count) to `bridge_hex_viewpoint`, grow
+the atlas to 6 rows (Back/Front × 3 pieces), have `emit_bridge`
+key Front at row + len(piece_labels).  Plane position is more
+delicate than for tunnels: bridge piece extends along the span
+axis past the tile so the cut may want to be per-piece (`image`
+vs `start` vs `ramp`) rather than a single shared depth.
 
-  `pak.diff_bridge_overview`'s `CASES` table covers image / start /
-  ramp only; add `("Pillar v0", "pillar", "pillar", 0)` (and a
-  matching cell-mapping in `diff_bridge._cells_for_asset` for the
-  pillar columns) once an `asset="pillar"` mode lands in the
-  per-case diff -- the visual loop is otherwise blind to pillar
-  drift.
+**Variant 2 + season 1 cells not emitted.**  Upstream emits four
+families per piece (variant 1 / variant 2 × season 0 / season 1);
+production bake ships variant 1 + season 0 only.  Concrete next
+move when asymmetric pillars matter: render a second piece set
+from a variant-pillar blend (none in JH yet -- see the variant 0
+entry below) and emit `*2` keys.  Snow follows the building
+pattern (recolour materials for winter).
+`pak.diff_bridge_overview`'s `CASES` table covers image / start /
+ramp only; add `("Pillar v0", "pillar", "pillar", 0)` (and a
+matching cell-mapping in `diff_bridge._cells_for_asset` for the
+pillar columns) once an `asset="pillar"` mode lands in the
+per-case diff -- the visual loop is otherwise blind to pillar
+drift.
 
-PlateGirderConcrete (the 1949+ successor in the same upstream dat
-file) is unported -- separate visual family, no JH blend source
-under `ways/plate_girder/`; lands when a `concrete.{blend}` set
-appears or someone authors one.
+**PlateGirderConcrete unported.**  The 1949+ successor in the
+same upstream dat file is a separate visual family with no JH
+blend source under `ways/plate_girder/`; lands when a
+`concrete.{blend}` set appears or someone authors one.
 
 **Plate-girder variant 0 (`BackImage` / `Start` / `Ramp` / `Pillar`
 without trailing `2`) lacks a JH source.**  JH's `end.blend`,
@@ -714,6 +708,8 @@ deg and after a Y-mirror, look for a cleaner permutation, lock it
 in if one appears.  If no rotation closes the gap, the asymmetry is
 JH-vs-upstream geometric drift the probe cannot heal — accept as
 ceiling and move on.
+
+### Grounds
 
 **Climate texture not yet hex-native.**  `climate_texture` is
 vendored from upstream pak128.Britain verbatim (see
@@ -777,6 +773,8 @@ the upstream PNG + dat object name, add the entry, run the diff, fix
 any < 0.90 IoU regressions surfaced (likely 1-pixel rasterisation
 offsets at corner ramps, or palette-multiplier scale mismatches that
 the harness reports as `ratio ≠ 1.0`).
+
+### Ways
 
 **Way square-projection diff calibrations.**  `pak/diff_way.py`
 lands the harness: drives `pak/bake_way.py --projection square
@@ -953,6 +951,8 @@ similar machinery to the ways icon/cursor TODO above), then drop
 `pak.fetch_gui_images` and ship committed sibling PNGs.  Soft
 trigger.
 
+### Trees
+
 **Tree per-season leaf-colour calibration.**  `trees/oak.py`
 ships `seasons=1` (summer only); upstream's `tree.dat` ports
 `seasons=5` (autumn / winter / spring / winter-snow added).
@@ -1008,18 +1008,6 @@ enabling `trees/` in DIRS128: port the other three species so
 all four bake scripts exist, then `git rm trees/tree.dat` and
 add `trees` to DIRS128.  Trigger: enabling trees in the build.
 
-**Bulk-strip remaining unported upstream dats?**  Each upstream
-dat is deleted once its bake script's SPEC verifies (CLAUDE.md →
-"Bake units" → "Upstream dats get deleted once ported"), but
-that's per-asset.  Until the catalog is ported, ~870 unported
-flat dats sit in `trains/` alongside the per-asset triples; they
-can't compile (their PNG refs target stripped image dirs) and
-would `Name=`-collide with the eventual ports.  Concrete next
-move when makeobj-on-tree first matters: either let the
-incremental per-port deletes drive it, or strip them all up
-front and fetch via `pak.lock` when seeding new ports.  Soft
-trigger.
-
 **Batch multiple blends through one Blender session.**  Each bake
 script spawns a fresh `blender -b -P pak/render.py` -- ~1-2 s of
 startup per asset, then ~4 s per Cycles facing.  Single-asset
@@ -1038,6 +1026,8 @@ rebake`-style sweeps, route multi-season/multi-piece bakes
 through it first (smallest blast radius -- known same engine /
 viewpoint, just different blends).  Soft trigger; the per-asset
 overhead is real but small.
+
+### Tunnels
 
 **Hex tunnel: bake pipeline shipped, deferred features.**
 `pak.dat.Tunnel` + `emit_tunnel`, `tunnel_hex_viewpoint`, and
@@ -1086,6 +1076,8 @@ After the spine: expand by asset family (rail vehicles, road
 vehicles, buildings, industries).  Per-family progress is
 recorded by deleting that family's entry from this file when it's
 done, not by adding "completed" notes.
+
+### Batch porting
 
 **Polish pass on shipped-but-uncalibrated trains.**  ~300 ports
 in the trains/ catalog landed at IoU 0.5-0.93 — silhouette
@@ -1176,38 +1168,15 @@ not slash + heights.
 IF the answer flips to no: delete the driver, the bake wrapper, the
 three bake scripts, the test, and revert the Makefile DIRS128 line.
 
-**Distinct-blend multi-object dats** (loco + tender, EMU sets).
-The autoport SPECS pattern handles shared-blend multi-object
-(all objects render from one blend) but not the loco + tender
-case where the loco uses `gwr-king.blend` and the tender uses
-`gwr-king-tender.blend`.  Concrete next move: extend
-`pak.bake.bake_main` to accept a list of SPECS where each
-declares its own `blend=` and `basename=`, call `bake_vehicle`
-once per output.  Worked example skeleton in `gwr-king`.
-
-**Upstream stub dats** — ~25 dats hit "no image refs" or
-HTTP 404 on the upstream PNG fetch.  These are upstream-state
-issues (dats authored without art, or art removed without dat
-cleanup).  Not portable from our side.  Concrete next move:
-maintain a skip-list (or just leave the dats unported) and
-revisit if upstream fills the art back in.
-
 **Nested tile-size dirs** (`boats/boats192/`, `boats/boats224/`,
-`boats/boats256/`, `air/air192/`, `air/air256/`).  These are
-higher-resolution sprite variants for zoom-in display.  The hex
-bake only produces 128 px tile renders, so `diff_upstream` fails
-with a shape-mismatch when comparing against the high-res
-upstream PNG.  Concrete next move: either skip these categories
-(hex engine may not need high-res variants at all — check
-`SupraSummus/hextrans` engine) or extend the bake pipeline to
-emit per-zoom-level atlases.
-
-**Multi-resolution support.**  Related to the previous: upstream
-Britain ships at 128/192/224/256 px tile sizes (the `boatsNNN/`
-and `airNNN/` subdirs).  Hex engine plans?  Concrete next move:
-look at `hextrans/src/simutrans/display/` for zoom-level
-configuration and decide whether to mirror the upstream
-multi-res convention or stay 128-only.
+`boats/boats256/`, `air/air192/`, `air/air256/`).  Higher-
+resolution sprite variants for zoom-in display.  The hex bake only
+produces 128 px tile renders, so `diff_upstream` fails with a
+shape-mismatch when comparing against the high-res upstream PNG.
+Concrete next move when zoom-in becomes interesting: read
+`hextrans/src/simutrans/display/` for whether the hex engine
+supports multi-res at all, then either skip the dirs or extend the
+bake pipeline to emit per-zoom-level atlases.
 
 **`pak.render` bpy parameter passing now redundant.**  Fourteen
 functions in `pak/render.py` (plus `exit_edit_mode` consumed by
