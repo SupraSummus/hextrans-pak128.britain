@@ -12,10 +12,7 @@ import math
 import pickle
 import unittest
 
-import numpy as np
-
 from pak.dat import building_footprint_centroid
-from pak.hex_split import hex_tile_pixel_mask
 from pak.materials import Lighting
 from pak.render import CYCLES, EEVEE, BlendAuthored
 from pak.viewpoints import (
@@ -274,67 +271,6 @@ class TestBuildingSquareViewpoint(unittest.TestCase):
                 (0.0, 0.0, -h * sq_height_level_world_z(upt)),
             )
             self.assertEqual(f.slices[0].label, f"L{l}_Y0_X0_H{h}")
-
-
-class TestHexTilePixelMask(unittest.TestCase):
-    """`hex_tile_pixel_mask` is the world-Euclidean Voronoi ∩ projected-
-    hex clip that keeps multi-tile hex sprites disjoint.  Hex-lattice
-    neighbours adjacent in `HEX_KOORD_*_WORLD` must produce a clean
-    edge cut; the projected hex shape clips an isolated tile."""
-
-    def test_single_tile_collapses_to_hex(self):
-        m = hex_tile_pixel_mask((0, 0))
-        # All four sprite corners sit outside the projected hex (anchor
-        # at (W/2, 3W/4), hex spans dy ∈ [-W/4, +W/4]).
-        self.assertEqual(m[0, 0], 0.0)
-        self.assertEqual(m[0, DEFAULT_W - 1], 0.0)
-        self.assertEqual(m[DEFAULT_W - 1, 0], 0.0)
-        self.assertEqual(m[DEFAULT_W - 1, DEFAULT_W - 1], 0.0)
-        # Anchor + sprite centre inside; E/W hex tips inside one pixel.
-        self.assertEqual(m[3 * DEFAULT_W // 4, DEFAULT_W // 2], 1.0)
-        self.assertEqual(m[DEFAULT_W // 2, DEFAULT_W // 2], 1.0)
-        self.assertEqual(m[3 * DEFAULT_W // 4, DEFAULT_W - 2], 1.0)
-        self.assertEqual(m[3 * DEFAULT_W // 4, 1], 1.0)
-
-    def test_adjacent_tiles_disjoint_on_canvas(self):
-        # 2x1 footprint along koord+x.  Tile B is one `HEX_KOORD_Q_
-        # WORLD` step from A on screen — their projected hexes meet
-        # along a shared edge, must partition the canvas with no
-        # overlap once pasted at their respective slots.
-        a_off, b_off = (-48, -16), (48, 16)
-        ma = hex_tile_pixel_mask(a_off, [b_off])
-        mb = hex_tile_pixel_mask(b_off, [a_off])
-        canvas_size = 256
-        ca = np.zeros((canvas_size, canvas_size), dtype=np.float32)
-        cb = np.zeros((canvas_size, canvas_size), dtype=np.float32)
-
-        def paste(canvas, mask, off):
-            cx = canvas_size // 2 + off[0] - DEFAULT_W // 2
-            cy = canvas_size // 2 + off[1] - DEFAULT_W // 2
-            canvas[cy:cy + DEFAULT_W, cx:cx + DEFAULT_W] = mask
-        paste(ca, ma, a_off)
-        paste(cb, mb, b_off)
-        overlap = ((ca > 0) & (cb > 0)).sum()
-        self.assertEqual(overlap, 0)
-
-    def test_ring_voronoi_contained_in_cell_shape(self):
-        # The projected hex cell-shape coincides with the Voronoi cell
-        # against the six hex-lattice neighbours, so adding all six as
-        # `other_offsets` can only shrink the mask -- never grow it.
-        # Strict equality fails on the +1 AA slack ring and on the
-        # closer-to-viewer tie-break, so containment is the invariant.
-        neighbours = [
-            (int(round(x)), int(round(y)))
-            for x, y in (hex_tile_screen_offset(qx, ry)
-                         for qx, ry in [(1, 0), (0, 1), (-1, 1),
-                                        (-1, 0), (0, -1), (1, -1)])
-        ]
-        m_ring = hex_tile_pixel_mask((0, 0), neighbours)
-        m_solo = hex_tile_pixel_mask((0, 0))
-        self.assertTrue(np.all(m_ring <= m_solo))
-        # Bulk of the cell-shape (well inside the strict hex) survives
-        # the ring cut -- not all of m_solo is slack.
-        self.assertGreater(m_ring.sum(), 0.9 * m_solo.sum())
 
 
 class TestViewpointPickleRoundTrip(unittest.TestCase):

@@ -1,8 +1,8 @@
 """Remap upstream 2D-only buildings (no `.blend`) onto the hex tile lattice.
 
-Stitch sq-dimetric cells with `sq_tile_screen_offset`, re-slice with
-`hex_tile_screen_offset` onto a 4-hex rhombus.  Bake-unit entry point
-is `pak.bake.bake_2d_building`; the policy gap and the pink-ring /
+Stitch sq-dimetric cells via `pak.sq_split.stitch`, re-slice via
+`pak.hex_split.split` onto a 4-hex rhombus.  Bake-unit entry point is
+`pak.bake.bake_2d_building`; the policy gap and the pink-ring /
 camera-mismatch artefacts are in TODO.md → "2D-remap for blendless
 buildings".
 """
@@ -18,9 +18,8 @@ from PIL import Image
 
 from pak import dat as _dat
 from pak.fetch_pak import fetch as fetch_pak
-from pak.hex_split import hex_tile_screen_offset, hex_voronoi_mask
-from pak.sq_split import GROUND_ANCHOR as _CELL_GROUND_ANCHOR
-from pak.viewpoints import sq_tile_screen_offset
+from pak.hex_split import hex_tile_screen_offset, split as hex_split
+from pak.sq_split import cell_anchors as sq_anchors, stitch as sq_stitch
 
 W = 128
 MAGIC_PINK = (231, 255, 255)
@@ -47,42 +46,42 @@ def _crop_cell(atlas: np.ndarray, row: int, col: int) -> np.ndarray:
 
 def _stitch_sq(cells_yx: dict[tuple[int, int], np.ndarray],
                canvas_size: int = 512) -> np.ndarray:
+    """Stitch sq-dimetric cells onto a canvas via `pak.sq_split.stitch`.
+
+    Footprint centroid lands at the canvas centre; `sq_split` handles the
+    ground-anchor offset inside each 128² sprite and the PINK-keyed paste.
+    """
+    cells_yxh = {(y, x, 0): cell for (y, x), cell in cells_yx.items()}
+    anchors_raw = sq_anchors(cells_yxh)
+    cc = canvas_size // 2
+    anchors = {k: (a[0] + cc, a[1] + cc) for k, a in anchors_raw.items()}
     canvas = np.empty((canvas_size, canvas_size, 4), dtype=np.uint8)
     canvas[..., :3] = MAGIC_PINK
     canvas[..., 3] = 255
-    cx, cy = canvas_size // 2, canvas_size // 2
-    ax, ay = _CELL_GROUND_ANCHOR
-    for (y, x), cell in cells_yx.items():
-        dx, dy = sq_tile_screen_offset(x - 0.5, y - 0.5)
-        x0 = int(round(cx + dx)) - ax
-        y0 = int(round(cy + dy)) - ay
-        keyed = (cell[..., :3] == np.array(MAGIC_PINK)).all(axis=-1)
-        sub = canvas[y0:y0 + W, x0:x0 + W]
-        sub[~keyed] = cell[~keyed]
+    sq_stitch(cells_yxh, anchors, into_canvas=canvas)
     return canvas
 
 
 def _split_hex(stitched: np.ndarray,
                orientation: str) -> list[np.ndarray]:
+    """Cut the stitched canvas into 4 hex cells via `pak.hex_split.split`.
+
+    Per-cell axial keys anchor each 128² sprite at its hex screen offset
+    relative to the cluster centroid; the cutter handles overlap and
+    bottom-trim against the hex polygon.
+    """
     cells = RHOMBUS_ORIENTATIONS[orientation]
     offsets = [hex_tile_screen_offset(q, r) for q, r in cells]
     cent_x = sum(o[0] for o in offsets) / len(offsets)
     cent_y = sum(o[1] for o in offsets) / len(offsets)
-    rel = [(int(round(ox - cent_x)), int(round(oy - cent_y)))
-           for (ox, oy) in offsets]
-
     ccx, ccy = stitched.shape[1] // 2, stitched.shape[0] // 2
-    ax, ay = _CELL_GROUND_ANCHOR
-
-    outs = []
-    for i, (dx, dy) in enumerate(rel):
-        slc = stitched[ccy + dy - ay:ccy + dy - ay + W,
-                       ccx + dx - ax:ccx + dx - ax + W].copy()
-        others = [rel[j] for j in range(len(rel)) if j != i]
-        keep = hex_voronoi_mask((dx, dy), others, image_width=W).astype(bool)
-        slc[~keep] = (*MAGIC_PINK, 255)
-        outs.append(slc)
-    return outs
+    anchors = {
+        (q, r, 0): (int(round(ox - cent_x)) + ccx,
+                    int(round(oy - cent_y)) + ccy)
+        for (q, r), (ox, oy) in zip(cells, offsets, strict=True)
+    }
+    out_cells = hex_split(stitched, anchors, image_width=W)
+    return [out_cells[(q, r, 0)] for q, r in cells]
 
 
 def _backimage_cells(obj_pairs: list[tuple[str, str]],

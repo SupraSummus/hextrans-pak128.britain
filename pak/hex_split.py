@@ -8,11 +8,6 @@ Counterpart to `pak.sq_split`.  Same projection-agnostic driver in
   * `cell_anchors` over hex axial `(qx, ry, h)` keys -- screen lattice
     via `hex_tile_screen_offset` plus per-`h` `paksize` shift.
   * `_paint_key` -- back-first sort under the hex projection.
-
-The legacy Voronoi-mask primitives (`hex_voronoi_mask`,
-`hex_cell_shape_mask`, `hex_tile_pixel_mask`) remain exported for the
-2D-remap-building path (`pak.remap_2d_building`), which partitions a
-4-hex rhombus via Voronoi rather than going through the cutter.
 """
 
 from __future__ import annotations
@@ -55,67 +50,6 @@ def hex_polygon_bottom_trim(image_width: int = DEFAULT_W) -> np.ndarray:
     below_anchor = dy >= 0
     outside_lower_flanks = (dy > quarter) | (np.abs(dx) + dy > half)
     return below_anchor & outside_lower_flanks
-
-
-def hex_voronoi_mask(
-    my_offset: tuple[int, int],
-    other_offsets: list[tuple[int, int]] = (),
-    image_width: int = DEFAULT_W,
-):
-    """Pure projection-Voronoi mask for the hex lattice -- no cell-shape
-    clip, no AA slack.  Retained for `pak.remap_2d_building` (the 4-hex
-    rhombus partition); the cutter does NOT use it.
-
-    The `hex_proj_shear` extrinsic compresses world y by `1/√3`, so
-    world Euclidean distance² between two screen-px offsets `(Δx, Δy)`
-    equals `(Δx² + 3·Δy²) / (W/2R)²`.
-    """
-    half = image_width // 2
-    full = image_width
-    ys, xs = np.indices((full, full))
-    dx_cell = xs - half
-    anchor_y = 3 * full // 4
-    dy_cell = ys - anchor_y
-    my_dist = dx_cell * dx_cell + 3 * dy_cell * dy_cell
-    keep = np.ones((full, full), dtype=bool)
-    mx, my = my_offset
-    for ox, oy in other_offsets:
-        rel_x, rel_y = ox - mx, oy - my
-        rdx = dx_cell - rel_x
-        rdy = dy_cell - rel_y
-        other_dist = rdx * rdx + 3 * rdy * rdy
-        keep &= (my_dist < other_dist) | (
-            (my_dist == other_dist) & (rel_y < 0)
-        )
-    return keep.astype(np.float32)
-
-
-def hex_cell_shape_mask(image_width: int = DEFAULT_W):
-    """Hex polygon mask with `+1` AA slack.  Retained for
-    `pak.remap_2d_building`; the cutter uses `hex_polygon_bottom_trim`
-    directly."""
-    half = image_width // 2
-    quarter = image_width // 4
-    full = image_width
-    ys, xs = np.indices((full, full))
-    dx_cell = xs - half
-    anchor_y = 3 * full // 4
-    dy_cell = ys - anchor_y
-    abs_x = np.abs(dx_cell)
-    abs_y = np.abs(dy_cell)
-    return ((abs_y <= quarter + 1)
-            & (abs_x + abs_y <= half + 1)).astype(np.float32)
-
-
-def hex_tile_pixel_mask(
-    my_offset: tuple[int, int],
-    other_offsets: list[tuple[int, int]] = (),
-    image_width: int = DEFAULT_W,
-):
-    """Legacy Voronoi-intersect-shape mask.  Retained for
-    `pak.remap_2d_building`; the cutter does NOT use it."""
-    return (hex_voronoi_mask(my_offset, other_offsets, image_width)
-            * hex_cell_shape_mask(image_width))
 
 
 def _paint_key(k):

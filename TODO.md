@@ -442,21 +442,6 @@ on the cache being populated; flake-resilient because the manifest
 is SHA-pinned.  Trigger: when a non-refinery multi-h, multi-tile
 asset actually ports and we want pre-bake confidence.
 
-**Open: move `pak.remap_2d_building` onto the cell-split cutter.**
-The 2D-remap path (blendless townhalls sliced onto a 4-hex
-rhombus) still partitions via the legacy
-`pak.hex_split.hex_voronoi_mask` + `hex_cell_shape_mask` (the
-latter carrying `+1` AA slack on every edge).  Now that the cutter
-handles the hex polygon partition cleanly through
-`hex_polygon_bottom_trim`, the remap path could drop both legacy
-primitives.  The slack discussion (`+1` AA ring vs strict polygon)
-becomes a remap-only decision: does the rhombus art want the AA
-ring or strict cuts?  Concrete next move: rewrite `_split_hex` to
-build per-cell anchors and call `pak.cell_split.cell_keep_masks`;
-verify the remapped townhall outputs byte-identical (or visibly
-indistinguishable) on the existing test fixture.  Trigger: next
-touch of `remap_2d_building` for any reason.
-
 **Open: `Building.symmetry` schema knob — extension.**
 `Symmetry` enum ships `NONE` (default) and `CONTINUOUS`
 (gasometer); `hex_layouts_default(symmetry) = 6//gcd(6,
