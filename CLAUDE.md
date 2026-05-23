@@ -470,10 +470,6 @@ Before committing any new bulk-content type, ask: can the
 runtime fetch it from a pinned upstream SHA over HTTP instead?
 If yes, don't commit it.
 
-The rewrite was destructive: clone hashes changed, outstanding
-branches needed rebasing.  Done.  Further filter-repo passes are
-possible but expect the same coordination cost.
-
 ## Asset sourcing without cloning
 
 Two upstream repos are **URL-addressable, SHA-pinned,
@@ -824,29 +820,13 @@ the durable home.
 
 **Asset scripts carry asset content, not infrastructure docs.**
 Per-asset bake scripts are small (~30–60 lines): a one-line
-docstring naming the asset, the SPEC (with its bake-meta fields),
-and the `if __name__` invocation.  The docstring is not a place
-for "`SPEC` mirrors upstream `<X>.dat`; `blend=` is shared with
-every rail grade; `materials=` is the per-variant recolour — see
-CLAUDE.md → 'Rail-grade material recolour'" template paragraphs,
-"Run from the repo root: `python3 -m <module>`" invocation hints,
-"First X port — exercises the Y axis of the Z schema" port-event
-narration, or "See `<other-asset>.py` for the bake-unit pattern"
-cross-references.  Shared infrastructure (the bake-unit shape,
-the rail-recolour pattern, alignment modes, projection contracts)
-lives in this file once; the port event is in `git log`; the
-invocation rule is one `python3 -m` away from any module path.
-Repeating any of it per-asset rots the moment the conventions
-shift — and N copies of "see CLAUDE.md → …" add nothing past the
-first.
-
-What does go in an asset script: the upstream `#` comments
-preserved as described above, SPEC-value rationale ("60 lb/yard
-fits better — axle loading too low at Ahrons' 55"), genuine
-calibration notes that don't generalise.  Domain caveats that
-span multiple assets (e.g. cast-iron / fishbelly sprite-vs-era
-mismatch, hex z compensation for buildings) belong in TODO.md or
-CLAUDE.md once, not in N asset-script docstrings.
+docstring naming the asset, the SPEC, and the `if __name__`
+invocation.  Shared infrastructure (bake-unit shape, projection
+contracts, invocation rules, cross-asset domain caveats) lives in
+this file once.  What goes in the asset script: preserved upstream
+`#` comments, SPEC-value rationale ("60 lb/yard fits better — axle
+loading too low at Ahrons' 55"), genuine calibration notes that
+don't generalise.
 
 ### Atlas layout
 
@@ -1079,40 +1059,25 @@ billboard expanded over an `ages × seasons` grid.  Five ages
 plus a `winter-3` fallback for age 4 via `clamp_age_overrides`.
 EEVEE backend.  See [`docs/bake-tree.md`](docs/bake-tree.md).
 
+## Bridge-bake architecture
+
+Bridges (`Obj=bridge`) port via a `Bridge` SPEC +
+`bake_bridge_main(SPEC, __file__)`.  Per-piece renders (image /
+start / ramp / pillar) go through `bridge_hex_viewpoint(piece)`
+and stitch into a 4-row atlas; `pak.dat.HEX_BRIDGE_PIECE_LABELS`
+is the single source of truth for atlas labels shared by bake,
+emit, and viewpoint.  See
+[`docs/bake-bridge.md`](docs/bake-bridge.md).
+
 ## Tunnel-bake architecture
 
 Tunnels (`Obj=tunnel`) port via a `Tunnel` SPEC +
 `bake_tunnel_main(SPEC, __file__)` — 6 hex-edge portal facings
 rendered through `tunnel_hex_viewpoint()` into a single-row 6-cell
-atlas.  Facing labels are `n, ne, se, s, sw, nw` matching
-`hex_keys::edge_names` in the engine writer; `emit_tunnel` ships
-lowercase `frontimage[<edge>][0]=` only.
-
-**Two opposite key conventions live in this codebase.**  The hex
-engine uses **low-edge** naming -- `frontimage[<edge>]` = portal
-whose mouth faces `<edge>` (the direction a train exits) -- so
-`_HEX_TUNNEL_MODEL_ROT_DEG`'s rotation table is just
-`θ(e) = world_angle_of(e)`.  Upstream pak128.Britain inherits
-pak64's **high-edge** naming -- key names the edge the mountain
-rises against, mouth points opposite -- so `FrontImage[S]` shows
-mouth-points-north.  `tunnel_desc.cc:9-34` documents the engine's
-N↔S, E↔W permutation between the two ("pre-port pak64 tunnel
-images load at slots with N↔S and E↔W permuted; new hex art needs
-to follow the low-edge convention").  Production hex stays
-low-edge; `tunnel_square_viewpoint`'s calibration rotation table
-goes high-edge so a label-to-label diff against upstream cells
-aligns cell-for-cell.
-
-`diff_tunnel` alpha-composites upstream's `BackImage` under
-`FrontImage` per facing -- same pattern as
-`diff_buildings._stitch_upstream_layout` specialised to the tunnel
-case where both layers land on the same 128² cell.  Stone-tunnel
-ships Back only for N/W, so S/E rows fall back to Front-only and
-carry an XOR contribution from our whole-portal silhouette (worst
-IoU ~0.72 on those rows, ~0.81 on Back-present rows;
-`FAIL_IOU=0.65`).  Future variants (e.g. brick-face) that ship
-Back on all four cardinals will test the apples-to-apples Back+Front
-path directly.
+atlas.  Engine uses low-edge naming (mouth faces `<edge>`), upstream
+inherited pak64's high-edge convention — the calibration diff and
+production bake go opposite ways on the rotation table.  See
+[`docs/bake-tunnel.md`](docs/bake-tunnel.md).
 
 ## CI
 
