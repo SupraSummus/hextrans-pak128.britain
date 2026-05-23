@@ -18,11 +18,11 @@ from PIL import Image
 
 from pak import dat as _dat
 from pak.fetch_pak import fetch as fetch_pak
-from pak.viewpoints import hex_tile_pixel_mask, hex_tile_screen_offset, sq_tile_screen_offset
+from pak.sq_split import GROUND_ANCHOR as _CELL_GROUND_ANCHOR
+from pak.viewpoints import hex_tile_screen_offset, hex_voronoi_mask, sq_tile_screen_offset
 
 W = 128
 MAGIC_PINK = (231, 255, 255)
-_CELL_GROUND_ANCHOR = (64, 96)
 
 # Three 4-hex rhombus orientations, named after the orientation of the
 # shared interior edge whose midpoint is the cluster centroid.  All C2-
@@ -78,8 +78,7 @@ def _split_hex(stitched: np.ndarray,
         slc = stitched[ccy + dy - ay:ccy + dy - ay + W,
                        ccx + dx - ax:ccx + dx - ax + W].copy()
         others = [rel[j] for j in range(len(rel)) if j != i]
-        keep = hex_tile_pixel_mask((dx, dy), others, image_width=W,
-                                   cell_shape_clip=False).astype(bool)
+        keep = hex_voronoi_mask((dx, dy), others, image_width=W).astype(bool)
         slc[~keep] = (*MAGIC_PINK, 255)
         outs.append(slc)
     return outs

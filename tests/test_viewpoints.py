@@ -30,7 +30,6 @@ from pak.viewpoints import (
     hex_tile_pixel_mask,
     hex_tile_screen_offset,
     sq_height_level_world_z,
-    sq_tile_pixel_mask,
     sun_rotation_for_camera,
     tree_hex_viewpoint,
     tree_square_viewpoint,
@@ -275,47 +274,6 @@ class TestBuildingSquareViewpoint(unittest.TestCase):
                 (0.0, 0.0, -h * sq_height_level_world_z(upt)),
             )
             self.assertEqual(f.slices[0].label, f"L{l}_Y0_X0_H{h}")
-
-
-class TestSqTilePixelMask(unittest.TestCase):
-    """`sq_tile_pixel_mask` is the dimetric-L1 Voronoi ∩ hex clip that
-    keeps multi-tile sprites disjoint — the convention upstream
-    pak128.Britain uses for back-to-front paint without overdraw."""
-
-    def test_single_tile_collapses_to_hexagon(self):
-        # No neighbours -> only the hex clip applies.  Four corner
-        # pixels are outside, the cell centre and ground anchor are in.
-        m = sq_tile_pixel_mask((0, 0))
-        # Hex corners are clipped (1-px slack absorbs the AA edge ring).
-        self.assertEqual(m[0, 0], 0.0)
-        self.assertEqual(m[0, DEFAULT_W - 1], 0.0)
-        self.assertEqual(m[DEFAULT_W - 1, 0], 0.0)
-        self.assertEqual(m[DEFAULT_W - 1, DEFAULT_W - 1], 0.0)
-        # Cell centre and ground anchor are inside.
-        self.assertEqual(m[DEFAULT_W // 2, DEFAULT_W // 2], 1.0)
-        self.assertEqual(m[3 * DEFAULT_W // 4, DEFAULT_W // 2], 1.0)
-
-    def test_adjacent_tiles_disjoint_on_canvas(self):
-        # 2x1 footprint, even layout: tile A at (-32, -16) and tile B at
-        # (+32, +16) from canvas centre.  Each tile's mask placed at its
-        # canvas position must NOT overlap with its neighbour's — the
-        # strict-ownership invariant that motivated the whole design.
-        a_off, b_off = (-32, -16), (32, 16)
-        ma = sq_tile_pixel_mask(a_off, [b_off])
-        mb = sq_tile_pixel_mask(b_off, [a_off])
-        canvas_size = 256
-        ca = np.zeros((canvas_size, canvas_size), dtype=np.float32)
-        cb = np.zeros((canvas_size, canvas_size), dtype=np.float32)
-
-        def paste(canvas, mask, off):
-            cx = canvas_size // 2 + off[0] - DEFAULT_W // 2
-            cy = canvas_size // 2 + off[1] - DEFAULT_W // 2
-            canvas[cy:cy + DEFAULT_W, cx:cx + DEFAULT_W] = mask
-        paste(ca, ma, a_off)
-        paste(cb, mb, b_off)
-        # Both > 0 anywhere = overlap.
-        overlap = ((ca > 0) & (cb > 0)).sum()
-        self.assertEqual(overlap, 0)
 
 
 class TestHexTilePixelMask(unittest.TestCase):

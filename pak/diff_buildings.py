@@ -81,6 +81,7 @@ from pak.diff import (
 from pak.fetch_blend import fetch as _fetch_jp
 from pak.fetch_jh_blend import fetch as _fetch_jh
 from pak.fetch_pak import fetch as fetch_pak
+from pak.sq_split import GROUND_ANCHOR as _CELL_GROUND_ANCHOR
 from pak.upstream import image_stem
 from pak.viewpoints import DEFAULT_W, sq_tile_screen_offset
 
@@ -187,12 +188,9 @@ def _atlas_cell(atlas, row: int, col: int):
     return atlas[row * 128:(row + 1) * 128, col * 128:(col + 1) * 128]
 
 
-# Pixel position of the tile's z=0 ground anchor within its 128×128 cell.
-# Simutrans dimetric convention: ground sits at (64, 96) -- bottom of
-# the diamond -- NOT cell centre.  Anchoring upstream cells at the
-# ground point (rather than cell centre) matches where the engine
-# paints them.
-_CELL_GROUND_ANCHOR = (64, 96)
+# `_CELL_GROUND_ANCHOR` imported at module top from `pak.sq_split` so
+# the cutter and the calibration stitch agree on the convention --
+# ground sits at (64, 96), bottom of the diamond, NOT cell centre.
 
 
 # Vertical px offset from canvas centre to where world (0, 0, 0) lands
