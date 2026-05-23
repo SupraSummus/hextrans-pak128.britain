@@ -12,14 +12,8 @@ import unittest
 
 import numpy as np
 
-from pak.hex_split import hex_cell_shape_mask, hex_tile_screen_offset, hex_voronoi_mask
-from pak.remap_2d_building import (
-    _CELL_GROUND_ANCHOR,
-    MAGIC_PINK,
-    RHOMBUS_ORIENTATIONS,
-    W,
-    _split_hex,
-)
+from pak.hex_split import hex_tile_screen_offset, stitch as hex_stitch
+from pak.remap_2d_building import MAGIC_PINK, RHOMBUS_ORIENTATIONS, _split_hex
 
 R = 1.0
 SQRT3 = math.sqrt(3.0)
@@ -119,31 +113,29 @@ class TestScreenOffsetsMatchAxial(unittest.TestCase):
 
 
 class TestSplitRoundtrip(unittest.TestCase):
-    """Split→restitch must preserve every pixel the cluster's Voronoi
-    partition claims (not just the within-hex-shape band).  Catches
-    regressions that would crop the building's upper part to
-    MAGIC_PINK by ANDing in `hex_cell_shape_mask`."""
+    """`_split_hex` then `pak.hex_split.stitch` must recover the source
+    canvas on every claimed pixel.  Pins the rhombus integration; the
+    cutter's own partition invariant is pinned in `test_sq_split`."""
 
     def _restitch(self, hex_cells, orientation):
-        offsets = [hex_tile_screen_offset(q, r)
-                   for q, r in RHOMBUS_ORIENTATIONS[orientation]]
+        # Inverse of `_split_hex`: same anchors, hand the per-cell sprites
+        # to `pak.hex_split.stitch`.  Mirrors the production split path.
+        cells_ax = RHOMBUS_ORIENTATIONS[orientation]
+        offsets = [hex_tile_screen_offset(q, r) for q, r in cells_ax]
         cent_x = sum(o[0] for o in offsets) / len(offsets)
         cent_y = sum(o[1] for o in offsets) / len(offsets)
-        rel = [(int(round(ox - cent_x)), int(round(oy - cent_y)))
-               for ox, oy in offsets]
+        anchors = {(q, r, 0): (int(round(ox - cent_x)) + 256,
+                               int(round(oy - cent_y)) + 256)
+                   for (q, r), (ox, oy) in zip(cells_ax, offsets, strict=True)}
+        cells_dict = {(q, r, 0): cell
+                      for (q, r), cell in zip(cells_ax, hex_cells, strict=True)}
         canvas = np.empty((512, 512, 4), dtype=np.uint8)
         canvas[..., :3] = MAGIC_PINK
         canvas[..., 3] = 255
-        ccx, ccy = 256, 256
-        ax, ay = _CELL_GROUND_ANCHOR
-        for (dx, dy), cell in zip(rel, hex_cells, strict=True):
-            y0, x0 = ccy + dy - ay, ccx + dx - ax
-            keyed = (cell[..., :3] == np.array(MAGIC_PINK)).all(axis=-1)
-            sub = canvas[y0:y0 + W, x0:x0 + W]
-            sub[~keyed] = cell[~keyed]
+        hex_stitch(cells_dict, anchors, into_canvas=canvas)
         return canvas
 
-    def test_roundtrip_preserves_voronoi_pixels(self):
+    def test_roundtrip_preserves_claimed_pixels(self):
         # Deterministic non-MAGIC_PINK gradient so collisions don't
         # mask roundtrip mismatches.  Cluster centre at (256, 256).
         ys, xs = np.indices((512, 512))
@@ -165,16 +157,6 @@ class TestSplitRoundtrip(unittest.TestCase):
                     reassembled[covered], canvas[covered],
                     err_msg=f"{orientation}: roundtrip lost pixels",
                 )
-
-    def test_voronoi_keeps_more_than_cell_shape(self):
-        # `hex_voronoi_mask` keeps the full Voronoi cell; ANDing the
-        # cell-shape clip on top can only shrink it -- if it's equal
-        # something else broke.
-        voronoi = hex_voronoi_mask((0, 0), [(96, 32), (0, 64), (96, 96)],
-                                   image_width=W)
-        clipped = voronoi * hex_cell_shape_mask(image_width=W)
-        self.assertGreater(voronoi.sum(), clipped.sum())
-
 
 if __name__ == "__main__":
     unittest.main()

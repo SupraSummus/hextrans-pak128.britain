@@ -902,9 +902,10 @@ trim mask, paint-key sort, anchor lattice) via `cell_split.Lattice`.
 Pinned pixel-exact against An-dz/tilecutter's 7-mask cutter on
 OilRefinery1955 (`tests/test_sq_split.py` — the fixed masks are
 the closed-form lookup for the same partition the iteration
-computes).  The legacy hex Voronoi primitives stay exported from
-`pak.hex_split` for `pak.remap_2d_building` (4-hex rhombus
-partition), which doesn't go through the cutter.
+computes).  `pak.remap_2d_building`'s 4-hex-rhombus blendless-
+building partition routes through the same cutter (via
+`pak.hex_split.split`) since the Voronoi-primitive cleanup;
+roundtrip is pinned in `tests/test_remap_2d_building.py`.
 
 **Dat schema.**  `dat.py` defines the `Vehicle` / `Way` /
 `Building` / `Tree` dataclasses + `parse` / `port_*` seeders +
