@@ -1,7 +1,7 @@
 """Per-asset bake driver — shrinks bake scripts to their essentials.
 
 A bake script declares one `SPEC` (or `SPECS` list) plus, at
-`__main__` time, a single `bake_*_main(SPEC, __file__)` call.
+`__main__` time, a single `bake_main(SPEC, __file__)` call.
 Everything the bake pipeline needs — `blend`, `upstream_dat`,
 `materials`, `blend_winter`, `materials_winter`, `lighting`,
 `strip` — lives on the SPEC itself as bake-pipeline metadata
@@ -23,6 +23,7 @@ import json
 import pickle
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import replace
 from math import gcd
 from pathlib import Path
@@ -212,12 +213,6 @@ def bake_vehicle(
     return out_dat
 
 
-def bake_main(spec: Vehicle | list[Vehicle], file: str) -> Path:
-    """`bake_vehicle` keyed off the calling script's `__file__`."""
-    path = Path(file).resolve()
-    return bake_vehicle(spec, basename=path.stem, out_dir=path.parent)
-
-
 def bake_way(spec: Way, *, basename: str, out_dir: Path) -> Path:
     """Drive `pak/bake_way.py` to render `<out_dir>/<basename>.png`,
     then emit `<out_dir>/<basename>.dat` from `spec`.
@@ -253,12 +248,6 @@ def bake_way(spec: Way, *, basename: str, out_dir: Path) -> Path:
     out_dat = emit_way(spec, out_dir=out_dir, basename=basename)
     _print_wrote(out_dat)
     return out_dat
-
-
-def bake_way_main(spec: Way, file: str) -> Path:
-    """`bake_way` keyed off the calling script's `__file__`."""
-    path = Path(file).resolve()
-    return bake_way(spec, basename=path.stem, out_dir=path.parent)
 
 
 def _bridge_piece_blends(spec: Bridge) -> dict[str, str]:
@@ -355,12 +344,6 @@ def bake_bridge(spec: Bridge, *, basename: str, out_dir: Path) -> Path:
     return out_dat
 
 
-def bake_bridge_main(spec: Bridge, file: str) -> Path:
-    """`bake_bridge` keyed off the calling script's `__file__`."""
-    path = Path(file).resolve()
-    return bake_bridge(spec, basename=path.stem, out_dir=path.parent)
-
-
 def bake_tunnel(spec: Tunnel, *, basename: str, out_dir: Path) -> Path:
     """Fetch the portal blend, render through `tunnel_hex_viewpoint()`,
     compose the atlas, emit the dat.  Returns the dat path."""
@@ -375,12 +358,6 @@ def bake_tunnel(spec: Tunnel, *, basename: str, out_dir: Path) -> Path:
     out_dat = emit_tunnel(spec, out_dir=out_dir, basename=basename)
     _print_wrote(out_dat)
     return out_dat
-
-
-def bake_tunnel_main(spec: Tunnel, file: str) -> Path:
-    """`bake_tunnel` keyed off the calling script's `__file__`."""
-    path = Path(file).resolve()
-    return bake_tunnel(spec, basename=path.stem, out_dir=path.parent)
 
 
 _BLEND_FETCHERS = {"jp": fetch, "jh": fetch_jh}
@@ -564,20 +541,6 @@ def clamp_age_overrides(
     }
 
 
-def bake_tree_main(
-    spec: Tree | list[Tree], file: str, *, ages: int = 4,
-) -> Path:
-    """`bake_tree` keyed off the calling script's `__file__`."""
-    path = Path(file).resolve()
-    return bake_tree(spec, basename=path.stem, out_dir=path.parent, ages=ages)
-
-
-def bake_building_main(spec: Building, file: str) -> Path:
-    """`bake_building` keyed off the calling script's `__file__`."""
-    path = Path(file).resolve()
-    return bake_building(spec, basename=path.stem, out_dir=path.parent)
-
-
 def bake_factory(
     spec: Factory | list[Factory], *, basename: str, out_dir: Path,
 ) -> Path:
@@ -606,7 +569,22 @@ def bake_factory(
     return out_dat
 
 
-def bake_factory_main(spec: Factory | list[Factory], file: str) -> Path:
-    """`bake_factory` keyed off the calling script's `__file__`."""
+_BAKE_REGISTRY: dict[type, Callable[..., Path]] = {
+    Vehicle: bake_vehicle,
+    Way: bake_way,
+    Bridge: bake_bridge,
+    Tunnel: bake_tunnel,
+    Building: bake_building,
+    Factory: bake_factory,
+    Tree: bake_tree,
+}
+
+
+def bake_main(spec: object, file: str) -> Path:
+    """Per-asset entry: dispatch on `type(spec)` (or the element type
+    for shared-sprite SPECS lists) to the matching `bake_<class>`,
+    with `basename` / `out_dir` derived from the calling script's
+    `__file__`."""
     path = Path(file).resolve()
-    return bake_factory(spec, basename=path.stem, out_dir=path.parent)
+    key = type(spec[0]) if isinstance(spec, list) else type(spec)
+    return _BAKE_REGISTRY[key](spec, basename=path.stem, out_dir=path.parent)

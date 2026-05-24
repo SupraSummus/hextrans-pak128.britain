@@ -7,7 +7,7 @@ ChinaShop1850 (`victorian-china-shop.*`) and ChinaShop1905
 the upstream blends repo.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 
 _BLEND = "industries/1750-china-shop.blend"
@@ -49,4 +49,4 @@ SPEC = Factory(
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

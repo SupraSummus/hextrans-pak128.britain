@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pak.bake import bake_way_main
+from pak.bake import bake_main
 from pak.dat import Way
 
 # 86 lb/yard.
@@ -29,4 +29,4 @@ SPEC = Way(
 
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

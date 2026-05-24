@@ -5,7 +5,7 @@ unported `1750-shops.*` atlas (out of scope), the other three all
 point at the shared `bakery.*` atlas off `industries/bakery.blend`.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 from pak.materials import Lighting, Material
 
@@ -130,4 +130,4 @@ SPECS = [
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPECS, __file__)
+    bake_main(SPECS, __file__)

@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from pak.bake import _BAKE_REGISTRY
 from pak.bake_units import discover, import_script, specs_of
 from pak.reemit_dats import emit_for_specs
 
@@ -41,3 +42,13 @@ class TestPortedDats(unittest.TestCase):
                         script.with_suffix(".dat").read_text(),
                         f"{script.stem}.dat drift: re-run `python3 -m {mod.__name__}`",
                     )
+
+    def test_every_spec_type_is_bake_registered(self):
+        # `bake_main` only runs locally on `python3 -m <script>`, so the
+        # standard test pass and reemit lint won't surface a new SPEC type
+        # whose bake function was added without a `_BAKE_REGISTRY` entry.
+        # Pins the cross-asset invariant at push time instead of next-bake.
+        for script in discover():
+            with self.subTest(script=script.name):
+                specs = specs_of(import_script(script))
+                self.assertIn(type(specs[0]), _BAKE_REGISTRY)

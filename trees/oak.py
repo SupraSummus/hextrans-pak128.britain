@@ -1,4 +1,4 @@
-from pak.bake import bake_tree_main
+from pak.bake import bake_main
 from pak.dat import Tree
 
 # Upstream declares `seasons=5`; ours is `1` until leaf-colour
@@ -15,4 +15,4 @@ SPEC = Tree(
 )
 
 if __name__ == "__main__":
-    bake_tree_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

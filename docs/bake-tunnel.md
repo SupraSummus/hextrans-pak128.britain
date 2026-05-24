@@ -4,7 +4,7 @@ Companion to `CLAUDE.md` (engine facts, calibration contract,
 bake-unit conventions).
 
 Tunnels (`Obj=tunnel`) port via a `Tunnel` SPEC with inline
-`blend=` / `upstream_dat=` bake-meta and a `bake_tunnel_main(SPEC,
+`blend=` / `upstream_dat=` bake-meta and a `bake_main(SPEC,
 __file__)` call.  Six hex-edge portal facings render through
 `tunnel_hex_viewpoint()` into a single-row 6-cell atlas.  Facing
 labels are `n, ne, se, s, sw, nw` matching `hex_keys::edge_names`

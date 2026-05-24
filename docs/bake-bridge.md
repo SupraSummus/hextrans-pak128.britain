@@ -5,7 +5,7 @@ bake-unit conventions).
 
 Bridges (`Obj=bridge`) port via a `Bridge` SPEC with inline
 `blend=` per piece (image / start / ramp / pillar) and a
-`bake_bridge_main(SPEC, __file__)` call.  Per-piece renders go
+`bake_main(SPEC, __file__)` call.  Per-piece renders go
 through `bridge_hex_viewpoint(piece)`; `pak.bake._stitch_bridge_atlas`
 composes them into a multi-row atlas next to the dat.
 
