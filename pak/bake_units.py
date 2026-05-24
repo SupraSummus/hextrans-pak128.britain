@@ -26,14 +26,20 @@ _SKIP_DIRS = {"pak", "tests", "grounds", "pak1file", "simutranslator",
               ".cache", "build", "__pycache__"}
 
 
-def discover() -> list[Path]:
-    """Per-asset bake scripts in canonical sorted order."""
+def discover(category: str | None = None) -> list[Path]:
+    """Per-asset bake scripts in canonical sorted order.
+
+    `category` restricts to one top-level dir (`trains`, `air`, …);
+    `None` walks every category.
+    """
     scripts: list[Path] = []
     for path in sorted(REPO_ROOT.rglob("*.py")):
         if path.name == "__init__.py":
             continue
         rel = path.relative_to(REPO_ROOT)
         if rel.parts[0] in _SKIP_DIRS:
+            continue
+        if category is not None and rel.parts[0] != category:
             continue
         stem = path.with_suffix("")
         if stem.with_suffix(".dat").exists() and stem.with_suffix(".png").exists():
@@ -126,9 +132,7 @@ def _main(argv: list[str]) -> int:
                 continue
             print(f"{source}:{path}")
         return 0
-    paths = unported(args.category) if args.unported else discover()
-    if args.category and not args.unported:
-        paths = [p for p in paths if p.relative_to(REPO_ROOT).parts[0] == args.category]
+    paths = unported(args.category) if args.unported else discover(args.category)
     for p in paths:
         print(p.relative_to(REPO_ROOT))
     return 0

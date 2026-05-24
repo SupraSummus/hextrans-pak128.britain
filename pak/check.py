@@ -11,10 +11,11 @@ Usage::
     python3 -m pak.check trains/_4wheel_1850s_first.py
     python3 -m pak.check --all
 
-`--all` walks the repo for bake scripts (anything that imports
-`pak.bake`) and runs the diff for each one whose SPEC declares
-`upstream_dat`.  Scripts missing the field are skipped with a
-notice -- fill it in when the upstream dat path is known.
+`--all` walks the repo for ported bake scripts (via
+`pak.bake_units.discover`) and runs the diff for each one whose
+SPEC declares `upstream_dat`.  Scripts missing the field are
+skipped with a notice -- fill it in when the upstream dat path
+is known.
 A summary line per asset reports worst-facing IoU and total XOR
 pixel count, so contour drift is easy to compare across the fleet.
 """
@@ -22,42 +23,16 @@ pixel count, so contour drift is easy to compare across the fleet.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import sys
 from pathlib import Path
 
 from PIL import Image
 
 from pak import REPO_ROOT, diff_buildings, diff_tunnel, diff_upstream, diff_way
-from pak.bake_units import specs_of
+from pak.bake_units import discover, import_script, specs_of
 from pak.dat import Building, Tunnel, Way
 from pak.fetch_pak import fetch as fetch_pak
 from pak.upstream import image_stem
-
-_SKIP_DIRS = {"pak", "tests", "out", ".cache", ".git"}
-
-
-def _load(script: Path):
-    spec = importlib.util.spec_from_file_location(script.stem, script)
-    mod = importlib.util.module_from_spec(spec)
-    # Bake scripts call `bake_main(...)` only under `if __name__ == "__main__"`,
-    # so importing is side-effect-free.
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def _discover() -> list[Path]:
-    """All bake scripts in the repo (anything that imports `pak.bake`)."""
-    out: list[Path] = []
-    for p in sorted(REPO_ROOT.rglob("*.py")):
-        if p.name == "__init__.py":
-            continue
-        rel = p.relative_to(REPO_ROOT)
-        if rel.parts and rel.parts[0] in _SKIP_DIRS:
-            continue
-        if "from pak.bake import" in p.read_text():
-            out.append(p)
-    return out
 
 
 def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float | None] | None:
@@ -65,7 +40,7 @@ def _run_one(script: Path, views: int) -> tuple[float, int | None, float, float 
     -- `xor_px` is None for buildings (the harness doesn't compute it
     yet); `drgb_mean` is None for vehicles (printed in the per-facing
     table instead, no need to duplicate in the summary)."""
-    mod = _load(script)
+    mod = import_script(script)
     specs = specs_of(mod)
     spec = specs[0] if specs else None
     blend = getattr(spec, "blend", None) if spec is not None else None
@@ -202,7 +177,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--views", type=int, choices=[4, 8], default=8)
     args = ap.parse_args(argv)
 
-    scripts = _discover() if args.all else [Path(args.script).resolve()]
+    scripts = discover() if args.all else [Path(args.script).resolve()]
 
     summary: list[tuple[str, float, int | None, float | None]] = []
     rc = 0
