@@ -112,6 +112,9 @@ TR_DIRS += trams
 #TR_DIRS += trees
 DIRS128 += ways
 TR_DIRS += ways
+DIRS128 += ways/rail_tunnels
+DIRS128 += ways/road_tunnels
+DIRS128 += ways/narrow_tunnels
 #DIRS128 += piers
 #TR_DIRS += piers
 
