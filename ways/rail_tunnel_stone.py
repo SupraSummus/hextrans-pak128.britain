@@ -1,7 +1,7 @@
 """Stone-faced rail tunnel portal (1829-1915)."""
 from __future__ import annotations
 
-from pak.bake import bake_tunnel_main
+from pak.bake import bake_main
 from pak.dat import Tunnel
 
 SPEC = Tunnel(
@@ -22,4 +22,4 @@ SPEC = Tunnel(
 
 
 if __name__ == "__main__":
-    bake_tunnel_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

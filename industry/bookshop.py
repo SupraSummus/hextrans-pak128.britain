@@ -9,7 +9,7 @@ No `bookshop-snow.blend` exists upstream; `seasons=1` drops the
 upstream's winter slots until a snow blend lands.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 from pak.materials import Lighting, Material
 
@@ -64,4 +64,4 @@ SPEC = Factory(
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

@@ -11,7 +11,7 @@ No `1860-newsagent-snow.blend` ships winter art in the matched
 upstream — `seasons=1` drops the upstream's winter slots.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 
 _BLEND = "industries/1860-newsagent.blend"
@@ -51,4 +51,4 @@ SPEC = Factory(
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

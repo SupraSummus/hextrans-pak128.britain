@@ -8,7 +8,7 @@ pak-wide bridge TODOs (see TODO.md -> "Hex bridge cell coverage").
 """
 from __future__ import annotations
 
-from pak.bake import bake_bridge_main
+from pak.bake import bake_main
 from pak.dat import Bridge
 
 SPEC = Bridge(
@@ -36,4 +36,4 @@ SPEC = Bridge(
 
 
 if __name__ == "__main__":
-    bake_bridge_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

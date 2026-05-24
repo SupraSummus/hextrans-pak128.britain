@@ -9,7 +9,7 @@ shape as vehicles: a typed `Building` SPEC in a per-asset bake
 script with `upstream_dat=` plus a nested `sprites=` provider
 (`pak.sprites.BlendRender` for Cycles rendering, `UpstreamRemap`
 for the upstream-pixel 4-hex-rhombus path), and
-`bake_building_main(SPEC, __file__)` at the bottom.  The
+`bake_main(SPEC, __file__)` at the bottom.  The
 rendering side multiplies out into per-cell renders driven by
 the SPEC's footprint.
 

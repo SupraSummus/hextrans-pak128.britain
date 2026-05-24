@@ -22,7 +22,7 @@ LIGHTING = Lighting(world_ambient=(0.45, 0.45, 0.45))
 # END AUTO-TUNED"""
 
 SPECS_FORM = """\
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 
 SPECS = [
@@ -40,7 +40,7 @@ SPECS = [
 """
 
 SPEC_FORM = """\
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 
 SPEC = Factory(

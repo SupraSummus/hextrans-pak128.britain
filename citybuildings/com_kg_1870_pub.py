@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pak.bake import bake_building_main
+from pak.bake import bake_main
 from pak.dat import Building
 from pak.materials import Material
 
@@ -37,4 +37,4 @@ SPEC = Building(
 
 
 if __name__ == "__main__":
-    bake_building_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

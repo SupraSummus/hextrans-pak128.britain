@@ -6,7 +6,7 @@ unported `1950shops.*` atlas (out of scope).  The two middle eras
 share the `greengrocers.*` atlas off `industries/greengrocers.blend`.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 from pak.materials import Lighting, Material
 
@@ -102,4 +102,4 @@ SPECS = [
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPECS, __file__)
+    bake_main(SPECS, __file__)

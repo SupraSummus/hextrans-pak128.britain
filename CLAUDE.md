@@ -666,11 +666,13 @@ if __name__ == "__main__":
     bake_main(SPEC, __file__)
 ```
 
-`bake_main` derives out-dir + basename from `__file__` and calls
-the underlying `bake_vehicle` (fetch-blend / run-render /
-emit-dat).  Both accept either a `Vehicle` or a `list[Vehicle]` —
-shared-sprite multi-object scripts pass `SPECS` to the same entry
-point and the dat-emit step writes one combined dat.  Both
+`bake_main` is uniform across every asset class -- it derives
+out-dir + basename from `__file__`, dispatches on `type(SPEC)`
+through `pak.bake._BAKE_REGISTRY`, and calls the matching
+`bake_<class>` (fetch-blend / run-render / emit-dat).  For
+shared-sprite multi-object scripts (`SPECS: list[...]`), dispatch
+keys off `type(SPECS[0])` and the dat-emit step writes one
+combined dat.  Both
 Vehicles in such a list carry the same `blend=` / `upstream_dat=`
 values; the convention is a local `_BLEND = "..."` /
 `_UPSTREAM_DAT = "..."` at module top referenced from each
@@ -683,10 +685,11 @@ per call.
 `Way` (covers the hex-engine `Obj=way` schema + the few extended
 keys upstream Britain dats carry: `wear_capacity`, `axle_load`)
 plus `blend=` / `materials=` / `strip=` bake-meta on the same
-SPEC and a `bake_way_main(SPEC, __file__)` call:
+SPEC and the same `bake_main(SPEC, __file__)` call -- dispatch in
+`pak/bake.py` reads `type(SPEC)` and routes Way SPECs to `bake_way`:
 
 ```python
-from pak.bake import bake_way_main
+from pak.bake import bake_main
 from pak.dat import Way
 
 SPEC = Way(
@@ -705,10 +708,10 @@ SPEC = Way(
 )
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, __file__)
+    bake_main(SPEC, __file__)
 ```
 
-`bake_way_main` shells out to `pak/bake_way.py` under `blender -b
+For Way SPECs, dispatch shells out to `pak/bake_way.py` under `blender -b
 -P` (the way bake is Blender-only — see `pak.bake_way`'s docstring)
 and then calls `emit_way` to write the dat alongside the rendered
 atlas.  `emit_way` keys the dat's per-ribi image refs against
@@ -1031,14 +1034,14 @@ a small carriage.
 
 Buildings (`Obj=building` — attractions, monuments, city
 buildings, townhalls, HQs, stops, extensions) port via a typed
-`Building` SPEC + `bake_building_main(SPEC, __file__)`.  Per-cell
+`Building` SPEC + `bake_main(SPEC, __file__)`.  Per-cell
 EEVEE renders driven by the footprint
 (`backimage[layout][y][x][height][phase][season]`); per-asset
 `materials=` + `lighting=` declared on the SPEC.  See
 [`docs/bake-building.md`](docs/bake-building.md).
 
 Factories (`Obj=factory` — industries) port via `Factory(Building)`
-+ `bake_factory_main`.  Engine `factory_writer.cc` delegates to
++ `bake_main`.  Engine `factory_writer.cc` delegates to
 `building_writer.cc` for every visual field, so the bake pipeline
 (viewpoint, atlas layout, season stitching) carries through
 unchanged; only the dat emitter swaps the obj header and walks the
@@ -1051,7 +1054,7 @@ How pixels get into the atlas is delegated to `spec.sprites` (a
 (Cycles render from a `.blend`, the historic path) and
 `UpstreamRemap` (stitch upstream's square-dimetric atlas onto a
 4-hex rhombus, no blend).  `bake_building` dispatches uniformly --
-`bake_building_main` works for both blend-driven and blendless
+`bake_main` works for both blend-driven and blendless
 assets, the SPEC's nested provider says which.  Pre-`sprites=`
 scripts feed inline `blend=`/`materials=`/etc. through a
 synthesised `BlendRender` at dispatch time (see TODO.md →
@@ -1077,7 +1080,7 @@ is `materials=` recolour on the SPEC in `ways/<way>.py`.  See
 ## Tree-bake architecture
 
 Trees (`Obj=tree`) port via a `Tree` SPEC +
-`bake_tree_main(SPEC, __file__)` — a single-facing
+`bake_main(SPEC, __file__)` — a single-facing
 billboard expanded over an `ages × seasons` grid.  Five ages
 (engine hardcoded) come from one model at four successive scales
 plus a `winter-3` fallback for age 4 via `clamp_age_overrides`.
@@ -1086,7 +1089,7 @@ EEVEE backend.  See [`docs/bake-tree.md`](docs/bake-tree.md).
 ## Bridge-bake architecture
 
 Bridges (`Obj=bridge`) port via a `Bridge` SPEC +
-`bake_bridge_main(SPEC, __file__)`.  Per-piece renders (image /
+`bake_main(SPEC, __file__)`.  Per-piece renders (image /
 start / ramp / pillar) go through `bridge_hex_viewpoint(piece)`
 and stitch into a 4-row atlas; `pak.dat.HEX_BRIDGE_PIECE_LABELS`
 is the single source of truth for atlas labels shared by bake,
@@ -1096,7 +1099,7 @@ emit, and viewpoint.  See
 ## Tunnel-bake architecture
 
 Tunnels (`Obj=tunnel`) port via a `Tunnel` SPEC +
-`bake_tunnel_main(SPEC, __file__)` — 6 hex-edge portal facings
+`bake_main(SPEC, __file__)` — 6 hex-edge portal facings
 rendered through `tunnel_hex_viewpoint()` into a single-row 6-cell
 atlas.  Engine uses low-edge naming (mouth faces `<edge>`), upstream
 inherited pak64's high-edge convention — the calibration diff and

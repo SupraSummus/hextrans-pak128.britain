@@ -4,7 +4,7 @@ Companion to `CLAUDE.md` (engine facts, calibration contract,
 bake-unit conventions).
 
 Trees (`Obj=tree`) port via a `Tree` SPEC with inline
-`blend=` / `upstream_dat=` bake-meta and a `bake_tree_main(SPEC,
+`blend=` / `upstream_dat=` bake-meta and a `bake_main(SPEC,
 __file__)` call, same per-asset shape as vehicles/ways/buildings.
 The render side is a single-facing billboard expanded over an
 `ages × seasons` grid -- one cell per (age, season) tuple.

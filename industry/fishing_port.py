@@ -6,7 +6,7 @@ five eras share the `fishing-port.*` atlas so one bake covers
 the chain.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 
 _BLEND = "industries/fishihng-port.blend"
@@ -188,4 +188,4 @@ SPECS = [
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPECS, __file__)
+    bake_main(SPECS, __file__)

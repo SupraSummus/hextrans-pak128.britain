@@ -8,7 +8,7 @@ No `pub-snow.blend` exists upstream; `seasons=1` drops the
 upstream's `pub.1.X` winter row until a snow blend lands.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 from pak.materials import Lighting, Material
 
@@ -140,4 +140,4 @@ SPECS = [
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPECS, __file__)
+    bake_main(SPECS, __file__)

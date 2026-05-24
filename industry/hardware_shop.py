@@ -6,7 +6,7 @@ atlases; only HardwareShop1850 renders from
 and later `hardware-shop-deco` / 1950s atlases stay unported.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 from pak.materials import Lighting, Material
 
@@ -67,4 +67,4 @@ SPEC = Factory(
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

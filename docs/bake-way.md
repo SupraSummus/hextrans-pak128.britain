@@ -116,7 +116,7 @@ is 1.000, cross-family ≥ 0.96.  The visual differentiation is
 material recolour: four blend slots (`Rail`, `RailTop`, `Wood`,
 `Ballast`) shift hue and value per variant.  We mirror that:
 each `ways/<way>.py` declares its own `materials={…}` inline on
-the SPEC (no central catalog), `bake_way_main(SPEC, __file__)`
+the SPEC (no central catalog), `bake_main(SPEC, __file__)`
 threads it through `pak/bake.py::bake_way`, which serialises to
 JSON on the `--materials` arg, and `pak/bake_way.py` parses it
 back with `json.loads` and applies via `mat.diffuse_color` before

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pak.bake import bake_way_main
+from pak.bake import bake_main
 from pak.dat import Way
 
 # 97 1/2 lb/yard as on the GWR -- for 20 t axle loads.
@@ -29,4 +29,4 @@ SPEC = Way(
 
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

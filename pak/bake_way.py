@@ -132,7 +132,7 @@ def _parse(args: list[str]) -> argparse.Namespace:
                         "four materials per variant.  The per-rail bake "
                         "script `ways/<rail>.py` holds the calibrated values "
                         "inline as `MATERIALS = {...}` and passes them "
-                        "through `bake_way_main(..., materials=MATERIALS)`.")
+                        "through `materials=` on SPEC.")
     return p.parse_args(args)
 
 

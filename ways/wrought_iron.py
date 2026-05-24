@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pak.bake import bake_way_main
+from pak.bake import bake_main
 from pak.dat import Way
 
 # Ahrons p. 95 suggests 55 lb/yard, but axle loading is too low at
@@ -33,4 +33,4 @@ SPEC = Way(
 
 
 if __name__ == "__main__":
-    bake_way_main(SPEC, __file__)
+    bake_main(SPEC, __file__)

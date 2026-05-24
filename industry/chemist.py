@@ -10,7 +10,7 @@ shared-sprite multi-object pattern (mirrors `air/dragon_rapide.py`).
 re-add when the 1950shops bake unit lands and restores that era.
 """
 
-from pak.bake import bake_factory_main
+from pak.bake import bake_main
 from pak.dat import Factory
 from pak.materials import Lighting, Material
 
@@ -105,4 +105,4 @@ SPECS = [
 
 
 if __name__ == "__main__":
-    bake_factory_main(SPECS, __file__)
+    bake_main(SPECS, __file__)
