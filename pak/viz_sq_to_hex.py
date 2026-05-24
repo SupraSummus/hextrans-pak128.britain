@@ -1,11 +1,7 @@
-"""Visualise `pak.sq_to_hex.sq_to_hex_footprint` outputs in world coords.
+"""Visualise `pak.sq_to_hex` placements in world coords.
 
-Axiom: sq tile edge = hex tile edge = 1 world unit (see sq_to_hex
-module docstring).  This view draws the sq rectangle and the regular
-hex polygons at their actual world geometry — sq footprint as a
-`dims_x × dims_y` rectangle, hex tiles as regular hexagons of edge 1.
-
-Output: `out/sq_to_hex.png`.
+Writes `out/sq_to_hex.png`: one row per `(dims_x, dims_y)` size, one
+column per anchor placement that ties for minimum cell count.
 """
 
 from __future__ import annotations
@@ -19,146 +15,111 @@ import numpy as np
 
 from pak.sq_to_hex import (
     CANDIDATE_OFFSETS,
-    HEX_EDGE,
+    HEX_TILE_RADIUS,
     SQ_ROTATION_DEG,
-    SQRT3,
+    HexFootprint,
+    hex_cells_overlapping_rect,
     hex_world_center,
-    sq_to_hex_footprint,
+    sq_to_hex_all_minimal,
+)
+from pak.way import HEX_CORNERS as _HEX_CORNERS_BY_DIR
+
+HEX_CORNERS = np.array(
+    [_HEX_CORNERS_BY_DIR[d] for d in ("E", "NE", "NW", "W", "SW", "SE")],
+    dtype=float,
 )
 
-# Flat-top regular hex with edge 1, corners on x-axis.
-HEX_CORNERS = np.array([
-    (HEX_EDGE, 0.0),
-    (0.5 * HEX_EDGE, SQRT3 / 2.0 * HEX_EDGE),
-    (-0.5 * HEX_EDGE, SQRT3 / 2.0 * HEX_EDGE),
-    (-HEX_EDGE, 0.0),
-    (-0.5 * HEX_EDGE, -SQRT3 / 2.0 * HEX_EDGE),
-    (0.5 * HEX_EDGE, -SQRT3 / 2.0 * HEX_EDGE),
-], dtype=float)
 
-
-def _sq_rect_corners(dims_x: float, dims_y: float,
-                     centroid: tuple[float, float],
-                     rotation_deg: float) -> np.ndarray:
-    """`dims_x × dims_y` rectangle, rotated by `rotation_deg`, placed
-    at `centroid`.  Returns 4 corners CCW in world coords."""
-    hw, hh = dims_x / 2.0, dims_y / 2.0
-    local = np.array([(-hw, -hh), (+hw, -hh), (+hw, +hh), (-hw, +hh)])
+def _to_world(local_xy: np.ndarray, centroid: tuple[float, float],
+              rotation_deg: float) -> np.ndarray:
     th = math.radians(rotation_deg)
     R = np.array([[math.cos(th), -math.sin(th)],
-                  [math.sin(th), math.cos(th)]])
-    return (local @ R.T) + np.array(centroid)
+                  [math.sin(th),  math.cos(th)]])
+    return (local_xy @ R.T) + np.array(centroid)
 
 
-def _plot_footprint(ax, dims_x: int, dims_y: int) -> None:
-    fp = sq_to_hex_footprint(dims_x, dims_y)
+def _plot_placement(ax, dims_x: int, dims_y: int, fp: HexFootprint) -> None:
     centroid = CANDIDATE_OFFSETS[fp.anchor_kind]
+    raw = hex_cells_overlapping_rect(dims_x, dims_y, centroid)
 
-    # We have normalised cells (min q = min r = 0).  Re-run the
-    # rasterisation to get the un-normalised cells so the picture
-    # places everything in the hex frame around the chosen anchor.
-    from pak.sq_to_hex import _hex_cells_overlapping_rect
-    raw = _hex_cells_overlapping_rect(
-        dims_x, dims_y, centroid, rotation_deg=SQ_ROTATION_DEG)
-
-    qs = [q for q, _r in raw]
-    rs = [r for _q, r in raw]
+    qs = [q for q, _ in raw]
+    rs = [r for _, r in raw]
     pad = 1
-    q_lo, q_hi = min(qs) - pad, max(qs) + pad
-    r_lo, r_hi = min(rs) - pad, max(rs) + pad
-
-    # Background hex grid (light outline).
-    for q in range(q_lo, q_hi + 1):
-        for r in range(r_lo, r_hi + 1):
+    for q in range(min(qs) - pad, max(qs) + pad + 1):
+        for r in range(min(rs) - pad, max(rs) + pad + 1):
             cx, cy = hex_world_center(q, r)
-            poly = HEX_CORNERS + np.array([cx, cy])
             ax.add_patch(mpatches.Polygon(
-                poly, closed=True, facecolor="none",
+                HEX_CORNERS + (cx, cy), closed=True, facecolor="none",
                 edgecolor="#cccccc", linewidth=0.5, zorder=1))
 
-    # Claimed hex tiles (blue fill + axial label).
-    claimed = set(raw)
-    for q, r in claimed:
+    for q, r in raw:
         cx, cy = hex_world_center(q, r)
-        poly = HEX_CORNERS + np.array([cx, cy])
         ax.add_patch(mpatches.Polygon(
-            poly, closed=True, facecolor="#7fb4ff",
-            edgecolor="#003a87", linewidth=1.5, alpha=0.55,
-            zorder=2))
+            HEX_CORNERS + (cx, cy), closed=True, facecolor="#7fb4ff",
+            edgecolor="#003a87", linewidth=1.5, alpha=0.55, zorder=2))
         ax.text(cx, cy, f"({q},{r})", ha="center", va="center",
                 fontsize=7, color="#001a40", zorder=4)
 
-    # Sq footprint rectangle (yellow, dashed outline).
-    rect = _sq_rect_corners(dims_x, dims_y, centroid, SQ_ROTATION_DEG)
+    hw, hh = dims_x / 2.0, dims_y / 2.0
+    rect_local = np.array([(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)])
+    rect = _to_world(rect_local, centroid, SQ_ROTATION_DEG)
     ax.add_patch(mpatches.Polygon(
-        rect, closed=True, facecolor="#ffe169",
-        edgecolor="#b07f00", linewidth=1.5, linestyle="--",
-        alpha=0.65, zorder=3))
+        rect, closed=True, facecolor="#ffe169", edgecolor="#b07f00",
+        linewidth=1.5, linestyle="--", alpha=0.65, zorder=3))
 
-    # Per-sq-tile gridlines on the rectangle (so the sq cell layout
-    # reads at a glance).
     for i in range(dims_x + 1):
-        u = -dims_x / 2.0 + i
-        verts = np.array([(u, -dims_y / 2.0), (u, dims_y / 2.0)])
-        th = math.radians(SQ_ROTATION_DEG)
-        R = np.array([[math.cos(th), -math.sin(th)],
-                      [math.sin(th), math.cos(th)]])
-        v = (verts @ R.T) + np.array(centroid)
-        ax.plot(v[:, 0], v[:, 1], color="#b07f00", linewidth=0.7,
-                linestyle=":", zorder=3.2)
+        line = _to_world(
+            np.array([(-hw + i, -hh), (-hw + i, hh)]),
+            centroid, SQ_ROTATION_DEG)
+        ax.plot(line[:, 0], line[:, 1], color="#b07f00",
+                linewidth=0.7, linestyle=":", zorder=3.2)
     for j in range(dims_y + 1):
-        u = -dims_y / 2.0 + j
-        verts = np.array([(-dims_x / 2.0, u), (dims_x / 2.0, u)])
-        th = math.radians(SQ_ROTATION_DEG)
-        R = np.array([[math.cos(th), -math.sin(th)],
-                      [math.sin(th), math.cos(th)]])
-        v = (verts @ R.T) + np.array(centroid)
-        ax.plot(v[:, 0], v[:, 1], color="#b07f00", linewidth=0.7,
-                linestyle=":", zorder=3.2)
+        line = _to_world(
+            np.array([(-hw, -hh + j), (hw, -hh + j)]),
+            centroid, SQ_ROTATION_DEG)
+        ax.plot(line[:, 0], line[:, 1], color="#b07f00",
+                linewidth=0.7, linestyle=":", zorder=3.2)
 
-    # Anchor point marker.
     ax.plot([centroid[0]], [centroid[1]], marker="o", color="red",
             markersize=5, zorder=5)
 
-    # Frame view tightly.
-    all_xs, all_ys = [], []
-    for q in range(q_lo, q_hi + 1):
-        for r in range(r_lo, r_hi + 1):
-            cx, cy = hex_world_center(q, r)
-            all_xs.append(cx)
-            all_ys.append(cy)
-    extra = 1.2
-    ax.set_xlim(min(all_xs) - extra, max(all_xs) + extra)
-    ax.set_ylim(min(all_ys) - extra, max(all_ys) + extra)
+    cs = [hex_world_center(q, r) for q, r in raw]
+    pad_world = 1.5 * HEX_TILE_RADIUS
+    ax.set_xlim(min(c[0] for c in cs) - pad_world,
+                max(c[0] for c in cs) + pad_world)
+    ax.set_ylim(min(c[1] for c in cs) - pad_world,
+                max(c[1] for c in cs) + pad_world)
     ax.set_aspect("equal")
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title(
-        f"sq {dims_x}x{dims_y}  ->  {fp.n_cells} hex  bbox={fp.bbox_qr}\n"
-        f"anchor: {fp.anchor_kind}",
-        fontsize=9,
-    )
+    ax.set_title(f"{fp.anchor_kind}  bbox={fp.bbox_qr}", fontsize=8)
 
 
 def main() -> None:
-    sizes = [(1, 1), (1, 2), (2, 1), (2, 2),
-             (1, 3), (3, 1), (2, 3), (3, 2),
-             (3, 3), (4, 4), (4, 2), (2, 4)]
-    ncols = 4
-    nrows = math.ceil(len(sizes) / ncols)
+    sizes = [(1, 1), (1, 2), (2, 2), (1, 3), (2, 3), (3, 3),
+             (2, 4), (3, 4), (4, 4)]
+    rows = [(n, m, sq_to_hex_all_minimal(n, m)) for n, m in sizes]
+    ncols = max(len(fps) for _, _, fps in rows)
+    nrows = len(rows)
     fig, axes = plt.subplots(nrows, ncols,
-                              figsize=(3.4 * ncols, 3.4 * nrows))
-    axes = np.atleast_1d(axes).ravel()
-    for ax, (n, m) in zip(axes, sizes, strict=False):
-        _plot_footprint(ax, n, m)
-    for ax in axes[len(sizes):]:
-        ax.axis("off")
+                              figsize=(3.0 * ncols, 3.0 * nrows),
+                              squeeze=False)
+    for row_idx, (n, m, fps) in enumerate(rows):
+        for col_idx in range(ncols):
+            ax = axes[row_idx, col_idx]
+            if col_idx < len(fps):
+                _plot_placement(ax, n, m, fps[col_idx])
+            else:
+                ax.axis("off")
+        axes[row_idx, 0].set_ylabel(
+            f"{n}x{m}  -> {fps[0].n_cells} hex",
+            fontsize=10, rotation=0, labelpad=40, ha="right", va="center",
+        )
     fig.suptitle(
-        "sq_to_hex_footprint (world coords, edge=1): "
-        "sq rectangle (yellow) -> hex cells (blue)",
+        "sq_to_hex: all anchor placements tied for minimum cell count",
         fontsize=12,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
     out = Path("out/sq_to_hex.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=120)
