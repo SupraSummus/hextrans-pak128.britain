@@ -31,6 +31,21 @@ class TestSqToHex(unittest.TestCase):
         fp = sq_to_hex_footprint(1, 2)
         self.assertEqual(fp.n_cells, 4)
 
+    def test_dims_swap_preserves_solution_count(self):
+        # N×M and M×N differ by a 90° rect rotation in the sq frame.
+        # Under hex 6-fold rotations + mirror symmetries the two
+        # orientations are related (60°*3 = 180°, plus reflection), so
+        # the count of minimal-cell placements -- and the minimum
+        # cell count itself -- must agree.  Sweep an over-large NxM
+        # grid to catch any case where this would silently break.
+        for n in range(1, 7):
+            for m in range(1, n):
+                with self.subTest(n=n, m=m):
+                    nm = sq_to_hex_all_minimal(n, m)
+                    mn = sq_to_hex_all_minimal(m, n)
+                    self.assertEqual(len(nm), len(mn))
+                    self.assertEqual(nm[0].n_cells, mn[0].n_cells)
+
     def test_2x2_has_three_minimal_orientations(self):
         # Sq's 45° D2 symmetry pins exactly 3 edge-midpoint placements
         # tied for 4-cell footprint -- one per edge orbit
