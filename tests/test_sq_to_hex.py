@@ -1,0 +1,63 @@
+"""Structural pins for `pak.sq_to_hex`.
+
+The algorithm enumerates seven anchor placements and the cell-count
+property of the surviving footprints is sensitive to changes in either
+the anchor table or the hex-cell rasteriser; these tests catch obvious
+regressions in either.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from pak.sq_to_hex import sq_to_hex_all_minimal, sq_to_hex_footprint
+
+
+class TestSqToHex(unittest.TestCase):
+    def test_1x1_single_cell_at_tile_center(self):
+        fp = sq_to_hex_footprint(1, 1)
+        self.assertEqual(fp.cells, ((0, 0),))
+        self.assertEqual(fp.anchor_kind, "tile_center")
+
+    def test_2x2_is_four_cell_rhombus(self):
+        fp = sq_to_hex_footprint(2, 2)
+        self.assertEqual(set(fp.cells), {(0, 0), (0, 1), (1, 0), (1, 1)})
+
+    def test_1x2_corner_pokes_reach_four_cells(self):
+        # The 1×2 sq at 45° is a long thin diamond; its pointy corners
+        # extend into hex tiles that the body misses.  Pre-SAT sampling
+        # at default density returned 2 cells (the sliver overlaps
+        # escaped the sampling grid).
+        fp = sq_to_hex_footprint(1, 2)
+        self.assertEqual(fp.n_cells, 4)
+
+    def test_dims_swap_preserves_solution_count(self):
+        # N×M and M×N differ by a 90° rect rotation in the sq frame.
+        # Under hex 6-fold rotations + mirror symmetries the two
+        # orientations are related (60°*3 = 180°, plus reflection), so
+        # the count of minimal-cell placements -- and the minimum
+        # cell count itself -- must agree.  Sweep an over-large NxM
+        # grid to catch any case where this would silently break.
+        for n in range(1, 7):
+            for m in range(1, n):
+                with self.subTest(n=n, m=m):
+                    nm = sq_to_hex_all_minimal(n, m)
+                    mn = sq_to_hex_all_minimal(m, n)
+                    self.assertEqual(len(nm), len(mn))
+                    self.assertEqual(nm[0].n_cells, mn[0].n_cells)
+
+    def test_2x2_has_three_minimal_orientations(self):
+        # Sq's 45° D2 symmetry pins exactly 3 edge-midpoint placements
+        # tied for 4-cell footprint -- one per edge orbit
+        # (horizontal / slash / backslash).
+        opts = sq_to_hex_all_minimal(2, 2)
+        self.assertEqual(len(opts), 3)
+        self.assertTrue(all(fp.n_cells == 4 for fp in opts))
+        self.assertEqual(
+            {fp.anchor_kind for fp in opts},
+            {"edge_horizontal", "edge_slash", "edge_backslash"},
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
