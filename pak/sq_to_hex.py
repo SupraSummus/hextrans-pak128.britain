@@ -4,9 +4,10 @@ Axiom: sq tile edge = hex tile edge = `HEX_TILE_RADIUS` (1 world unit).
 A `dims_x x dims_y` sq footprint is a 45°-rotated unit-cell rectangle
 (the dimetric convention) in the hex world frame; the solver finds
 the set of axial hex cells whose flat-top polygons cover it, sweeping
-candidate translations (hex tile center, vertex, edge midpoint orbits)
-and picking the fewest-cells placement (tiebreak smaller `Dims=`
-bounding box).
+the seven candidate translations in `CANDIDATE_OFFSETS` (hex tile
+center plus the three vertex orbits and three edge midpoint orbits
+that survive sq's 45° D2 symmetry) and returning the placements with
+the fewest cells.
 """
 
 from __future__ import annotations
@@ -22,32 +23,45 @@ _SQRT3 = math.sqrt(3.0)
 
 
 def hex_world_center(q: int, r: int) -> tuple[float, float]:
-    """Flat-top hex `(q, r)` center in world coords."""
+    """Flat-top hex `(q, r)` center in world coords.  `+q` steps to the
+    right-and-slightly-up; `+r` steps straight up."""
     return (1.5 * HEX_TILE_RADIUS * q,
             _SQRT3 * HEX_TILE_RADIUS * (r + q / 2.0))
 
 
+def _cube_round(
+    xc: np.ndarray, zc: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorised hex cube-coord rounding; returns `(q, r) = (x, z)` as
+    int arrays.  Repairs the rounded triple to satisfy `x + y + z = 0`
+    by fixing whichever axis took the largest rounding error."""
+    yc = -xc - zc
+    rxc = np.round(xc)
+    ryc = np.round(yc)
+    rzc = np.round(zc)
+    dx = np.abs(rxc - xc)
+    dy = np.abs(ryc - yc)
+    dz = np.abs(rzc - zc)
+    fix_x = (dx > dy) & (dx > dz)
+    fix_y = ~fix_x & (dy > dz)
+    fix_z = ~fix_x & ~fix_y
+    rxc = np.where(fix_x, -ryc - rzc, rxc)
+    ryc = np.where(fix_y, -rxc - rzc, ryc)
+    rzc = np.where(fix_z, -rxc - ryc, rzc)
+    return rxc.astype(int), rzc.astype(int)
+
+
 def world_to_axial(x: float, y: float) -> tuple[int, int]:
-    """Nearest hex `(q, r)` for world point `(x, y)`; cube-coord rounding."""
+    """Nearest hex `(q, r)` for world point `(x, y)`."""
     qf = (2.0 / 3.0) * x / HEX_TILE_RADIUS
     rf = (-x / 3.0 + y / _SQRT3) / HEX_TILE_RADIUS
-    xc, zc = qf, rf
-    yc = -xc - zc
-    rxc, ryc, rzc = round(xc), round(yc), round(zc)
-    dx, dy, dz = abs(rxc - xc), abs(ryc - yc), abs(rzc - zc)
-    if dx > dy and dx > dz:
-        rxc = -ryc - rzc
-    elif dy > dz:
-        ryc = -rxc - rzc
-    else:
-        rzc = -rxc - ryc
-    return int(rxc), int(rzc)
+    q, r = _cube_round(np.array([qf]), np.array([rf]))
+    return int(q[0]), int(r[0])
 
 
-# Sq centroid placements modulo the hex lattice + sq self-symmetry.  Sq's
-# D2 (180° + reflections across its 45° axes) reduces the 6 hex vertices
-# to 3 orbits (horizontal pair, slash pair, backslash pair) and the 6
-# edges likewise to 3 orbits.
+# Sq centroid placements modulo hex lattice + sq's 45° D2 symmetry: hex
+# tile center, three vertex orbits (one per sq-axis direction), three
+# edge-midpoint orbits.
 _R = HEX_TILE_RADIUS
 _H = _SQRT3 / 2.0 * HEX_TILE_RADIUS
 CANDIDATE_OFFSETS: dict[str, tuple[float, float]] = {
@@ -99,7 +113,10 @@ def hex_cells_overlapping_rect(
     xx, yy = np.meshgrid(xs, ys)
     wx = (cos_t * xx - sin_t * yy + cx).ravel()
     wy = (sin_t * xx + cos_t * yy + cy).ravel()
-    return {world_to_axial(float(x), float(y)) for x, y in zip(wx, wy)}
+    qf = (2.0 / 3.0) * wx / HEX_TILE_RADIUS
+    rf = (-wx / 3.0 + wy / _SQRT3) / HEX_TILE_RADIUS
+    qs, rs = _cube_round(qf, rf)
+    return set(zip(qs.tolist(), rs.tolist()))
 
 
 def _candidate_footprint(dims_x: int, dims_y: int,
@@ -108,8 +125,9 @@ def _candidate_footprint(dims_x: int, dims_y: int,
         dims_x, dims_y, CANDIDATE_OFFSETS[anchor_kind])
     qs = [q for q, _ in cells]
     rs = [r for _, r in cells]
-    span_q, span_r = max(qs) - min(qs), max(rs) - min(rs)
-    norm = tuple(sorted((q - min(qs), r - min(rs)) for q, r in cells))
+    q0, r0 = min(qs), min(rs)
+    span_q, span_r = max(qs) - q0, max(rs) - r0
+    norm = tuple(sorted((q - q0, r - r0) for q, r in cells))
     return HexFootprint(cells=norm, anchor_kind=anchor_kind,
                         bbox_qr=(span_q + 1, span_r + 1))
 
@@ -139,3 +157,4 @@ if __name__ == "__main__":
             print(f"{n}x{m}: anchor={fp.anchor_kind:<16s} "
                   f"n={fp.n_cells} bbox={fp.bbox_qr} "
                   f"cells={list(fp.cells)}")
+

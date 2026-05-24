@@ -67,16 +67,12 @@ def _plot_placement(ax, dims_x: int, dims_y: int, fp: HexFootprint) -> None:
         rect, closed=True, facecolor="#ffe169", edgecolor="#b07f00",
         linewidth=1.5, linestyle="--", alpha=0.65, zorder=3))
 
-    for i in range(dims_x + 1):
-        line = _to_world(
-            np.array([(-hw + i, -hh), (-hw + i, hh)]),
-            centroid, SQ_ROTATION_DEG)
-        ax.plot(line[:, 0], line[:, 1], color="#b07f00",
-                linewidth=0.7, linestyle=":", zorder=3.2)
-    for j in range(dims_y + 1):
-        line = _to_world(
-            np.array([(-hw, -hh + j), (hw, -hh + j)]),
-            centroid, SQ_ROTATION_DEG)
+    grid_endpoints = (
+        [((-hw + i, -hh), (-hw + i, hh)) for i in range(dims_x + 1)]
+        + [((-hw, -hh + j), (hw, -hh + j)) for j in range(dims_y + 1)]
+    )
+    for a, b in grid_endpoints:
+        line = _to_world(np.array([a, b]), centroid, SQ_ROTATION_DEG)
         ax.plot(line[:, 0], line[:, 1], color="#b07f00",
                 linewidth=0.7, linestyle=":", zorder=3.2)
 
