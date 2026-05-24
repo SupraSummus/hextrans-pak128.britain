@@ -1044,9 +1044,12 @@ overhead is real but small.
 
 ### Tunnels
 
-**Hex tunnel: bake pipeline shipped, deferred features.**
+**Hex tunnel: bake pipeline shipped, 11 of 20 ported, deferred features.**
 `pak.dat.Tunnel` + `emit_tunnel`, `tunnel_hex_viewpoint`, and
-`ways/rail_tunnel_stone.py` exercise the bake end-to-end (2-row
+`ways/rail_tunnels/stone.py` + 10 sibling variants (brick / concrete,
+sub-surface, light, narrow, road -- organised into
+`ways/{rail,road,narrow}_tunnels/` subdirs) exercise the bake end-
+to-end (2-row
 6-col atlas: row 0 = Front, row 1 = Back, hex edges).  Dat key
 tokens are read off `tunnel_writer.cc`; per-edge rotation table is
 visually verified (arrow-annotated probe atlases against
@@ -1062,6 +1065,30 @@ sit in front of an empty cell.  Concrete next move when that
 turns out visually objectionable: skip the holdout swap for Back
 facings (per-facing flag on `Facing`, or a separate viewpoint
 field listing facing labels exempt from holdout).  Remaining gaps:
+
+* **Tunnel recolour.**  All 11 ported tunnels share the one upstream
+  blend (`ways/stone-tunnel.blend` in JamesHood) -- no brick /
+  concrete / narrow-gauge sprite differentiation today, 11 byte-
+  identical atlases ship.  `Tunnel` SPEC has `blend=` / `blend_source=`
+  but no `materials=` field; `bake_tunnel` doesn't plumb materials
+  to `run_render` either.  Concrete next move: mirror `Building`'s
+  `materials: dict[str, Material] | None = _bake_meta()` field (and
+  `materials_winter` / `lighting`) onto `Tunnel`, route through
+  `bake_tunnel` -> `run_render`, then per-variant override the blend's
+  `Brick` slot (a multi-slot Material containing `limestone.jpg` +
+  CLOUDS overlay -- see `extract_materials` output) with brick-red /
+  concrete-grey replacements.  The 9 sibling .py scripts have all the
+  gameplay scalars set; only the per-asset `materials=` recipe + a
+  fresh bake is missing.
+
+* **Tunnels still requiring own blends.**  7 unported in `tunnels.dat`
+  (severn-tunnel, Channel_Tunnel, RailTunnelHighSpeed, CanalTunnel /
+  -Narrow, MaglevTunnelConcrete / -Eco) + 2 in `tube-tunnel.dat`
+  (LT_Tunnel, LT_Tunnel_Fast).  Distinctive geometries (twin bore,
+  circular tube, futuristic) the stone-portal reuse would render
+  wrong; defer until upstream ships per-asset blends or a 2D-remap
+  pass lands (CLAUDE.md "2D-remap for blendless buildings" applies
+  in spirit but tunnel atlas isn't a square-footprint rhombus).
 
 * **Snow `[1]` not emitted.**  `tunnel_writer.cc` reads
   `frontimage[<edge>][1]` for snow.  Concrete next move when a snow
