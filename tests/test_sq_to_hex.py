@@ -23,6 +23,14 @@ class TestSqToHex(unittest.TestCase):
         fp = sq_to_hex_footprint(2, 2)
         self.assertEqual(set(fp.cells), {(0, 0), (0, 1), (1, 0), (1, 1)})
 
+    def test_1x2_corner_pokes_reach_four_cells(self):
+        # The 1×2 sq at 45° is a long thin diamond; its pointy corners
+        # extend into hex tiles that the body misses.  Pre-SAT sampling
+        # at default density returned 2 cells (the sliver overlaps
+        # escaped the sampling grid).
+        fp = sq_to_hex_footprint(1, 2)
+        self.assertEqual(fp.n_cells, 4)
+
     def test_2x2_has_three_minimal_orientations(self):
         # Sq's 45° D2 symmetry pins exactly 3 edge-midpoint placements
         # tied for 4-cell footprint -- one per edge orbit

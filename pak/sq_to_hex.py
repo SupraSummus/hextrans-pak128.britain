@@ -2,12 +2,13 @@
 
 Axiom: sq tile edge = hex tile edge = `HEX_TILE_RADIUS` (1 world unit).
 A `dims_x x dims_y` sq footprint is a 45°-rotated unit-cell rectangle
-(the dimetric convention) in the hex world frame; the solver finds
-the set of axial hex cells whose flat-top polygons cover it, sweeping
-the seven candidate translations in `CANDIDATE_OFFSETS` (hex tile
-center plus the three vertex orbits and three edge midpoint orbits
-that survive sq's 45° D2 symmetry) and returning the placements with
-the fewest cells.
+(the dimetric convention) in the hex world frame; the solver finds,
+via exact Separating-Axis-Theorem polygon overlap, the set of axial
+hex cells whose flat-top polygons cover it, sweeping the seven
+candidate translations in `CANDIDATE_OFFSETS` (hex tile center plus
+the three vertex orbits and three edge midpoint orbits that survive
+sq's 45° D2 symmetry) and returning the placements with the fewest
+cells.
 """
 
 from __future__ import annotations
@@ -29,34 +30,20 @@ def hex_world_center(q: int, r: int) -> tuple[float, float]:
             _SQRT3 * HEX_TILE_RADIUS * (r + q / 2.0))
 
 
-def _cube_round(
-    xc: np.ndarray, zc: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Vectorised hex cube-coord rounding; returns `(q, r) = (x, z)` as
-    int arrays.  Repairs the rounded triple to satisfy `x + y + z = 0`
-    by fixing whichever axis took the largest rounding error."""
-    yc = -xc - zc
-    rxc = np.round(xc)
-    ryc = np.round(yc)
-    rzc = np.round(zc)
-    dx = np.abs(rxc - xc)
-    dy = np.abs(ryc - yc)
-    dz = np.abs(rzc - zc)
-    fix_x = (dx > dy) & (dx > dz)
-    fix_y = ~fix_x & (dy > dz)
-    fix_z = ~fix_x & ~fix_y
-    rxc = np.where(fix_x, -ryc - rzc, rxc)
-    ryc = np.where(fix_y, -rxc - rzc, ryc)
-    rzc = np.where(fix_z, -rxc - ryc, rzc)
-    return rxc.astype(int), rzc.astype(int)
-
-
-def world_to_axial(x: float, y: float) -> tuple[int, int]:
-    """Nearest hex `(q, r)` for world point `(x, y)`."""
-    qf = (2.0 / 3.0) * x / HEX_TILE_RADIUS
-    rf = (-x / 3.0 + y / _SQRT3) / HEX_TILE_RADIUS
-    q, r = _cube_round(np.array([qf]), np.array([rf]))
-    return int(q[0]), int(r[0])
+def _convex_polys_overlap(a: np.ndarray, b: np.ndarray) -> bool:
+    """Separating-axis-theorem test for two convex polygons.  Returns
+    True iff their intersection has positive area; tangent contact
+    (shared vertex or edge, zero-area overlap) returns False."""
+    for poly in (a, b):
+        n = len(poly)
+        for i in range(n):
+            edge = poly[(i + 1) % n] - poly[i]
+            axis = np.array([-edge[1], edge[0]])
+            ap = a @ axis
+            bp = b @ axis
+            if ap.max() <= bp.min() or bp.max() <= ap.min():
+                return False
+    return True
 
 
 # Sq centroid placements modulo hex lattice + sq's 45° D2 symmetry: hex
@@ -73,6 +60,16 @@ CANDIDATE_OFFSETS: dict[str, tuple[float, float]] = {
     "edge_slash":        (0.75 * _R, 0.5 * _H),
     "edge_backslash":    (0.75 * _R, -0.5 * _H),
 }
+
+# Flat-top regular hex of edge `HEX_TILE_RADIUS` centred at origin.
+_HEX_CORNERS_LOCAL = np.array([
+    (_R, 0.0),
+    (0.5 * _R, _H),
+    (-0.5 * _R, _H),
+    (-_R, 0.0),
+    (-0.5 * _R, -_H),
+    (0.5 * _R, -_H),
+])
 
 # Dimetric sq frame is rotated 45° relative to the hex world frame; this
 # is the porting axiom, not a free parameter.
@@ -99,24 +96,36 @@ def hex_cells_overlapping_rect(
     centroid_world: tuple[float, float],
     *,
     rotation_deg: float = SQ_ROTATION_DEG,
-    samples_per_unit: int = 32,
 ) -> set[tuple[int, int]]:
-    """Hex axial cells containing any sample point of a `dims_x * dims_y`
-    rectangle centred at `centroid_world` and rotated by `rotation_deg`."""
+    """Hex axial cells whose flat-top polygon has positive-area
+    intersection with the `dims_x * dims_y` rectangle centred at
+    `centroid_world` and rotated by `rotation_deg`.
+
+    Exact via Separating-Axis Theorem on the rect and each candidate
+    hex polygon -- no sampling, so corner-poke slivers don't escape."""
     cx, cy = centroid_world
-    theta = math.radians(rotation_deg)
-    cos_t, sin_t = math.cos(theta), math.sin(theta)
-    nx = max(2, int(dims_x * samples_per_unit))
-    ny = max(2, int(dims_y * samples_per_unit))
-    xs = (np.arange(nx) + 0.5) / samples_per_unit - dims_x / 2.0
-    ys = (np.arange(ny) + 0.5) / samples_per_unit - dims_y / 2.0
-    xx, yy = np.meshgrid(xs, ys)
-    wx = (cos_t * xx - sin_t * yy + cx).ravel()
-    wy = (sin_t * xx + cos_t * yy + cy).ravel()
-    qf = (2.0 / 3.0) * wx / HEX_TILE_RADIUS
-    rf = (-wx / 3.0 + wy / _SQRT3) / HEX_TILE_RADIUS
-    qs, rs = _cube_round(qf, rf)
-    return set(zip(qs.tolist(), rs.tolist()))
+    th = math.radians(rotation_deg)
+    cos_t, sin_t = math.cos(th), math.sin(th)
+    hw, hh = dims_x / 2.0, dims_y / 2.0
+    rect_local = np.array([(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)])
+    rect = np.column_stack([
+        cos_t * rect_local[:, 0] - sin_t * rect_local[:, 1] + cx,
+        sin_t * rect_local[:, 0] + cos_t * rect_local[:, 1] + cy,
+    ])
+    x_min, y_min = rect.min(axis=0) - _R
+    x_max, y_max = rect.max(axis=0) + _R
+    q_lo = math.floor(x_min / 1.5)
+    q_hi = math.ceil(x_max / 1.5)
+    cells: set[tuple[int, int]] = set()
+    for q in range(q_lo, q_hi + 1):
+        r_lo = math.floor(y_min / _SQRT3 - q / 2.0)
+        r_hi = math.ceil(y_max / _SQRT3 - q / 2.0)
+        for r in range(r_lo, r_hi + 1):
+            hcx, hcy = hex_world_center(q, r)
+            hex_poly = _HEX_CORNERS_LOCAL + (hcx, hcy)
+            if _convex_polys_overlap(rect, hex_poly):
+                cells.add((q, r))
+    return cells
 
 
 def _candidate_footprint(dims_x: int, dims_y: int,
