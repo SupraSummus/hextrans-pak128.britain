@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from pak.bake import bake_2d_building_main
+from pak.bake import bake_building_main
 from pak.dat import Building, Symmetry
+from pak.sprites import UpstreamRemap
 
 SPEC = Building(
     name="02_CITY",
@@ -23,8 +24,9 @@ SPEC = Building(
     class_proportion=[3, 7, 25, 30, 30],
     class_proportion_jobs=[5, 10, 45, 25, 15],
     upstream_dat="townhall/townhalls.dat",
+    sprites=UpstreamRemap(),
 )
 
 
 if __name__ == "__main__":
-    bake_2d_building_main(SPEC, __file__)
+    bake_building_main(SPEC, __file__)

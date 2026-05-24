@@ -51,6 +51,7 @@ from pak.way import HEX_ENTRIES
 
 if TYPE_CHECKING:
     from pak.materials import Lighting, Material
+    from pak.sprites import SpriteProvider
 
 _INDEX_RE = re.compile(r"\[([^\]]*)\]")
 _TERMINATOR_RE = re.compile(r"^-+\s*$")
@@ -588,15 +589,20 @@ class Building:
     class_proportion_jobs: list[int] = field(default_factory=list)
     upgrade: list[str] = field(default_factory=list)
 
-    # Bake-pipeline metadata.  Not emitted into the dat.  `materials`
-    # is a per-blend-material `Material` recipe (BI slot stacks, image
-    # refs, procedural noise); `lighting` overrides the EEVEE ambient
-    # / sun tune per asset.  `blend_winter` / `materials_winter` opt
-    # the asset into the winter atlas pass when `seasons >= 2`.
-    # `blend_source` selects which upstream blends repo `blend` /
-    # `blend_winter` resolve against -- "jp" = jamespetts (default,
-    # citybuildings / signals / etc.), "jh" = JamesHood (attractions
-    # and other categories jamespetts doesn't carry).
+    # Bake-pipeline metadata.  Not emitted into the dat.
+    #
+    # `sprites` is the new shape: a `SpriteProvider` instance
+    # (`pak.sprites.BlendRender` or `UpstreamRemap`) that owns the
+    # "where pixels come from" decision.  When set, the inline
+    # `blend` / `materials` / ... fields below must stay at their
+    # defaults -- `__post_init__` enforces this.  See `pak.sprites`.
+    sprites: SpriteProvider | None = _bake_meta()
+    # Legacy inline fields, still read by consumer tools (`pak.check`,
+    # `pak.tune_materials`, `pak.diag_per_material`, `pak.bake_units`)
+    # and by every pre-`sprites=` bake script; the bake driver
+    # synthesises a `BlendRender` from them when `sprites is None`.
+    # TODO.md → "Sprite-provider migration of consumer tools" tracks
+    # the path to retiring this block.
     blend: str | None = _bake_meta()
     upstream_dat: str | None = _bake_meta()
     materials: dict[str, Material] | None = _bake_meta()
@@ -632,6 +638,37 @@ class Building:
     # shape as `Way.strip`; both wire through `render.py`'s
     # `Viewpoint.strip_meshes`.
     strip: str = _bake_meta(default="Sphere")
+
+    def __post_init__(self) -> None:
+        # Reject mixed shapes: `sprites=` and the legacy bake-meta
+        # fields below are alternative ways of declaring "how to fill
+        # the atlas", and `_sprites_for` silently prefers `sprites`,
+        # so dual-setting is a contradictory SPEC the consumer tools
+        # would misread.  Scan every field that's mirrored in
+        # `BlendRender` and flag any set to a non-default value.
+        if self.sprites is None:
+            return
+        non_default = {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+            if f.name in _BUILDING_BAKE_META_FIELDS
+            and getattr(self, f.name) != f.default
+        }
+        if non_default:
+            raise ValueError(
+                f"{self.name}: sprites= set alongside legacy inline "
+                f"field(s) {sorted(non_default)}; move them onto sprites=",
+            )
+
+
+# Fields on `Building` that mirror `pak.sprites.BlendRender` -- the set
+# `__post_init__` checks for mutual exclusion against `sprites=`.
+# `upstream_dat` stays unlisted because both providers consume it.
+_BUILDING_BAKE_META_FIELDS = frozenset({
+    "blend", "materials", "blend_winter", "materials_winter",
+    "lighting", "blend_source", "blend_units_per_tile",
+    "blend_model_offset_xyz", "strip",
+})
 
 
 @dataclass

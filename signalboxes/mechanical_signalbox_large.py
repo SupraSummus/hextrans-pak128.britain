@@ -5,6 +5,7 @@ from __future__ import annotations
 from pak.bake import bake_building_main
 from pak.dat import Building
 from pak.materials import Material, Slot
+from pak.sprites import BlendRender
 
 MATERIALS = {
     "Brick": Material(slots=[
@@ -68,15 +69,17 @@ SPEC = Building(
     cost=1000000,
     class_proportion=[0, 4, 66, 30, 0],
     class_proportion_jobs=[0, 10, 90, 0, 0],
-    blend="signals/mechanical-signalbox-large.blend",
     upstream_dat="signalboxes/mechanical-signalbox-large.dat",
-    materials=MATERIALS,
-    # `pak.diag_centroid_align` joint XYZ fit, R²=95 %, lifts stitched
-    # IoU from 0.69 (pre-pin) to 0.94.  XY component was invisible
-    # under the original Y-column-broken design matrix and only
-    # surfaced after the perturbation harness validated the forward
-    # model against the renderer.
-    blend_model_offset_xyz=(-0.36, 1.15, 2.11),
+    sprites=BlendRender(
+        blend="signals/mechanical-signalbox-large.blend",
+        materials=MATERIALS,
+        # `pak.diag_centroid_align` joint XYZ fit, R²=95 %, lifts
+        # stitched IoU from 0.69 (pre-pin) to 0.94.  XY component was
+        # invisible under the original Y-column-broken design matrix
+        # and only surfaced after the perturbation harness validated
+        # the forward model against the renderer.
+        blend_model_offset_xyz=(-0.36, 1.15, 2.11),
+    ),
 )
 
 

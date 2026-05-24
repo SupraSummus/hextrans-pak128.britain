@@ -1046,12 +1046,22 @@ extra factory-only scalars + parallel input/output good lists.
 Shared-sprite multi-Obj uses `SPECS: list[Factory]` (e.g. chemist's
 1860 + 1955 upgrade pair sharing one render).
 
-Blendless buildings (townhalls, plus likely other pre-blend-pipeline
-square-footprint assets) ride a separate `bake_2d_building_main` that
-slices the upstream sq-dimetric atlas onto a 4-hex rhombus without
-re-rendering.  Visibly compromised (camera-mismatch, magic-pink ring
-at the rhombus edges); ship-vs-skip is an open policy question — see
-TODO.md → "2D-remap for blendless buildings".
+How pixels get into the atlas is delegated to `spec.sprites` (a
+`pak.sprites.SpriteProvider`).  Two providers today: `BlendRender`
+(Cycles render from a `.blend`, the historic path) and
+`UpstreamRemap` (stitch upstream's square-dimetric atlas onto a
+4-hex rhombus, no blend).  `bake_building` dispatches uniformly --
+`bake_building_main` works for both blend-driven and blendless
+assets, the SPEC's nested provider says which.  Pre-`sprites=`
+scripts feed inline `blend=`/`materials=`/etc. through a
+synthesised `BlendRender` at dispatch time (see TODO.md →
+"Sprite-provider migration of consumer tools").
+
+Blendless townhalls (and likely other pre-blend-pipeline
+square-footprint assets) use `sprites=UpstreamRemap()`.  Visibly
+compromised (camera-mismatch, magic-pink ring at the rhombus
+edges); ship-vs-skip is an open policy question — see TODO.md →
+"2D-remap for blendless buildings".
 
 ## Way-bake architecture
 

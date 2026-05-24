@@ -5,6 +5,7 @@ from __future__ import annotations
 from pak.bake import bake_building_main
 from pak.dat import Building
 from pak.materials import Lighting, Material
+from pak.sprites import BlendRender
 
 # `color=` overrides converged by `pak.tune_materials` against the
 # blurred-all-pixel dRGB metric (`pak.diff.drgb_intersection` at
@@ -96,12 +97,14 @@ SPEC = Building(
     mail_demand=1,
     class_proportion=[0, 40, 100, 75, 0],
     seasons=2,
-    blend="citybuildings/1600-detatched-house-2f.blend",
-    blend_winter="citybuildings/1600-detatched-house-2f-snow.blend",
     upstream_dat="citybuildings/res-1600.dat",
-    materials=MATERIALS,
-    materials_winter=MATERIALS_WINTER,
-    lighting=LIGHTING,
+    sprites=BlendRender(
+        blend="citybuildings/1600-detatched-house-2f.blend",
+        blend_winter="citybuildings/1600-detatched-house-2f-snow.blend",
+        materials=MATERIALS,
+        materials_winter=MATERIALS_WINTER,
+        lighting=LIGHTING,
+    ),
 )
 
 

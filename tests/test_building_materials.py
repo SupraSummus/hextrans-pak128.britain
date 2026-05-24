@@ -23,6 +23,17 @@ from pak.materials import Lighting, Material, Slot, from_jsonable, seed_python, 
 from pak.tune_materials import proposed_color
 
 
+def _spec_materials(spec) -> dict | None:
+    """Read the materials dict from `spec.materials` or, on migrated
+    scripts, from `spec.sprites.materials`.  See `pak.sprites` for
+    the dual-shape transition; the consumer-tool migration TODO
+    consolidates these accesses behind a single helper in `pak.bake`."""
+    if getattr(spec, "materials", None):
+        return spec.materials
+    sprites = getattr(spec, "sprites", None)
+    return getattr(sprites, "materials", None)
+
+
 def _building_specs_with_materials() -> list[tuple[str, ModuleType]]:
     out: list[tuple[str, ModuleType]] = []
     for path in sorted((REPO_ROOT / "citybuildings").glob("*.py")):
@@ -30,7 +41,7 @@ def _building_specs_with_materials() -> list[tuple[str, ModuleType]]:
             continue
         mod = importlib.import_module(f"citybuildings.{path.stem}")
         spec = getattr(mod, "SPEC", None)
-        if getattr(spec, "materials", None):
+        if _spec_materials(spec):
             out.append((path.stem, mod))
     return out
 
@@ -44,8 +55,9 @@ class TestBuildingScriptMaterials(unittest.TestCase):
     def test_every_materials_dict_is_well_formed(self):
         for name, mod in _building_specs_with_materials():
             with self.subTest(script=name):
-                self.assertIsInstance(mod.SPEC.materials, dict)
-                for k, v in mod.SPEC.materials.items():
+                materials = _spec_materials(mod.SPEC)
+                self.assertIsInstance(materials, dict)
+                for k, v in materials.items():
                     self.assertIsInstance(k, str)
                     self.assertIsInstance(v, Material)
 
