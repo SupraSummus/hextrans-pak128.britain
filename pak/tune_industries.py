@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 from pak import REPO_ROOT
-from pak.bake_units import import_script, specs_of
+from pak.bake_units import discover, import_script, specs_of
 from pak.dat import Factory
 from pak.extract_materials import materials_from_blend
 from pak.fetch_blend import fetch as fetch_blend
@@ -250,8 +250,7 @@ def _main(argv: list[str]) -> int:
 
     lighting = _parse_lighting(args.lighting) if args.lighting else None
     if args.all:
-        scripts = sorted(p for p in (REPO_ROOT / "industry").glob("*.py")
-                         if p.name != "__init__.py")
+        scripts = discover("industry")
     elif args.script:
         scripts = [Path(args.script).resolve()]
     else:
