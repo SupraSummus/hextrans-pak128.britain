@@ -6,11 +6,20 @@ bake-unit conventions).
 Buildings (`Obj=building` — attractions, monuments, city
 buildings, townhalls, HQs, stops, extensions) port via the same
 shape as vehicles: a typed `Building` SPEC in a per-asset bake
-script with inline bake-meta (`blend=`, `upstream_dat=`,
-`materials=`, `blend_winter=`, `materials_winter=`, `lighting=`),
-and `bake_building_main(SPEC, __file__)` at the bottom.  The
+script with `upstream_dat=` plus a nested `sprites=` provider
+(`pak.sprites.BlendRender` for Cycles rendering, `UpstreamRemap`
+for the upstream-pixel 4-hex-rhombus path), and
+`bake_building_main(SPEC, __file__)` at the bottom.  The
 rendering side multiplies out into per-cell renders driven by
 the SPEC's footprint.
+
+Most committed scripts still carry inline bake-meta on the SPEC
+itself (`blend=`, `materials=`, `blend_winter=`, `materials_
+winter=`, `lighting=`) -- the bake driver synthesises a
+`BlendRender` from them when `spec.sprites is None`.  Migrating
+those scripts to the explicit `sprites=BlendRender(...)` shape
+gates on the consumer-tool migration (TODO.md → "Sprite-provider
+migration of consumer tools").
 
 **Engine schema** (`descriptor/writer/building_writer.cc`).
 Image keys are six-bracket

@@ -27,7 +27,6 @@ from dataclasses import replace
 from math import gcd
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
 from pak import REPO_ROOT
@@ -55,9 +54,7 @@ from pak.dat import (
 )
 from pak.fetch_blend import fetch
 from pak.fetch_jh_blend import fetch as fetch_jh
-from pak.fetch_pak import fetch as fetch_pak
 from pak.materials import Material
-from pak.remap_2d_building import remap_to_cells
 from pak.render import RenderPayload
 from pak.viewpoints import (
     HEX_VIEWPOINT,
@@ -446,75 +443,26 @@ def bake_building_atlas(
     return out_dir / f"{name}.png"
 
 
-def _render_building_season(
-    *, blend: str, name: str, out_dir: Path, spec: Building, layouts: int,
-    materials: dict[str, Material] | None,
-    lighting=None,
-) -> Path:
-    return bake_building_atlas(
-        viewpoint_kind="hex_building",
-        blend_path=fetch_blend_by_source(blend, spec.blend_source),
-        name=name, out_dir=out_dir, layouts=layouts,
-        dims_x=spec.dims_x, dims_y=spec.dims_y, heights=spec.heights,
-        units_per_tile=spec.blend_units_per_tile,
-        materials=materials, lighting=lighting,
-        model_offset_xyz=spec.blend_model_offset_xyz, strip=spec.strip,
+def _sprites_for(spec: Building):
+    """`spec.sprites` if set, else a `BlendRender` synthesised from
+    the legacy inline fields -- one dispatch path for both shapes."""
+    # `pak.sprites` imports `bake_building_atlas` / `fetch_blend_by_
+    # source` from this module at its top; a top-level import here
+    # would close the cycle.  See TODO.md → "Sprite-provider migration".
+    from pak.sprites import BlendRender  # noqa: PLC0415
+    if spec.sprites is not None:
+        return spec.sprites
+    return BlendRender(
+        blend=spec.blend,
+        blend_source=spec.blend_source,
+        materials=spec.materials,
+        blend_winter=spec.blend_winter,
+        materials_winter=spec.materials_winter,
+        lighting=spec.lighting,
+        blend_units_per_tile=spec.blend_units_per_tile,
+        blend_model_offset_xyz=spec.blend_model_offset_xyz,
+        strip=spec.strip,
     )
-
-
-def _stitch_seasons(season_pngs: list[Path], out_path: Path) -> None:
-    """Vertically concatenate per-season PNGs into a single atlas.
-
-    Top = summer, bottom = winter — matches `emit_building`'s row
-    formula `s * heights + h` (each season is a `heights`-row
-    stripe).  All inputs must share dimensions (same viewpoint, same
-    footprint)."""
-    images = [Image.open(p).convert("RGBA") for p in season_pngs]
-    sizes = {img.size for img in images}
-    if len(sizes) > 1:
-        raise RuntimeError(f"season PNGs have mismatched sizes: {sorted(sizes)}")
-    w, h = images[0].size
-    combined = Image.new("RGBA", (w, h * len(images)), (0, 0, 0, 0))
-    for i, img in enumerate(images):
-        combined.paste(img, (0, i * h))
-    combined.save(out_path)
-
-
-def _render_seasonal_atlas(
-    spec: Building, *, basename: str, out_dir: Path, layouts: int,
-) -> None:
-    """Render the per-asset atlas, stitching summer + optional winter.
-
-    Single-season writes straight to `<basename>.png`; multi-season
-    renders per-season into `<basename>__s<i>.png` tempfiles, then
-    `_stitch_seasons` concatenates summer-on-top.  Shared by
-    `bake_building` and `bake_factory` -- Factory subclasses Building
-    so every field this needs (`blend`, `materials`, `seasons`,
-    `blend_winter`, `materials_winter`, `lighting`) carries through.
-    """
-    if spec.blend is None:
-        raise ValueError(f"{basename}: SPEC missing blend=")
-    season_inputs: list[tuple[str, dict[str, Material] | None]] = [
-        (spec.blend, spec.materials),
-    ]
-    if spec.seasons >= 2:
-        if spec.blend_winter is None:
-            raise ValueError(
-                f"{basename}: spec.seasons={spec.seasons} requires blend_winter"
-            )
-        season_inputs.append((spec.blend_winter, spec.materials_winter))
-    single = len(season_inputs) == 1
-    tmp_paths: list[Path] = []
-    for s, (b, m) in enumerate(season_inputs):
-        name = basename if single else f"{basename}__s{s}"
-        tmp_paths.append(_render_building_season(
-            blend=b, name=name, out_dir=out_dir, layouts=layouts,
-            spec=spec, materials=m, lighting=spec.lighting,
-        ))
-    if not single:
-        _stitch_seasons(tmp_paths, out_dir / f"{basename}.png")
-        for p in tmp_paths:
-            p.unlink()
 
 
 def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
@@ -542,9 +490,14 @@ def bake_building(spec: Building, *, basename: str, out_dir: Path) -> Path:
     real bake surfaces misalignment, fix in
     `viewpoints.building_hex_viewpoint` (rotation sign / koord-tile
     mapping) and in its `fit_matrix` factory.
+
+    Pixel production goes through `spec.sprites.produce(...)` -- see
+    `pak.sprites` for the provider abstraction.
     """
     layouts = hex_layouts_default(spec.symmetry)
-    _render_seasonal_atlas(spec, basename=basename, out_dir=out_dir, layouts=layouts)
+    _sprites_for(spec).produce(
+        spec=spec, basename=basename, out_dir=out_dir, layouts=layouts,
+    )
     out_dat = emit_building(spec, out_dir=out_dir, basename=basename,
                             layouts=layouts)
     _print_wrote(out_dat)
@@ -644,7 +597,9 @@ def bake_factory(
         raise ValueError(f"{basename}: bake_factory requires at least one Factory")
     visual = specs[0]
     layouts = hex_layouts_default(visual.symmetry)
-    _render_seasonal_atlas(visual, basename=basename, out_dir=out_dir, layouts=layouts)
+    _sprites_for(visual).produce(
+        spec=visual, basename=basename, out_dir=out_dir, layouts=layouts,
+    )
     out_dat = emit_factories(specs, out_dir=out_dir, basename=basename,
                              layouts=layouts)
     _print_wrote(out_dat)
@@ -655,54 +610,3 @@ def bake_factory_main(spec: Factory | list[Factory], file: str) -> Path:
     """`bake_factory` keyed off the calling script's `__file__`."""
     path = Path(file).resolve()
     return bake_factory(spec, basename=path.stem, out_dir=path.parent)
-
-
-def bake_2d_building(
-    spec: Building, *, basename: str, out_dir: Path,
-    orientation: str = "slash",
-) -> Path:
-    """Remap a blendless upstream 2D building atlas onto a hex 4-hex
-    rhombus -- see TODO.md → "2D-remap for blendless buildings".
-
-    The atlas carries one layout's worth of cells, so SPEC.symmetry
-    must reduce to 1 under `hex_layouts_default` (i.e. CONTINUOUS).
-    Bake and `reemit_dats` both go through `hex_layouts_default` so
-    the lint round-trip stays byte-stable.
-    """
-    if spec.upstream_dat is None:
-        raise ValueError(f"{basename}: SPEC.upstream_dat is required")
-    if (spec.dims_x, spec.dims_y) != (2, 2) or spec.heights != 1:
-        raise ValueError(
-            f"{basename}: bake_2d_building wants dims=2,2 heights=1; got "
-            f"dims={spec.dims_x},{spec.dims_y} heights={spec.heights}",
-        )
-    layouts = hex_layouts_default(spec.symmetry)
-    if layouts != 1:
-        raise ValueError(
-            f"{basename}: bake_2d_building wants symmetry to reduce to "
-            f"layouts=1; got {spec.symmetry!r} → {layouts}",
-        )
-
-    upstream_dat = fetch_pak(spec.upstream_dat)
-    rows = [
-        np.concatenate(
-            remap_to_cells(upstream_dat, spec.name,
-                           layout=0, season=s, orientation=orientation)[0],
-            axis=1,
-        )
-        for s in range(spec.seasons)
-    ]
-    Image.fromarray(np.vstack(rows)).save(out_dir / f"{basename}.png")
-    out_dat = emit_building(spec, out_dir=out_dir, basename=basename,
-                            layouts=layouts)
-    _print_wrote(out_dat)
-    return out_dat
-
-
-def bake_2d_building_main(
-    spec: Building, file: str, *, orientation: str = "slash",
-) -> Path:
-    """`bake_2d_building` keyed off the calling script's `__file__`."""
-    path = Path(file).resolve()
-    return bake_2d_building(spec, basename=path.stem, out_dir=path.parent,
-                            orientation=orientation)

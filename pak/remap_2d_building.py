@@ -1,10 +1,11 @@
 """Remap upstream 2D-only buildings (no `.blend`) onto the hex tile lattice.
 
 Stitch sq-dimetric cells via `pak.sq_split.stitch`, re-slice via
-`pak.hex_split.split` onto a 4-hex rhombus.  Bake-unit entry point is
-`pak.bake.bake_2d_building`; the policy gap and the pink-ring /
-camera-mismatch artefacts are in TODO.md → "2D-remap for blendless
-buildings".
+`pak.hex_split.split` onto a 4-hex rhombus.  Wrapped by the
+`UpstreamRemap` sprite provider in `pak.sprites`; bake scripts that
+use it declare `sprites=UpstreamRemap(...)` on their `Building`
+SPEC.  The policy gap and the pink-ring / camera-mismatch artefacts
+are in TODO.md → "2D-remap for blendless buildings".
 """
 
 from __future__ import annotations

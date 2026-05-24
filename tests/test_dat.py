@@ -49,6 +49,7 @@ from pak.dat import (
     port_way,
     seed_python,
 )
+from pak.sprites import BlendRender, UpstreamRemap
 
 SAMPLE_MULTI_OBJ = """\
 # A header comment.
@@ -192,6 +193,21 @@ class TestIterImageRefs(unittest.TestCase):
         (ref,) = iter_image_refs(obj, family="image")
         self.assertEqual(ref.basename, "images/fence-3")
         self.assertEqual((ref.row, ref.col), (0, 0))
+
+
+class TestBuildingConstruction(unittest.TestCase):
+    def test_rejects_sprites_with_inline_blend(self):
+        # `_sprites_for` silently prefers `sprites=` over the inline
+        # fields, so dual-set is a contradictory SPEC that consumer
+        # tools would misread.  See pak.sprites + Building.__post_init__.
+        with self.assertRaisesRegex(ValueError, "sprites= set alongside"):
+            Building(name="x", type="res", sprites=BlendRender(),
+                     blend="some.blend")
+        with self.assertRaisesRegex(ValueError, "sprites= set alongside"):
+            Building(name="x", type="res", sprites=UpstreamRemap(),
+                     materials={"M": object()})  # type: ignore[dict-item]
+        # Default values are still allowed alongside sprites=.
+        Building(name="x", type="res", sprites=UpstreamRemap())
 
 
 class TestVehicleConstruction(unittest.TestCase):

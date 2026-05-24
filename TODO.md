@@ -1119,10 +1119,11 @@ is the remap primitive: stitch upstream's four `backimage[L][y][x][0]
 [0][s]` cells onto a canvas at `sq_tile_screen_offset`, re-slice at
 `hex_tile_screen_offset` onto a centred-symmetric 4-hex rhombus (three
 orientations available — horizontal / slash / backslash, all
-geometrically congruent under 60° lattice rotation).  `pak.bake.
-bake_2d_building` wraps it for the bake-unit pattern with a `Building`
-SPEC + `emit_building`; three townhalls (`townhall/_00_city.py` /
-`_01_city.py` / `_02_city.py`) ship through `make pak` with the
+geometrically congruent under 60° lattice rotation).  The
+`pak.sprites.UpstreamRemap` provider wraps it for the bake-unit
+pattern with a `Building` SPEC + `emit_building`; three townhalls
+(`townhall/_00_city.py` / `_01_city.py` / `_02_city.py`) ship through
+`make pak` with the
 `slash` rhombus (the only orientation expressible as engine `Dims=2,2`,
 since horizontal/backslash use axial cells outside the [0,1]² bracket
 range).  Visible artefact: the slash cluster's 128² slice windows reach
@@ -1163,6 +1164,37 @@ not slash + heights.
 
 IF the answer flips to no: delete the driver, the bake wrapper, the
 three bake scripts, the test, and revert the Makefile DIRS128 line.
+
+**Sprite-provider migration of consumer tools.**  `bake_building` /
+`bake_factory` dispatch through `spec.sprites` (`pak.sprites.
+BlendRender` or `UpstreamRemap`), synthesising a `BlendRender` from
+the legacy inline `blend=`/`materials=`/etc. fields when
+`spec.sprites is None`.  Three townhalls and two blend-rendered
+assets (`signalboxes/mechanical_signalbox_large.py`, `citybuildings/
+res_1600_kg_01.py`) use the explicit shape; ~50 other ported scripts
+still carry flat fields.
+
+`pak.check`, `pak.tune_materials`, `pak.diag_per_material`,
+`pak.diag_centroid_align` and `pak.bake_units._spec_blends` all read
+the inline fields directly off the SPEC.  None of them looks at
+`spec.sprites`, so moving a script's render meta onto
+`sprites=BlendRender(...)` loses calibration / material-tune /
+centroid-align coverage on it.  `tests/test_building_materials._spec_
+materials` reads through both shapes -- the only consumer that does
+today.
+
+Concrete next move: add a `blend_render_of(spec) -> BlendRender |
+None` helper in `pak.sprites` (returns `spec.sprites` when it's a
+`BlendRender`, else builds one from the legacy fields); route every
+inline-field access in the consumers above through it.  Then
+mechanically rewrite the remaining scripts to `sprites=BlendRender(
+...)`, delete the legacy fields from `Building`, drop `_sprites_for`
++ `Building.__post_init__`'s mutual-exclusion guard.
+`pak.dat.seed_python` already emits non-default fields only, so
+`port_building` can grow nested-provider output without a separate
+formatter.  Extract `pak/building_atlas.py` while there (host
+`bake_building_atlas` + `fetch_blend_by_source`) and the lazy import
+in `pak.bake._sprites_for` goes away too.
 
 **Nested tile-size dirs** (`boats/boats192/`, `boats/boats224/`,
 `boats/boats256/`, `air/air192/`, `air/air256/`).  Higher-
