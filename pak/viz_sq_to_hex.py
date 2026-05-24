@@ -20,6 +20,7 @@ import numpy as np
 from pak.sq_to_hex import (
     CANDIDATE_OFFSETS,
     HEX_EDGE,
+    SQ_ROTATION_DEG,
     SQRT3,
     hex_world_center,
     sq_to_hex_footprint,
@@ -58,7 +59,7 @@ def _plot_footprint(ax, dims_x: int, dims_y: int) -> None:
     # places everything in the hex frame around the chosen anchor.
     from pak.sq_to_hex import _hex_cells_overlapping_rect
     raw = _hex_cells_overlapping_rect(
-        dims_x, dims_y, centroid, rotation_deg=fp.rotation_deg)
+        dims_x, dims_y, centroid, rotation_deg=SQ_ROTATION_DEG)
 
     qs = [q for q, _r in raw]
     rs = [r for _q, r in raw]
@@ -88,7 +89,7 @@ def _plot_footprint(ax, dims_x: int, dims_y: int) -> None:
                 fontsize=7, color="#001a40", zorder=4)
 
     # Sq footprint rectangle (yellow, dashed outline).
-    rect = _sq_rect_corners(dims_x, dims_y, centroid, fp.rotation_deg)
+    rect = _sq_rect_corners(dims_x, dims_y, centroid, SQ_ROTATION_DEG)
     ax.add_patch(mpatches.Polygon(
         rect, closed=True, facecolor="#ffe169",
         edgecolor="#b07f00", linewidth=1.5, linestyle="--",
@@ -99,7 +100,7 @@ def _plot_footprint(ax, dims_x: int, dims_y: int) -> None:
     for i in range(dims_x + 1):
         u = -dims_x / 2.0 + i
         verts = np.array([(u, -dims_y / 2.0), (u, dims_y / 2.0)])
-        th = math.radians(fp.rotation_deg)
+        th = math.radians(SQ_ROTATION_DEG)
         R = np.array([[math.cos(th), -math.sin(th)],
                       [math.sin(th), math.cos(th)]])
         v = (verts @ R.T) + np.array(centroid)
@@ -108,7 +109,7 @@ def _plot_footprint(ax, dims_x: int, dims_y: int) -> None:
     for j in range(dims_y + 1):
         u = -dims_y / 2.0 + j
         verts = np.array([(-dims_x / 2.0, u), (dims_x / 2.0, u)])
-        th = math.radians(fp.rotation_deg)
+        th = math.radians(SQ_ROTATION_DEG)
         R = np.array([[math.cos(th), -math.sin(th)],
                       [math.sin(th), math.cos(th)]])
         v = (verts @ R.T) + np.array(centroid)
@@ -132,10 +133,9 @@ def _plot_footprint(ax, dims_x: int, dims_y: int) -> None:
     ax.set_aspect("equal")
     ax.set_xticks([])
     ax.set_yticks([])
-    rot_str = f"rot={fp.rotation_deg:.0f}°" if fp.rotation_deg else ""
     ax.set_title(
         f"sq {dims_x}x{dims_y}  ->  {fp.n_cells} hex  bbox={fp.bbox_qr}\n"
-        f"anchor: {fp.anchor_kind}  {rot_str}",
+        f"anchor: {fp.anchor_kind}",
         fontsize=9,
     )
 

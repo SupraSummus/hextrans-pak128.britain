@@ -83,12 +83,11 @@ CANDIDATE_OFFSETS: dict[str, tuple[float, float]] = {
 }
 
 
-# Rotations of the sq footprint relative to the hex world axes.  Base
-# orientation is 45° -- the dimetric sq frame is rotated 45° relative
-# to the hex world frame, so a sq tile appears as a diamond in the hex
-# world frame.  Sweep at 30° steps from there to cover the hex 6-fold
-# symmetry.
-CANDIDATE_ROTATIONS_DEG: tuple[float, ...] = (45.0, 75.0, 105.0, 135.0)
+# Sq footprint rotation relative to the hex world axes.  Fixed at 45° --
+# the dimetric sq frame is rotated 45° relative to the hex world frame,
+# so a sq tile is a diamond in the hex world frame; this orientation is
+# the porting axiom, not a free parameter.
+SQ_ROTATION_DEG: float = 45.0
 
 
 @dataclass(frozen=True)
@@ -97,13 +96,13 @@ class HexFootprint:
 
     `cells` are axial `(q, r)` keys normalised so `min(q) == min(r) == 0`.
     `anchor_kind` names the winning hex-lattice symmetric point the sq
-    centroid was placed on.  `rotation_deg` is the sq footprint
-    rotation relative to the hex axes (0° = sq axes // world axes).
-    `bbox_qr` is `(span_q, span_r)` — the engine `Dims=` rectangle.
+    centroid was placed on.  Sq footprint is fixed at `SQ_ROTATION_DEG`
+    (45°) relative to the hex axes -- not a free parameter, see module
+    constant.  `bbox_qr` is `(span_q, span_r)` -- the engine `Dims=`
+    rectangle.
     """
     cells: tuple[tuple[int, int], ...]
     anchor_kind: str
-    rotation_deg: float
     bbox_qr: tuple[int, int]
 
     @property
@@ -150,23 +149,20 @@ def sq_to_hex_footprint(dims_x: int, dims_y: int) -> HexFootprint:
     docstring."""
     best: tuple | None = None
     for kind, offset in CANDIDATE_OFFSETS.items():
-        for rot in CANDIDATE_ROTATIONS_DEG:
-            cells = _hex_cells_overlapping_rect(
-                dims_x, dims_y, offset, rotation_deg=rot)
-            qs = [q for q, _ in cells]
-            rs = [r for _, r in cells]
-            span_q = max(qs) - min(qs)
-            span_r = max(rs) - min(rs)
-            ofs_q, ofs_r = -min(qs), -min(rs)
-            norm = tuple(sorted((q + ofs_q, r + ofs_r) for q, r in cells))
-            score = (len(cells), (span_q + 1) * (span_r + 1),
-                     span_q + span_r)
-            if best is None or score < best[0]:
-                best = (score, kind, rot, norm, (span_q + 1, span_r + 1))
-    _score, kind, rot, cells, bbox = best
-    return HexFootprint(
-        cells=cells, anchor_kind=kind, rotation_deg=rot, bbox_qr=bbox,
-    )
+        cells = _hex_cells_overlapping_rect(
+            dims_x, dims_y, offset, rotation_deg=SQ_ROTATION_DEG)
+        qs = [q for q, _ in cells]
+        rs = [r for _, r in cells]
+        span_q = max(qs) - min(qs)
+        span_r = max(rs) - min(rs)
+        ofs_q, ofs_r = -min(qs), -min(rs)
+        norm = tuple(sorted((q + ofs_q, r + ofs_r) for q, r in cells))
+        score = (len(cells), (span_q + 1) * (span_r + 1),
+                 span_q + span_r)
+        if best is None or score < best[0]:
+            best = (score, kind, norm, (span_q + 1, span_r + 1))
+    _score, kind, cells, bbox = best
+    return HexFootprint(cells=cells, anchor_kind=kind, bbox_qr=bbox)
 
 
 if __name__ == "__main__":
@@ -174,5 +170,5 @@ if __name__ == "__main__":
         for m in (1, 2, 3, 4):
             fp = sq_to_hex_footprint(n, m)
             print(f"{n}x{m}: anchor={fp.anchor_kind:<16s} "
-                  f"rot={fp.rotation_deg:>4.0f}deg n={fp.n_cells} "
-                  f"bbox={fp.bbox_qr} cells={list(fp.cells)}")
+                  f"n={fp.n_cells} bbox={fp.bbox_qr} "
+                  f"cells={list(fp.cells)}")
