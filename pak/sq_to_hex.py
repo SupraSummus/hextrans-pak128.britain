@@ -44,17 +44,20 @@ def world_to_axial(x: float, y: float) -> tuple[int, int]:
     return int(rxc), int(rzc)
 
 
-# Sq centroid placements modulo the hex lattice fundamental domain.  Sq's
-# own 2-fold + reflection symmetries collapse the rest to these orbits.
+# Sq centroid placements modulo the hex lattice + sq self-symmetry.  Sq's
+# D2 (180° + reflections across its 45° axes) reduces the 6 hex vertices
+# to 3 orbits (horizontal pair, slash pair, backslash pair) and the 6
+# edges likewise to 3 orbits.
 _R = HEX_TILE_RADIUS
 _H = _SQRT3 / 2.0 * HEX_TILE_RADIUS
 CANDIDATE_OFFSETS: dict[str, tuple[float, float]] = {
-    "tile_center":     (0.0, 0.0),
-    "vertex_right":    (_R, 0.0),
-    "vertex_upper":    (0.5 * _R, _H),
-    "edge_horizontal": (0.0, _H),
-    "edge_slash":      (0.75 * _R, 0.5 * _H),
-    "edge_backslash":  (0.75 * _R, -0.5 * _H),
+    "tile_center":       (0.0, 0.0),
+    "vertex_horizontal": (_R, 0.0),
+    "vertex_slash":      (0.5 * _R, _H),
+    "vertex_backslash":  (-0.5 * _R, _H),
+    "edge_horizontal":   (0.0, _H),
+    "edge_slash":        (0.75 * _R, 0.5 * _H),
+    "edge_backslash":    (0.75 * _R, -0.5 * _H),
 }
 
 # Dimetric sq frame is rotated 45° relative to the hex world frame; this

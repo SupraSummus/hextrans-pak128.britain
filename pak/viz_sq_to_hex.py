@@ -92,13 +92,29 @@ def _plot_placement(ax, dims_x: int, dims_y: int, fp: HexFootprint) -> None:
     ax.set_aspect("equal")
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title(f"{fp.anchor_kind}  bbox={fp.bbox_qr}", fontsize=8)
+    ax.set_title(f"{dims_x}x{dims_y}  {fp.anchor_kind}\n"
+                 f"bbox={fp.bbox_qr}", fontsize=8)
+
+
+def _row_placements(n: int, m: int) -> list[tuple[int, int, HexFootprint]]:
+    """All minimal placements for `(n, m)` and (when asymmetric) `(m, n)`,
+    deduplicated by normalised cell set."""
+    seen: set[tuple[tuple[int, int], ...]] = set()
+    out: list[tuple[int, int, HexFootprint]] = []
+    pairs = [(n, m)] if n == m else [(n, m), (m, n)]
+    for dx, dy in pairs:
+        for fp in sq_to_hex_all_minimal(dx, dy):
+            if fp.cells in seen:
+                continue
+            seen.add(fp.cells)
+            out.append((dx, dy, fp))
+    return out
 
 
 def main() -> None:
     sizes = [(1, 1), (1, 2), (2, 2), (1, 3), (2, 3), (3, 3),
              (2, 4), (3, 4), (4, 4)]
-    rows = [(n, m, sq_to_hex_all_minimal(n, m)) for n, m in sizes]
+    rows = [(n, m, _row_placements(n, m)) for n, m in sizes]
     ncols = max(len(fps) for _, _, fps in rows)
     nrows = len(rows)
     fig, axes = plt.subplots(nrows, ncols,
@@ -108,11 +124,13 @@ def main() -> None:
         for col_idx in range(ncols):
             ax = axes[row_idx, col_idx]
             if col_idx < len(fps):
-                _plot_placement(ax, n, m, fps[col_idx])
+                dx, dy, fp = fps[col_idx]
+                _plot_placement(ax, dx, dy, fp)
             else:
                 ax.axis("off")
+        label = f"{n}x{m}" if n == m else f"{n}x{m} / {m}x{n}"
         axes[row_idx, 0].set_ylabel(
-            f"{n}x{m}  -> {fps[0].n_cells} hex",
+            f"{label}\n-> {fps[0][2].n_cells} hex",
             fontsize=10, rotation=0, labelpad=40, ha="right", va="center",
         )
     fig.suptitle(
