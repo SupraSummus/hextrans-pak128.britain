@@ -85,6 +85,25 @@ indices (5, 6).  Concrete next move: model the field as
 `dict[int, int]` (or similar), add `way_constraint_prohibitive`
 back, and teach `emit_vehicle` to walk dict items.  Triggered.
 
+**`ways/old_dirt_road` ships visibly narrow.**  Square IoU lands
+at 0.02-0.64 (worst N facing, worst-bbox geometry) -- below the
+0.5 soft-acceptance floor.  Cause is structural, not calibration:
+upstream's `images/dirt-old.png` shows a wide road body with
+raised verge/berm shoulders; `ways/dirt_road/standard-city-base.
+blend` only models the road-surface atom (single `Dirt` material,
+no verges).  The blend-as-atom pipeline composes that strip along
+ribi chords correctly, but can't synthesise extent the source
+mesh doesn't carry.  `ways/tarmac_road` ships the same kind of
+blend with extra `MainColour1` (road surface) + `Dirt` (verges)
+slots, but `dirt_road/` has only `Dirt`.  Concrete next moves: (a)
+widen the road in the bake driver via a `way_width` knob on Way
+(currently a `WAY_WIDTH = 0.4` module constant in `pak.way`); (b)
+add a verge mesh to a sibling blend kept in our repo (departs
+from the "blend is upstream" contract -- see CLAUDE.md → "Don't
+bake the answer", weigh the trade-off); (c) accept the
+silhouette and ship.  Ships today as (c); cities found and grow,
+look thin compared to tarmac.
+
 **Aircraft alpha-blend materials render too transparent.**
 `air/dragon_rapide` lands at IoU 0.84-0.92 across facings —
 contour-failed by the 0.93 calibration bar.  Bboxes match upstream
