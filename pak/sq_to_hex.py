@@ -83,9 +83,12 @@ CANDIDATE_OFFSETS: dict[str, tuple[float, float]] = {
 }
 
 
-# Rotations of the sq footprint relative to the hex axes.  60° steps
-# (full hex symmetry).  0° aligns sq axes with world axes.
-CANDIDATE_ROTATIONS_DEG: tuple[float, ...] = (0.0, 30.0, 60.0, 90.0)
+# Rotations of the sq footprint relative to the hex world axes.  Base
+# orientation is 45° -- the dimetric sq frame is rotated 45° relative
+# to the hex world frame, so a sq tile appears as a diamond in the hex
+# world frame.  Sweep at 30° steps from there to cover the hex 6-fold
+# symmetry.
+CANDIDATE_ROTATIONS_DEG: tuple[float, ...] = (45.0, 75.0, 105.0, 135.0)
 
 
 @dataclass(frozen=True)
