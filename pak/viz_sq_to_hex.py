@@ -93,18 +93,15 @@ def _plot_placement(ax, dims_x: int, dims_y: int, fp: HexFootprint) -> None:
 
 
 def _row_placements(n: int, m: int) -> list[tuple[int, int, HexFootprint]]:
-    """All minimal placements for `(n, m)` and (when asymmetric) `(m, n)`,
-    deduplicated by normalised cell set."""
-    seen: set[tuple[tuple[int, int], ...]] = set()
-    out: list[tuple[int, int, HexFootprint]] = []
+    """All minimal anchor placements for `(n, m)` and (when asymmetric)
+    `(m, n)`.  No dedup -- each anchor is a distinct sq position on the
+    hex lattice even when it claims the same cell set as another."""
     pairs = [(n, m)] if n == m else [(n, m), (m, n)]
-    for dx, dy in pairs:
-        for fp in sq_to_hex_all_minimal(dx, dy):
-            if fp.cells in seen:
-                continue
-            seen.add(fp.cells)
-            out.append((dx, dy, fp))
-    return out
+    return [
+        (dx, dy, fp)
+        for dx, dy in pairs
+        for fp in sq_to_hex_all_minimal(dx, dy)
+    ]
 
 
 def main() -> None:
